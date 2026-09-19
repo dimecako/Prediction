@@ -1,0 +1,71 @@
+docker update --restart unless-stopped flaresolverr
+
+docker ps
+
+docker start flaresolverr
+
+docker build -t football-ai .
+
+docker build --no-cache -t football-ai .
+
+docker run --rm \
+  --name football-ai \
+  --network host \
+  --init \
+  --ipc=host \
+  -e FLARESOLVERR_URL="http://localhost:8191/v1" \
+  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+  football-ai 2026-09-19
+
+
+  docker system prune //cistenje
+
+  docker system prune -a  //Ако сакаш поагресивно чистење на сите unused images:
+
+  docker system df //За да видиш колку простор користи Docker:
+
+  docker build --no-cache -t football-ai .
+
+
+  docker system prune //cistenje
+
+За твојов случај пушти:
+
+Shell
+1
+docker system prune -a
+Show more lines
+
+Docker ќе ти покаже што планира да избрише и ќе побара:
+
+Plain Text
+1
+Are you sure you want to continue? [y/N]
+Show more lines
+
+стави:
+
+Plain Text
+1
+y
+Show more lines
+
+Ова ги чисти unused images, stopped containers, unused networks и unused build cache. Active container-ите не се предмет на prune. docker system prune
+
+Не додавај--volumes, бидејќи не ни треба и volumes може да содржат податоци. Prune unused Docker objects
+
+После тоа провери:
+
+Shell
+1
+docker system df
+Show more lines
+
+Можеш дополнително да исчистиш build cache со:
+
+Shell
+1
+docker builder prune -a
+Show more lines
+
+но прво пушти docker system prune -a, бидејќи тој веќе чисти unused build cache. docker system prune
