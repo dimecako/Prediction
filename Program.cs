@@ -1591,6 +1591,10 @@ public class Program
 
             try
             {
+                // Log to Render BEFORE redirecting Console.Out.
+                Console.WriteLine(
+                    $"[ANALYSE] Starting pipeline for {targetDate}");
+
                 Console.SetOut(writer);
 
                 Console.WriteLine(
