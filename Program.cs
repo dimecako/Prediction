@@ -1793,6 +1793,17 @@ button:hover {{
 Select prediction date:
 </p>
 
+<input
+    id='analysisDate'
+    type='date'
+    value='{today}'
+    required>
+
+<button
+    type='button'
+    onclick=""window.location.href='/analyse?date=' + document.getElementById('analysisDate').value"">
+    ANALYSE
+</button>
 
 <div class='small'>
 Forebet · Statarea · PredictZ · WinDrawWin
