@@ -1794,16 +1794,15 @@ Select prediction date:
 </p>
 
 /analyse
+    <input
+        type="date"
+        name="date"
+        value="{today}"
+        required>
 
-<input
-    type='date'
-    name='date'
-    value='{today}'
-    required>
-
-<button type='submit'>
-ANALYSE
-</button>
+    <button type="submit">
+        ANALYSE
+    </button>
 
 </form>
 
