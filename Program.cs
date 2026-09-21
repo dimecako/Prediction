@@ -1753,6 +1753,7 @@ public class ProductionConsensusAggregator
             $"{"Тип",-8} | " +
             $"{"Гласови",-9} | " +
             $"{"Confidence",-13} | " +
+            $"{"Prob.",-10} | " +
             $"{"Извори",-30} | " +
             $"{"BTTS",-14} | " +
             $"{"Goals",-14}");
@@ -1832,6 +1833,24 @@ public class ProductionConsensusAggregator
                     confidence = "MEDIUM";
                 else
                     confidence = "WEAK";
+            }
+
+            var probabilityValues = activeSources
+                .Where(x =>
+                    x.Value.Prob.HasValue &&
+                    x.Value.Tip == finalTip)
+                .Select(x => x.Value.Prob.Value)
+                .ToList();
+
+            string probabilityLabel = "-";
+
+            if (probabilityValues.Count > 0)
+            {
+                double averageProbability =
+                    probabilityValues.Average();
+
+                probabilityLabel =
+                    $"{averageProbability:F1}%";
             }
 
             string sourcesLabel =
@@ -1935,12 +1954,13 @@ public class ProductionConsensusAggregator
                 $"{finalTip,-8} | " +
                 $"{votesLabel,-9} | " +
                 $"{confidence,-13} | " +
+                $"{probabilityLabel,-10} | " +
                 $"{sourcesLabel,-30} | " +
                 $"{bttsConsensus,-14} | " +
                 $"{goalsConsensus,-14}");
         }
 
-        Console.WriteLine(new string('-', 150));
+        Console.WriteLine(new string('-', 165));
 
         Console.WriteLine(
             $"TOTAL MATCHES: {orderedMatches.Count}");
