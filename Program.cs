@@ -31,6 +31,31 @@ public class SiteMatch
     public string GoalsMarket { get; set; } = "-";
 }
 
+public class BacktestRecord
+{
+    public string Date { get; set; }
+
+    public string Source { get; set; }
+
+    public string HomeTeam { get; set; }
+    public string AwayTeam { get; set; }
+
+    public string PredictedResult { get; set; }
+    public string PredictedBtts { get; set; }
+    public string PredictedGoals { get; set; }
+
+    public int ActualHomeGoals { get; set; }
+    public int ActualAwayGoals { get; set; }
+
+    public string ActualResult { get; set; }
+    public string ActualBtts { get; set; }
+    public string ActualGoals { get; set; }
+
+    public bool CorrectResult { get; set; }
+    public bool CorrectBtts { get; set; }
+    public bool CorrectGoals { get; set; }
+}
+
 public class MatchSourceData
 {
     public string Tip { get; set; }
@@ -671,6 +696,62 @@ public class ProductionConsensusAggregator
         return hg > 0 && ag > 0 ? "YES" : "NO";
     }
 
+    private string GetResultMarket(int homeGoals, int awayGoals)
+    {
+        if (homeGoals > awayGoals)
+            return "1";
+
+        if (homeGoals < awayGoals)
+            return "2";
+
+        return "X";
+    }
+
+    private BacktestRecord CreateBacktestRecord(SiteMatch prediction, string date, int homeGoals, int awayGoals)
+    {
+        string actualScore =
+            $"{homeGoals}-{awayGoals}";
+
+        string actualResult =
+            GetResultMarket(homeGoals, awayGoals);
+
+        string actualBtts =
+            GetBttsMarket(actualScore);
+
+        string actualGoals =
+            GetGoalMarket(actualScore);
+
+        return new BacktestRecord
+        {
+            Date = date,
+
+            Source = prediction.SiteName,
+
+            HomeTeam = prediction.HomeTeam,
+            AwayTeam = prediction.AwayTeam,
+
+            PredictedResult = prediction.Tip,
+            PredictedBtts = prediction.BttsMarket,
+            PredictedGoals = prediction.GoalsMarket,
+
+            ActualHomeGoals = homeGoals,
+            ActualAwayGoals = awayGoals,
+
+            ActualResult = actualResult,
+            ActualBtts = actualBtts,
+            ActualGoals = actualGoals,
+
+            CorrectResult =
+                prediction.Tip == actualResult,
+
+            CorrectBtts =
+                prediction.BttsMarket == actualBtts,
+
+            CorrectGoals =
+                prediction.GoalsMarket == actualGoals
+        };
+    }
+
     private double GetSimilarity(string s, string t)
     {
         if (string.IsNullOrEmpty(s) || string.IsNullOrEmpty(t)) return 0;
@@ -1309,6 +1390,68 @@ public class ProductionConsensusAggregator
                 $"[Statarea PLAYWRIGHT ERROR] {ex}");
 
             return matches;
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
+    }
+
+    private async Task<HtmlDocument> GetPageWithPlaywrightAsync(
+    IBrowser browser,
+    string url,
+    string selector,
+    string sourceName)
+    {
+        var page = await browser.NewPageAsync();
+
+        try
+        {
+            Console.WriteLine(
+                $"[{sourceName} PLAYWRIGHT] GET {url}");
+
+            await page.GotoAsync(
+                url,
+                new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60000
+                });
+
+            await page
+                .Locator(selector)
+                .First
+                .WaitForAsync(
+                    new LocatorWaitForOptions
+                    {
+                        State = WaitForSelectorState.Attached,
+                        Timeout = 30000
+                    });
+
+            string html = await page.ContentAsync();
+
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                Console.WriteLine(
+                    $"[{sourceName} PLAYWRIGHT] Empty HTML");
+
+                return null;
+            }
+
+            var soup = new HtmlDocument();
+            soup.LoadHtml(html);
+
+            Console.WriteLine(
+                $"[{sourceName} PLAYWRIGHT] HTML: {html.Length} chars");
+
+            return soup;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(
+                $"[{sourceName} PLAYWRIGHT ERROR] {ex.Message}");
+
+            return null;
         }
         finally
         {
