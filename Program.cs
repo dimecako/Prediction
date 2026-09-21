@@ -1499,11 +1499,9 @@ public class ProductionConsensusAggregator
         var page = await browser.NewPageAsync();
         string url = (targetDate == todayStr) ? "https://www.predictz.com/predictions/" : $"https://www.predictz.com/predictions/{targetDate.Replace("-", "")}/";
         
-       var soup = await GetPageWithPlaywrightAsync(
-        browser,
-        url,
-        "div.pttr.ptcnt",
-        "PredictZ");
+       //var soup = await GetPageWithPlaywrightAsync(browser, url, "div.pttr.ptcnt", "PredictZ");
+       // STARO
+        var soup = await GetPageFromFlareSolverr(url);
 
         if (soup == null)
         {
@@ -1860,6 +1858,71 @@ public class Program
 
     public static async Task Main(string[] args)
     {
+
+        if (args.Length > 0 &&
+    DateTime.TryParseExact(
+        args[0],
+        "yyyy-MM-dd",
+        CultureInfo.InvariantCulture,
+        DateTimeStyles.None,
+        out DateTime cliDate))
+        {
+            string targetDate = cliDate.ToString("yyyy-MM-dd");
+
+            Console.WriteLine($"[CLI] Starting pipeline for {targetDate}");
+
+            var aggregator =
+                new ProductionConsensusAggregator(targetDate);
+
+            using (var playwright = await Playwright.CreateAsync())
+            {
+                var browser =
+                    await playwright.Chromium.LaunchAsync(
+                        new BrowserTypeLaunchOptions
+                        {
+                            Headless = true
+                        });
+
+                try
+                {
+                    var forebetTask =
+                        aggregator.ParseForebetAsync(browser);
+
+                    var statareaTask =
+                        aggregator.ParseStatareaAsync(browser);
+
+                    var predictzTask =
+                        aggregator.ParsePredictzAsync(browser);
+
+                    var wdwTask =
+                        aggregator.ParseWinDrawWinAsync(browser);
+
+                    await Task.WhenAll(
+                        forebetTask,
+                        statareaTask,
+                        predictzTask,
+                        wdwTask);
+
+                    aggregator.ExecutePipeline(
+                        await forebetTask,
+                        await statareaTask,
+                        await predictzTask,
+                        await wdwTask);
+
+                    aggregator.PrintGuaranteedReport();
+                }
+                finally
+                {
+                    await browser.CloseAsync();
+                }
+            }
+
+            Console.WriteLine(
+                $"[CLI] Analysis finished: {targetDate}");
+
+            return;
+        }
+
         var builder = WebApplication.CreateBuilder(args);
 
         var app = builder.Build();
