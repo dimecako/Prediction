@@ -1611,22 +1611,22 @@ public class ProductionConsensusAggregator
     
     private string GetConfidenceLevel(int matchingVotes, int totalVotes)
     {
-        if (matchingVotes >= 4 &&
-            matchingVotes == totalVotes)
+        if (totalVotes == 4 && matchingVotes == 4)
             return "VERY STRONG";
 
-        if (matchingVotes >= 3 &&
-            matchingVotes == totalVotes)
+        if (totalVotes == 3 && matchingVotes == 3)
             return "STRONG";
 
-        if (matchingVotes >= 3 &&
-            totalVotes == 4)
+        if (totalVotes == 4 && matchingVotes == 3)
+            return "STRONG";
+
+        if (totalVotes == 2 && matchingVotes == 2)
             return "MEDIUM";
 
         return "WEAK";
     }
 	
-	public void PrintGuaranteedReport()
+	/*public void PrintGuaranteedReport()
     {        
         // ПОПРАВЕНО: Текстот сега правилно го содржи датумот на местото на {targetDate}
         Console.WriteLine($"\n 📊 КУМУЛАТИВЕН ПРЕСЕК НА РЕАЛНИ ПОДАТОЦИ ЗА ДАТУМ: {targetDate}\n");
@@ -1739,6 +1739,211 @@ public class ProductionConsensusAggregator
                 $"{bttsConsensus,-16} | " +
                 $"{goalsConsensus,-16}");
         }
+    }*/
+
+    public void PrintGuaranteedReport()
+    {
+        Console.WriteLine(
+            $"\n📊 СИТЕ ПОДАТОЦИ ЗА ДАТУМ: {targetDate}\n");
+
+        Console.WriteLine(new string('-', 150));
+
+        Console.WriteLine(
+            $"{"Натпревар",-42} | " +
+            $"{"Тип",-8} | " +
+            $"{"Гласови",-9} | " +
+            $"{"Confidence",-13} | " +
+            $"{"Извори",-30} | " +
+            $"{"BTTS",-14} | " +
+            $"{"Goals",-14}");
+
+        Console.WriteLine(new string('-', 150));
+
+        var orderedMatches = unifiedDb.Values
+            .Select(match =>
+            {
+                var activeSources = match.Sources
+                    .Where(x =>
+                        x.Value != null &&
+                        (x.Value.Tip == "1" ||
+                        x.Value.Tip == "X" ||
+                        x.Value.Tip == "2"))
+                    .ToList();
+
+                return new
+                {
+                    Match = match,
+                    ActiveSources = activeSources
+                };
+            })
+            .Where(x => x.ActiveSources.Count > 0)
+            .OrderByDescending(x => x.ActiveSources.Count)
+            .ThenBy(x => x.Match.HomeOrig)
+            .ThenBy(x => x.Match.AwayOrig)
+            .ToList();
+
+        foreach (var item in orderedMatches)
+        {
+            var match = item.Match;
+            var activeSources = item.ActiveSources;
+
+            var tips = activeSources
+                .Select(x => x.Value.Tip)
+                .ToList();
+
+            var tipGroups = tips
+                .GroupBy(x => x)
+                .OrderByDescending(g => g.Count())
+                .ToList();
+
+            int totalVotes = tips.Count;
+            int matchingVotes = tipGroups.First().Count();
+
+            bool conflict =
+                tipGroups.Count > 1 &&
+                tipGroups[0].Count() == tipGroups[1].Count();
+
+            string finalTip;
+            string confidence;
+
+            if (totalVotes == 1)
+            {
+                finalTip = tips[0];
+                confidence = "SINGLE SOURCE";
+            }
+            else if (conflict)
+            {
+                finalTip = "CONFLICT";
+                confidence = "CONFLICT";
+            }
+            else
+            {
+                finalTip = tipGroups.First().Key;
+
+                if (totalVotes == 4 && matchingVotes == 4)
+                    confidence = "VERY STRONG";
+                else if (totalVotes == 4 && matchingVotes == 3)
+                    confidence = "STRONG";
+                else if (totalVotes == 3 && matchingVotes == 3)
+                    confidence = "STRONG";
+                else if (totalVotes == 3 && matchingVotes == 2)
+                    confidence = "MEDIUM";
+                else if (totalVotes == 2 && matchingVotes == 2)
+                    confidence = "MEDIUM";
+                else
+                    confidence = "WEAK";
+            }
+
+            string sourcesLabel =
+                string.Join(",",
+                    activeSources.Select(x => x.Key));
+
+            // -----------------------------
+            // BTTS consensus
+            // -----------------------------
+
+            var bttsList = new List<string>();
+
+            foreach (var source in activeSources)
+            {
+                var src = source.Value;
+
+                if (!string.IsNullOrWhiteSpace(src.BttsMarket) &&
+                    src.BttsMarket != "-")
+                {
+                    bttsList.Add(src.BttsMarket);
+                }
+                else if (!string.IsNullOrWhiteSpace(src.Btts) &&
+                        src.Btts != "-")
+                {
+                    if (int.TryParse(
+                            src.Btts.Replace("%", "").Trim(),
+                            out int pct))
+                    {
+                        bttsList.Add(
+                            pct >= 50 ? "YES" : "NO");
+                    }
+                }
+            }
+
+            string bttsConsensus = "-";
+
+            if (bttsList.Count > 0)
+            {
+                var bttsGroups = bttsList
+                    .GroupBy(x => x)
+                    .OrderByDescending(g => g.Count())
+                    .ToList();
+
+                if (bttsGroups.Count > 1 &&
+                    bttsGroups[0].Count() ==
+                    bttsGroups[1].Count())
+                {
+                    bttsConsensus = "CONFLICT";
+                }
+                else
+                {
+                    bttsConsensus =
+                        $"{bttsGroups[0].Key} " +
+                        $"({bttsGroups[0].Count()}/{bttsList.Count})";
+                }
+            }
+
+            // -----------------------------
+            // GOALS consensus
+            // -----------------------------
+
+            var goalsList = activeSources
+                .Where(x =>
+                    !string.IsNullOrWhiteSpace(
+                        x.Value.GoalsMarket) &&
+                    x.Value.GoalsMarket != "-")
+                .Select(x => x.Value.GoalsMarket)
+                .ToList();
+
+            string goalsConsensus = "-";
+
+            if (goalsList.Count > 0)
+            {
+                var goalsGroups = goalsList
+                    .GroupBy(x => x)
+                    .OrderByDescending(g => g.Count())
+                    .ToList();
+
+                if (goalsGroups.Count > 1 &&
+                    goalsGroups[0].Count() ==
+                    goalsGroups[1].Count())
+                {
+                    goalsConsensus = "CONFLICT";
+                }
+                else
+                {
+                    goalsConsensus =
+                        $"{goalsGroups[0].Key} " +
+                        $"({goalsGroups[0].Count()}/{goalsList.Count})";
+                }
+            }
+
+            string votesLabel =
+                $"{matchingVotes}/{totalVotes}";
+
+            string fixture =
+                $"{match.HomeOrig} vs {match.AwayOrig}";
+
+            Console.WriteLine(
+                $"{fixture,-42} | " +
+                $"{finalTip,-8} | " +
+                $"{votesLabel,-9} | " +
+                $"{confidence,-13} | " +
+                $"{sourcesLabel,-30} | " +
+                $"{bttsConsensus,-14} | " +
+                $"{goalsConsensus,-14}");
+        }
+
+        Console.WriteLine(new string('-', 150));
+
+        Console.WriteLine(
+            $"TOTAL MATCHES: {orderedMatches.Count}");
     }
     
     private void PrintPotentialMergeMisses()
