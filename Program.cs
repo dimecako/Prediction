@@ -1122,7 +1122,34 @@ public class ProductionConsensusAggregator
                     Timeout = 60000
                 });
 
-            string html = await page.ContentAsync();
+            string html = null;
+
+            for (int attempt = 1; attempt <= 5; attempt++)
+            {
+                try
+                {
+                    await page.WaitForLoadStateAsync(
+                        LoadState.DOMContentLoaded,
+                        new PageWaitForLoadStateOptions
+                        {
+                            Timeout = 15000
+                        });
+
+                    await page.WaitForTimeoutAsync(1500);
+
+                    html = await page.ContentAsync();
+
+                    break;
+                }
+                catch (PlaywrightException ex)
+                    when (ex.Message.Contains("page is navigating"))
+                {
+                    Console.WriteLine(
+                        $"[Statarea] Navigation active, retry {attempt}/5");
+
+                    await page.WaitForTimeoutAsync(1000);
+                }
+            }
 
             if (string.IsNullOrWhiteSpace(html))
             {
