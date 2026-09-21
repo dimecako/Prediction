@@ -1128,26 +1128,35 @@ public class ProductionConsensusAggregator
             {
                 try
                 {
-                    await page.WaitForLoadStateAsync(
-                        LoadState.DOMContentLoaded,
-                        new PageWaitForLoadStateOptions
-                        {
-                            Timeout = 15000
-                        });
+                    Console.WriteLine(
+                        $"[Statarea] Waiting for matches, attempt {attempt}/5");
 
-                    await page.WaitForTimeoutAsync(1500);
+                    await page
+                        .Locator("div.match")
+                        .First
+                        .WaitForAsync(
+                            new LocatorWaitForOptions
+                            {
+                                State = WaitForSelectorState.Attached,
+                                Timeout = 15000
+                            });
+
+                    await page.WaitForTimeoutAsync(1000);
 
                     html = await page.ContentAsync();
+
+                    Console.WriteLine(
+                        $"[Statarea] HTML received: {html.Length} chars");
 
                     break;
                 }
                 catch (PlaywrightException ex)
-                    when (ex.Message.Contains("page is navigating"))
                 {
                     Console.WriteLine(
-                        $"[Statarea] Navigation active, retry {attempt}/5");
+                        $"[Statarea] Attempt {attempt}/5 failed: {ex.Message}");
 
-                    await page.WaitForTimeoutAsync(1000);
+                    if (attempt < 5)
+                        await page.WaitForTimeoutAsync(1500);
                 }
             }
 
