@@ -1748,15 +1748,17 @@ public class ProductionConsensusAggregator
 
         Console.WriteLine(new string('-', 150));
 
-        Console.WriteLine(
-            $"{"Натпревар",-42} | " +
-            $"{"Тип",-8} | " +
-            $"{"Гласови",-9} | " +
-            $"{"Confidence",-13} | " +
-            $"{"Prob.",-10} | " +
-            $"{"Извори",-30} | " +
-            $"{"BTTS",-14} | " +
-            $"{"Goals",-14}");
+       Console.WriteLine(
+        $"{"Натпревар",-42} | " +
+        $"{"Тип",-8} | " +
+        $"{"Гласови",-9} | " +
+        $"{"Confidence",-13} | " +
+        $"{"Prob.",-10} | " +        
+        $"{"Извори",-40} | " +
+        $"{"BTTS",-14} | " +
+        $"{"BTTS Prob.",-11} | " +
+        $"{"Goals Prob.",-12} | " +
+        $"{"Goals",-14}");
 
         Console.WriteLine(new string('-', 150));
 
@@ -1771,16 +1773,69 @@ public class ProductionConsensusAggregator
                         x.Value.Tip == "2"))
                     .ToList();
 
+                var tips = activeSources
+                    .Select(x => x.Value.Tip)
+                    .ToList();
+
+                var tipGroups = tips
+                    .GroupBy(x => x)
+                    .OrderByDescending(g => g.Count())
+                    .ToList();
+
+                int totalVotes = tips.Count;
+
+                int matchingVotes =
+                    tipGroups.Count > 0
+                        ? tipGroups[0].Count()
+                        : 0;
+
+                bool conflict =
+                    tipGroups.Count > 1 &&
+                    tipGroups[0].Count() == tipGroups[1].Count();
+
+                string finalTip =
+                    totalVotes == 0 || conflict
+                        ? null
+                        : tipGroups[0].Key;
+
+                var probabilityValues = activeSources
+                    .Where(x =>
+                        finalTip != null &&
+                        x.Value.Tip == finalTip &&
+                        x.Value.Prob.HasValue)
+                    .Select(x => x.Value.Prob.Value)
+                    .ToList();
+
+                double? averageProbability =
+                    probabilityValues.Count > 0
+                        ? probabilityValues.Average()
+                        : (double?)null;
+
                 return new
                 {
                     Match = match,
-                    ActiveSources = activeSources
+                    ActiveSources = activeSources,
+                    MatchingVotes = matchingVotes,
+                    TotalVotes = totalVotes,
+                    AverageProbability = averageProbability
                 };
             })
             .Where(x => x.ActiveSources.Count > 0)
-            .OrderByDescending(x => x.ActiveSources.Count)
+
+            // prvo po broj na soglasni glasovi
+            .OrderByDescending(x => x.MatchingVotes)
+
+            // ako se isti glasovite, prednost ima pomal vkupen broj
+            // 3/3 pred 3/4, 2/2 pred 2/3
+            .ThenBy(x => x.TotalVotes)
+
+            // potoa po probability
+            .ThenByDescending(x => x.AverageProbability ?? -1)
+
+            // samo za stabilen redosled
             .ThenBy(x => x.Match.HomeOrig)
             .ThenBy(x => x.Match.AwayOrig)
+
             .ToList();
 
         foreach (var item in orderedMatches)
@@ -1886,6 +1941,7 @@ public class ProductionConsensusAggregator
             }
 
             string bttsConsensus = "-";
+            string bttsProbabilityLabel = "-";
 
             if (bttsList.Count > 0)
             {
@@ -1894,9 +1950,16 @@ public class ProductionConsensusAggregator
                     .OrderByDescending(g => g.Count())
                     .ToList();
 
+                int bttsVotes = bttsGroups[0].Count();
+
+                double bttsPercent =
+                    (double)bttsVotes / bttsList.Count * 100.0;
+
+                bttsProbabilityLabel =
+                    $"{bttsPercent:F1}%";
+
                 if (bttsGroups.Count > 1 &&
-                    bttsGroups[0].Count() ==
-                    bttsGroups[1].Count())
+                    bttsGroups[0].Count() == bttsGroups[1].Count())
                 {
                     bttsConsensus = "CONFLICT";
                 }
@@ -1904,7 +1967,7 @@ public class ProductionConsensusAggregator
                 {
                     bttsConsensus =
                         $"{bttsGroups[0].Key} " +
-                        $"({bttsGroups[0].Count()}/{bttsList.Count})";
+                        $"({bttsVotes}/{bttsList.Count})";
                 }
             }
 
@@ -1921,6 +1984,7 @@ public class ProductionConsensusAggregator
                 .ToList();
 
             string goalsConsensus = "-";
+            string goalsProbabilityLabel = "-";
 
             if (goalsList.Count > 0)
             {
@@ -1929,9 +1993,16 @@ public class ProductionConsensusAggregator
                     .OrderByDescending(g => g.Count())
                     .ToList();
 
+                int goalsVotes = goalsGroups[0].Count();
+
+                double goalsPercent =
+                    (double)goalsVotes / goalsList.Count * 100.0;
+
+                goalsProbabilityLabel =
+                    $"{goalsPercent:F1}%";
+
                 if (goalsGroups.Count > 1 &&
-                    goalsGroups[0].Count() ==
-                    goalsGroups[1].Count())
+                    goalsGroups[0].Count() == goalsGroups[1].Count())
                 {
                     goalsConsensus = "CONFLICT";
                 }
@@ -1939,7 +2010,7 @@ public class ProductionConsensusAggregator
                 {
                     goalsConsensus =
                         $"{goalsGroups[0].Key} " +
-                        $"({goalsGroups[0].Count()}/{goalsList.Count})";
+                        $"({goalsVotes}/{goalsList.Count})";
                 }
             }
 
@@ -1954,10 +2025,14 @@ public class ProductionConsensusAggregator
                 $"{finalTip,-8} | " +
                 $"{votesLabel,-9} | " +
                 $"{confidence,-13} | " +
-                $"{probabilityLabel,-10} | " +
-                $"{sourcesLabel,-30} | " +
+                $"{probabilityLabel,-10} | " +                
+                $"{sourcesLabel,-40} | " +
                 $"{bttsConsensus,-14} | " +
+                $"{bttsProbabilityLabel,-11} | " +
+                $"{goalsProbabilityLabel,-12} | " +
                 $"{goalsConsensus,-14}");
+
+
         }
 
         Console.WriteLine(new string('-', 165));
