@@ -1465,8 +1465,17 @@ public class ProductionConsensusAggregator
         var page = await browser.NewPageAsync();
         string url = (targetDate == todayStr) ? "https://www.predictz.com/predictions/" : $"https://www.predictz.com/predictions/{targetDate.Replace("-", "")}/";
         
-        var soup = await GetPageFromFlareSolverr(url);
-        if (soup == null) { await page.CloseAsync(); return matches; }
+       var soup = await GetPageWithPlaywrightAsync(
+        browser,
+        url,
+        "div.pttr.ptcnt",
+        "PredictZ");
+
+        if (soup == null)
+        {
+            await page.CloseAsync();
+            return matches;
+        }
 
         var rows = soup.DocumentNode.SelectNodes("//div[contains(@class,'pttr') and contains(@class,'ptcnt')]");
         if (rows != null)
