@@ -525,13 +525,24 @@ public class ProductionConsensusAggregator
     {
         try
         {
-            await page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+            await page.GotoAsync(
+                url,
+                new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded
+                });
+
             string html = await page.ContentAsync();
+
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
+
             return doc;
         }
-        catch { return null; }
+        catch
+        {
+            return null;
+        }
     }
 
     private string NormalizeName(string name)
@@ -1417,6 +1428,29 @@ public class ProductionConsensusAggregator
                     WaitUntil = WaitUntilState.DOMContentLoaded,
                     Timeout = 60000
                 });
+
+                Console.WriteLine(
+                    $"[{sourceName} PLAYWRIGHT] Final URL: {page.Url}");
+
+                Console.WriteLine(
+                    $"[{sourceName} PLAYWRIGHT] Title: {await page.TitleAsync()}");
+
+                string diagnosticHtml = await page.ContentAsync();
+
+                Console.WriteLine(
+                    $"[{sourceName} PLAYWRIGHT] HTML before wait: {diagnosticHtml.Length} chars");
+
+                Console.WriteLine(
+                    $"[{sourceName} PLAYWRIGHT] pttr count: " +
+                    $"{await page.Locator("div.pttr").CountAsync()}");
+
+                Console.WriteLine(
+                    $"[{sourceName} PLAYWRIGHT] ptcnt count: " +
+                    $"{await page.Locator("div.ptcnt").CountAsync()}");
+
+                Console.WriteLine(
+                    $"[{sourceName} PLAYWRIGHT] combined count: " +
+                    $"{await page.Locator("div.pttr.ptcnt").CountAsync()}");
 
             await page
                 .Locator(selector)
