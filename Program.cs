@@ -17,6 +17,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using System.IO;
+using Microsoft.EntityFrameworkCore;
+using Prediction.Data;
 
 public partial class ProductionConsensusAggregator
 {
@@ -115,6 +117,12 @@ public partial class Program
         }
 
         var builder = WebApplication.CreateBuilder(args);
+
+        var connectionString = builder.Configuration
+            .GetConnectionString("FootballDb");
+
+        builder.Services.AddDbContext<FootballDbContext>(options =>
+            options.UseNpgsql(connectionString));
 
         var app = builder.Build();
 
