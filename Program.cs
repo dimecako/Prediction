@@ -19,6 +19,7 @@ using Microsoft.Extensions.Hosting;
 using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
+using Prediction.Services;
 
 public partial class ProductionConsensusAggregator
 {
@@ -30,6 +31,8 @@ public partial class ProductionConsensusAggregator
     private readonly string flareSolverrUrl = Environment.GetEnvironmentVariable("FLARESOLVERR_URL") ?? "http://localhost:8191/v1";
 
     private ConcurrentDictionary<string, UnifiedMatch> unifiedDb = new ConcurrentDictionary<string, UnifiedMatch>();
+
+    public IReadOnlyCollection<UnifiedMatch> UnifiedMatches => unifiedDb.Values.ToList();
 
     public ProductionConsensusAggregator(string targetDate)
     {
@@ -101,6 +104,32 @@ public partial class Program
                         await predictzTask,
                         await wdwTask,
                         await zulubetTask);
+
+                    var cliConnectionString =
+                        Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb");
+
+                    if (string.IsNullOrWhiteSpace(cliConnectionString))
+                    {
+                        throw new InvalidOperationException(
+                            "ConnectionStrings__FootballDb environment variable is not configured.");
+                    }
+
+                    var dbOptions =
+                        new DbContextOptionsBuilder<FootballDbContext>()
+                            .UseNpgsql(cliConnectionString)
+                            .Options;
+
+                    await using (var db =
+                        new FootballDbContext(dbOptions))
+                    {
+                        var snapshotWriter =
+                            new PredictionSnapshotWriter(db);
+
+                        await snapshotWriter.SaveAsync(
+                            targetDate,
+                            aggregator.UnifiedMatches);
+                    }
+
 
                     aggregator.PrintGuaranteedReport();
                 }

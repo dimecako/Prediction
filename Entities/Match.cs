@@ -10,7 +10,7 @@ public sealed class Match
 
     public string AwayTeam { get; set; } = string.Empty;
 
-    public DateTime KickoffUtc { get; set; }
+    public DateTime? KickoffUtc { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
