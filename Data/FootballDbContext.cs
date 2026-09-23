@@ -77,5 +77,29 @@ public sealed class FootballDbContext : DbContext
                 x.CapturedAtUtc
             });
         });
+
+        modelBuilder.Entity<MatchResult>(entity =>
+        {
+            entity.ToTable("match_results");
+
+            entity.HasKey(x => x.Id);
+
+            entity.Property(x => x.Result)
+                .HasMaxLength(10)
+                .IsRequired();
+
+            entity.Property(x => x.Source)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.HasOne(x => x.Match)
+                .WithOne(x => x.Result)
+                .HasForeignKey<MatchResult>(x => x.MatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(x => x.MatchId)
+                .IsUnique();
+        });
     }
+    public DbSet<MatchResult> MatchResults => Set<MatchResult>();
 }

@@ -18,4 +18,6 @@ public sealed class Match
 
     public ICollection<PredictionSnapshot> PredictionSnapshots { get; set; }
     = new List<PredictionSnapshot>();
+
+    public MatchResult? Result { get; set; }
 }

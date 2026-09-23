@@ -2,9 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
 using Prediction.Entities;
 using System.Globalization;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Security.Cryptography;
 
 namespace Prediction.Services;
 
@@ -35,6 +32,23 @@ public sealed class PredictionSnapshotWriter
     {
         DateTime capturedAtUtc = DateTime.UtcNow;
 
+        if (!DateOnly.TryParseExact(
+        targetDate,
+        "yyyy-MM-dd",
+        CultureInfo.InvariantCulture,
+        DateTimeStyles.None,
+        out var matchDate))
+        {
+            throw new ArgumentException(
+                $"Invalid targetDate: {targetDate}",
+                nameof(targetDate));
+        }
+
+        DateTime kickoffUtc =
+            DateTime.SpecifyKind(
+                matchDate.ToDateTime(TimeOnly.MinValue),
+                DateTimeKind.Utc);
+
         int matchesCreated = 0;
         int matchesExisting = 0;
         int snapshotsCreated = 0;
@@ -44,10 +58,11 @@ public sealed class PredictionSnapshotWriter
 
         foreach (var unified in matches)
         {
-            string externalMatchId = BuildExternalMatchId(
-                targetDate,
-                unified.HomeOrig,
-                unified.AwayOrig);
+            string externalMatchId =
+                MatchIdentity.BuildExternalMatchId(
+                    targetDate,
+                    unified.HomeOrig,
+                    unified.AwayOrig);
 
             var match = await db.Matches
                 .SingleOrDefaultAsync(
@@ -60,7 +75,7 @@ public sealed class PredictionSnapshotWriter
                     ExternalMatchId = externalMatchId,
                     HomeTeam = unified.HomeOrig,
                     AwayTeam = unified.AwayOrig,
-                    KickoffUtc = null,
+                    KickoffUtc = kickoffUtc,
                     CreatedAtUtc = capturedAtUtc,
                     UpdatedAtUtc = capturedAtUtc
                 };
@@ -73,6 +88,10 @@ public sealed class PredictionSnapshotWriter
             {
                 match.HomeTeam = unified.HomeOrig;
                 match.AwayTeam = unified.AwayOrig;
+
+                if (!match.KickoffUtc.HasValue)
+                    match.KickoffUtc = kickoffUtc;
+
                 match.UpdatedAtUtc = capturedAtUtc;
 
                 matchesExisting++;
@@ -85,28 +104,58 @@ public sealed class PredictionSnapshotWriter
                 if (sourceData == null)
                     continue;
 
+                string source = sourceEntry.Key;
+
+                string? predictedResult =
+                    CleanValue(sourceData.Tip);
+
+                string? predictedScore =
+                    CleanValue(sourceData.Score);
+
+                string? btts =
+                    CleanValue(sourceData.BttsMarket);
+
+                string? goals =
+                    CleanValue(sourceData.GoalsMarket);
+
+                double? confidence =
+                    sourceData.Prob.HasValue
+                        ? sourceData.Prob.Value / 100.0
+                        : null;
+
+                PredictionSnapshot? lastSnapshot = null;
+
+                if (match.Id != 0)
+                {
+                    lastSnapshot = await db.PredictionSnapshots
+                        .AsNoTracking()
+                        .Where(x =>
+                            x.MatchId == match.Id &&
+                            x.Source == source)
+                        .OrderByDescending(x => x.CapturedAtUtc)
+                        .FirstOrDefaultAsync();
+                }
+
+                bool unchanged =
+                    lastSnapshot != null &&
+                    lastSnapshot.PredictedResult == predictedResult &&
+                    lastSnapshot.PredictedScore == predictedScore &&
+                    lastSnapshot.Btts == btts &&
+                    lastSnapshot.Goals == goals &&
+                    lastSnapshot.Confidence == confidence;
+
+                if (unchanged)
+                    continue;
+
                 match.PredictionSnapshots.Add(
                     new PredictionSnapshot
                     {
-                        Source = sourceEntry.Key,
-
-                        PredictedResult =
-                            CleanValue(sourceData.Tip),
-
-                        PredictedScore =
-                            CleanValue(sourceData.Score),
-
-                        Btts =
-                            CleanValue(sourceData.BttsMarket),
-
-                        Goals =
-                            CleanValue(sourceData.GoalsMarket),
-
-                        Confidence =
-                            sourceData.Prob.HasValue
-                                ? sourceData.Prob.Value / 100.0
-                                : null,
-
+                        Source = source,
+                        PredictedResult = predictedResult,
+                        PredictedScore = predictedScore,
+                        Btts = btts,
+                        Goals = goals,
+                        Confidence = confidence,
                         CapturedAtUtc = capturedAtUtc
                     });
 
@@ -121,57 +170,5 @@ public sealed class PredictionSnapshotWriter
             $"existing matches: {matchesExisting}, " +
             $"snapshots: {snapshotsCreated}, " +
             $"EF changes: {changes}");
-    }
-
-    private static string BuildExternalMatchId(
-    string targetDate,
-    string homeTeam,
-    string awayTeam)
-    {
-        string normalizedHome = NormalizeTeam(homeTeam);
-        string normalizedAway = NormalizeTeam(awayTeam);
-
-        string raw =
-            $"{targetDate}|{normalizedHome}|{normalizedAway}";
-
-        byte[] hash = SHA256.HashData(
-            Encoding.UTF8.GetBytes(raw));
-
-        return $"match-{Convert.ToHexString(hash).ToLowerInvariant()}";
-    }
-
-    private static string NormalizeTeam(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
-
-        string text = value
-            .Normalize(NormalizationForm.FormD);
-
-        var builder = new StringBuilder();
-
-        foreach (char c in text)
-        {
-            UnicodeCategory category =
-                CharUnicodeInfo.GetUnicodeCategory(c);
-
-            if (category != UnicodeCategory.NonSpacingMark)
-                builder.Append(c);
-        }
-
-        text = builder
-            .ToString()
-            .Normalize(NormalizationForm.FormC)
-            .ToLowerInvariant();
-
-        text = Regex.Replace(
-            text,
-            @"[^a-z0-9]+",
-            " ");
-
-        return Regex.Replace(
-            text.Trim(),
-            @"\s+",
-            " ");
     }
 }

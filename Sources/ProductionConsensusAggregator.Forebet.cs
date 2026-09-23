@@ -222,7 +222,7 @@ public partial class ProductionConsensusAggregator
         }
     }
 
-    private async Task<string> GetForebetJsonWithSession(string jsonUrl)
+    public async Task<string> GetForebetJsonWithSession(string jsonUrl)
     {
         const int maxAttempts = 3;
 
@@ -308,6 +308,7 @@ public partial class ProductionConsensusAggregator
             {
                 try
                 {
+                    
                     string dateBah =
                         item["DATE_BAH"]?.ToString();
 
@@ -444,5 +445,116 @@ public partial class ProductionConsensusAggregator
 
             return matches;
         }
+    }
+
+    public async Task<List<Prediction.Models.ExternalMatchResult>>
+    GetForebetResultsAsync(DateOnly date)
+    {
+        var results =
+            new List<Prediction.Models.ExternalMatchResult>();
+
+        string dateText =
+            date.ToString("yyyy-MM-dd");
+
+        string url =
+            "https://www.forebet.com/scripts/getrs.php" +
+            "?ln=en" +
+            "&tp=1x2" +
+            $"&in={dateText}" +
+            "&ord=0" +
+            "&tz=+180";
+
+        string json =
+            await GetForebetJsonWithSession(url);
+
+        if (string.IsNullOrWhiteSpace(json))
+            return results;
+
+        var root = JArray.Parse(json);
+
+        if (root.Count == 0 ||
+            root[0] == null ||
+            root[0].Type != JTokenType.Array)
+        {
+            return results;
+        }
+
+        var items = (JArray)root[0];
+
+        foreach (var item in items)
+        {
+            string dateBah =
+                item["DATE_BAH"]?.ToString() ?? "";
+
+            if (!dateBah.StartsWith(
+                    dateText,
+                    StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            string status =
+                item["comment"]?.ToString() ?? "";
+
+            if (!string.Equals(
+                    status,
+                    "FT",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!int.TryParse(
+                    item["Host_SC"]?.ToString(),
+                    out int homeGoals))
+            {
+                continue;
+            }
+
+            if (!int.TryParse(
+                    item["Guest_SC"]?.ToString(),
+                    out int awayGoals))
+            {
+                continue;
+            }
+
+            string home =
+                HtmlEntity.DeEntitize(
+                    item["HOST_NAME"]?.ToString() ?? "")
+                .Trim();
+
+            string away =
+                HtmlEntity.DeEntitize(
+                    item["GUEST_NAME"]?.ToString() ?? "")
+                .Trim();
+
+            if (string.IsNullOrWhiteSpace(home) ||
+                string.IsNullOrWhiteSpace(away))
+            {
+                continue;
+            }
+
+            results.Add(
+                new Prediction.Models.ExternalMatchResult
+                {
+                    ExternalId =
+                        $"forebet:{item["id"]}",
+
+                    HomeTeam = home,
+                    AwayTeam = away,
+
+                    HomeGoals = homeGoals,
+                    AwayGoals = awayGoals,
+
+                    KickoffUtc = null,
+
+                    Source = "Forebet"
+                });
+        }
+
+        Console.WriteLine(
+            $"[Forebet RESULTS] FT results: {results.Count}");
+
+        return results;
     }
 }
