@@ -213,6 +213,21 @@ public partial class Program
                 "backtest",
                 StringComparison.OrdinalIgnoreCase))
         {
+
+            if (args.Length < 2 ||
+                !DateOnly.TryParseExact(
+                    args[1],
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var backtestDate))
+            {
+                Console.WriteLine(
+                    "[BACKTEST] Invalid date. Use: backtest yyyy-MM-dd");
+
+                return;
+            }
+
             var backtestConnectionString =
                 Environment.GetEnvironmentVariable(
                     "ConnectionStrings__FootballDb");
@@ -235,8 +250,13 @@ public partial class Program
                 .AsNoTracking()
                 .Include(x => x.Result)
                 .Include(x => x.PredictionSnapshots)
-                .Where(x => x.Result != null)
+                .Where(x =>
+                    x.Result != null &&
+                    x.MatchDate == backtestDate)
                 .ToListAsync();
+
+                Console.WriteLine(
+                    $"[BACKTEST] Date: {backtestDate:yyyy-MM-dd}");
 
             Console.WriteLine(
                 $"[BACKTEST] Matches with results: {matches.Count}");

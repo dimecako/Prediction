@@ -9,6 +9,7 @@ public sealed class Match
     public string HomeTeam { get; set; } = string.Empty;
 
     public string AwayTeam { get; set; } = string.Empty;
+    public DateOnly MatchDate { get; set; }
 
     public DateTime? KickoffUtc { get; set; }
 

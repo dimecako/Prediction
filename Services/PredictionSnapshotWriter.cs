@@ -75,6 +75,7 @@ public sealed class PredictionSnapshotWriter
                     ExternalMatchId = externalMatchId,
                     HomeTeam = unified.HomeOrig,
                     AwayTeam = unified.AwayOrig,
+                    MatchDate = matchDate,
                     KickoffUtc = kickoffUtc,
                     CreatedAtUtc = capturedAtUtc,
                     UpdatedAtUtc = capturedAtUtc
@@ -88,6 +89,7 @@ public sealed class PredictionSnapshotWriter
             {
                 match.HomeTeam = unified.HomeOrig;
                 match.AwayTeam = unified.AwayOrig;
+                match.MatchDate = matchDate;
 
                 if (!match.KickoffUtc.HasValue)
                     match.KickoffUtc = kickoffUtc;
