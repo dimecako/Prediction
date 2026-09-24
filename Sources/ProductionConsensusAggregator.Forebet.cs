@@ -23,27 +23,20 @@ public partial class ProductionConsensusAggregator
                 Timeout = TimeSpan.FromSeconds(210)
             };
 
-            //
-            // 1. Прво отвараме нормална Forebet страница преку FlareSolverr.
-            //    Со ова добиваме cookies + точниот browser User-Agent.
-            //
-            string bootstrapUrl =
-                $"https://www.forebet.com/en/football-predictions/predictions-1x2/{targetDate}";
+            Console.WriteLine(
+                $"[Forebet FLARE] GET {jsonUrl}");
 
             var payload = new
             {
                 cmd = "request.get",
-                url = bootstrapUrl,
+                url = jsonUrl,
                 maxTimeout = 180000
             };
 
             string payloadJson =
                 JsonConvert.SerializeObject(payload);
 
-            Console.WriteLine(
-                $"[Forebet SESSION] Bootstrap: {bootstrapUrl}");
-
-            var flareResponse =
+            using var flareResponse =
                 await flareClient.PostAsync(
                     flareSolverrUrl,
                     new StringContent(
@@ -55,18 +48,12 @@ public partial class ProductionConsensusAggregator
                 await flareResponse.Content.ReadAsStringAsync();
 
             Console.WriteLine(
-                $"[Forebet SESSION] FlareSolverr HTTP {(int)flareResponse.StatusCode}");
+                $"[Forebet FLARE] HTTP {(int)flareResponse.StatusCode}");
 
             if (!flareResponse.IsSuccessStatusCode)
-            {
-                Console.WriteLine(
-                    $"[Forebet SESSION] FlareSolverr failed.");
-
                 return "";
-            }
 
-            JObject root =
-                JObject.Parse(flareResult);
+            JObject root = JObject.Parse(flareResult);
 
             JObject solution =
                 root["solution"] as JObject;
@@ -74,138 +61,54 @@ public partial class ProductionConsensusAggregator
             if (solution == null)
             {
                 Console.WriteLine(
-                    "[Forebet SESSION] solution missing.");
+                    "[Forebet FLARE] solution missing.");
 
                 return "";
             }
 
-            string userAgent =
-                solution["userAgent"]?.ToString();
-
-            JArray cookies =
-                solution["cookies"] as JArray;
-
-            Console.WriteLine(
-                $"[Forebet SESSION] Cookies: {cookies?.Count ?? 0}");
-
-            if (string.IsNullOrWhiteSpace(userAgent))
-            {
-                Console.WriteLine(
-                    "[Forebet SESSION] UserAgent missing.");
-
-                return "";
-            }
-
-            //
-            // 2. CookieContainer
-            //
-            var cookieContainer = new CookieContainer();
-
-            if (cookies != null)
-            {
-                foreach (var item in cookies)
-                {
-                    try
-                    {
-                        string name = item["name"]?.ToString();
-                        string value = item["value"]?.ToString();
-
-                        if (string.IsNullOrWhiteSpace(name))
-                            continue;
-
-                        cookieContainer.Add(
-                            new Uri("https://www.forebet.com"),
-                            new System.Net.Cookie(
-                                name,
-                                value ?? ""));
-                    }
-                    catch
-                    {
-                        // Игнорирај проблематична cookie.
-                    }
-                }
-            }
-
-            //
-            // 3. HttpClient со Forebet cookies
-            //
-            using var handler =
-                new HttpClientHandler
-                {
-                    UseCookies = true,
-                    CookieContainer = cookieContainer,
-                    AutomaticDecompression =
-                        DecompressionMethods.GZip |
-                        DecompressionMethods.Deflate
-                };
-
-            using var client =
-                new HttpClient(handler)
-                {
-                    Timeout = TimeSpan.FromSeconds(60)
-                };
-
-            client.DefaultRequestHeaders
-                .TryAddWithoutValidation(
-                    "User-Agent",
-                    userAgent);
-
-            client.DefaultRequestHeaders
-                .TryAddWithoutValidation(
-                    "Accept",
-                    "application/json,text/plain,*/*");
-
-            client.DefaultRequestHeaders
-                .TryAddWithoutValidation(
-                    "Referer",
-                    bootstrapUrl);
-
-            client.DefaultRequestHeaders
-                .TryAddWithoutValidation(
-                    "X-Requested-With",
-                    "XMLHttpRequest");
-
-            Console.WriteLine(
-                $"[Forebet JSON] GET {jsonUrl}");
-
-            using var response =
-                await client.GetAsync(jsonUrl);
+            int status =
+                solution["status"]?.Value<int>() ?? 0;
 
             string content =
-                await response.Content.ReadAsStringAsync();
+                solution["response"]?.ToString() ?? "";
 
             Console.WriteLine(
-                $"[Forebet JSON] HTTP {(int)response.StatusCode}");
+                $"[Forebet JSON] HTTP {status}");
 
             Console.WriteLine(
                 $"[Forebet JSON] Length: {content.Length}");
 
-            if (!response.IsSuccessStatusCode)
+            if (status != 200 ||
+                string.IsNullOrWhiteSpace(content))
+            {
+                return "";
+            }
+
+            // FlareSolverr/browser sometimes returns the JSON
+            // wrapped in a minimal HTML document.
+            int arrayStart = content.IndexOf('[');
+
+            if (arrayStart < 0)
             {
                 Console.WriteLine(
-                    "[Forebet JSON] Request failed.");
+                    "[Forebet JSON] JSON array not found.");
 
                 return "";
             }
 
-            //
-            // Safety check.
-            //
-            string trimmed =
-                content.TrimStart();
+            int arrayEnd = content.LastIndexOf(']');
 
-            if (!trimmed.StartsWith("["))
+            if (arrayEnd < arrayStart)
             {
                 Console.WriteLine(
-                    "[Forebet JSON] Response is not JSON.");
-
-                Console.WriteLine(
-                    content.Substring(
-                        0,
-                        Math.Min(content.Length, 300)));
+                    "[Forebet JSON] Invalid JSON response.");
 
                 return "";
             }
+
+            content = content.Substring(
+                arrayStart,
+                arrayEnd - arrayStart + 1);
 
             return content;
         }
