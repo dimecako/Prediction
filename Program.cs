@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,6 +20,7 @@ using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
 using Prediction.Services;
+using Prediction.ML;
 
 public partial class ProductionConsensusAggregator
 {
@@ -369,6 +370,87 @@ public partial class Program
         }
 
         
+        if (args.Length > 0 &&
+            args[0].Equals(
+                "train-model",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var trainingConnectionString =
+                Environment.GetEnvironmentVariable(
+                    "ConnectionStrings__FootballDb");
+
+            if (string.IsNullOrWhiteSpace(trainingConnectionString))
+            {
+                throw new InvalidOperationException(
+                    "ConnectionStrings__FootballDb environment variable is not configured.");
+            }
+
+            var trainingDbOptions =
+                new DbContextOptionsBuilder<FootballDbContext>()
+                    .UseNpgsql(trainingConnectionString)
+                    .Options;
+
+            await using var trainingDb =
+                new FootballDbContext(trainingDbOptions);
+
+            var trainer =
+                new FootballModelTrainer(trainingDb);
+
+            var trainingRows =
+                await trainer.LoadTrainingDataAsync();
+
+            var matchTrainingRows =
+                await trainer.LoadMatchTrainingDataAsync();
+
+
+            Console.WriteLine(
+                $"[ML] Match-level training rows: {matchTrainingRows.Count}");
+
+            var resultModelTrainer = new ResultModelTrainer();
+            resultModelTrainer.Train(matchTrainingRows);
+
+            var bttsModelTrainer = new BttsModelTrainer();
+            bttsModelTrainer.Train(matchTrainingRows);
+
+            var goalsModelTrainer = new GoalsModelTrainer();
+            goalsModelTrainer.Train(matchTrainingRows);
+            Console.WriteLine();
+            Console.WriteLine(
+                $"[ML] Training rows loaded: {trainingRows.Count}");
+
+            Console.WriteLine(
+                $"[ML] Matches represented: {trainingRows.Select(x => new { x.MatchDate, x.HomeTeam, x.AwayTeam }).Distinct().Count()}");
+
+            Console.WriteLine(
+                $"[ML] Sources represented: {trainingRows.Select(x => x.Source).Distinct().Count()}");
+
+            Console.WriteLine();
+            Console.WriteLine("[ML] Rows by source:");
+
+            foreach (var source in trainingRows
+                .GroupBy(x => x.Source)
+                .OrderByDescending(x => x.Count()))
+            {
+                Console.WriteLine(
+                    $"  {source.Key}: {source.Count()}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("[ML] Actual Result distribution:");
+
+            foreach (var result in trainingRows
+                .GroupBy(x => x.ActualResult)
+                .OrderBy(x => x.Key))
+            {
+                Console.WriteLine(
+                    $"  {result.Key}: {result.Count()}");
+            }
+
+            Console.WriteLine();
+
+            return;
+        }
+
         if (args.Length >= 2 &&
             args[0].Equals(
                 "collect-results",
