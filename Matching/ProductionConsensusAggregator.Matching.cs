@@ -22,7 +22,7 @@ public partial class ProductionConsensusAggregator
         // punctuation
         name = name
             .Replace("'", "")
-            .Replace("’", "")
+            .Replace("вЂ™", "")
             .Replace(".", "")
             .Replace(",", "")
             .Replace("-", " ")
@@ -94,6 +94,41 @@ public partial class ProductionConsensusAggregator
             { "internazionale", "inter" },
 
             // Current cross-source aliases
+
+            // Additional cross-source aliases
+            { "kristianstads ff", "kristianstad" },
+            { "hammarby ttf", "hammarby talang" },
+            { "hammarby talang ff", "hammarby talang" },
+            { "ifk stocksund", "stocksund" },
+            { "dalstorps if", "dalstorps" },
+            { "if boljan", "boljan" },
+            { "dominican rep", "dominican republic" },
+            { "el entag el harby", "al intagh al harbi" },
+            { "tanta sc", "tanta" },
+            { "haras el hodood", "haras al hodoud" },
+            { "dairut", "dayrout" },
+            { "bangor 1876", "bangor city" },
+
+            // Italy
+            { "as bari", "bari" },
+            { "cosenza calcio", "cosenza" },
+
+            // National teams
+            { "fyr macedonia", "north macedonia" },
+
+            // Czech Republic
+            { "aritma prague", "aritma praha" },
+
+            // Sweden
+            { "utsiktens bk", "utsikten" },
+
+            // Germany reserve teams
+            { "vfl bochum b", "bochum b" },
+            { "schalke 04 b", "schalke b" },
+
+            // Denmark
+            { "b93 copenhagen", "b93" },
+            { "b93 kobenhavn", "b93" },
             { "sheffield wed", "sheffield wednesday" },
 
             { "bradford city", "bradford" },
