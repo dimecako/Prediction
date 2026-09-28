@@ -674,19 +674,24 @@ public partial class Program
                     var zulubetTask =
                         aggregator.ParseZuluBetAsync(browser);
 
+                    var vitibetTask =
+                        aggregator.ParseVitibetAsync(browser);
+
                     await Task.WhenAll(
                         forebetTask,
                         statareaTask,
                         predictzTask,
                         wdwTask,
-                        zulubetTask);
+                        zulubetTask,
+                        vitibetTask);
 
                     aggregator.ExecutePipeline(
                         await forebetTask,
                         await statareaTask,
                         await predictzTask,
                         await wdwTask,
-                        await zulubetTask);
+                        await zulubetTask,
+                        await vitibetTask);
 
                     var cliConnectionString =
                         Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb");
@@ -831,20 +836,25 @@ public partial class Program
 
                         var zulubetTask =
                             aggregator.ParseZuluBetAsync(browser);
+                        
+                        var vitibetTask =
+                            aggregator.ParseVitibetAsync(browser);
 
                         await Task.WhenAll(
                             forebetTask,
                             statareaTask,
                             predictzTask,
                             wdwTask,
-                            zulubetTask);
+                            zulubetTask,
+                            vitibetTask);
 
                         aggregator.ExecutePipeline(
                             await forebetTask,
                             await statareaTask,
                             await predictzTask,
                             await wdwTask,
-                            await zulubetTask);
+                            await zulubetTask,
+                            await vitibetTask);
 
                         aggregator.PrintGuaranteedReport();
                     }

@@ -15,5 +15,6 @@ public class UnifiedMatch
         Sources.TryAdd("PredictZ", null);
         Sources.TryAdd("WinDrawWin", null);
         Sources.TryAdd("ZuluBet", null);
+        Sources.TryAdd("Vitibet", null);
     }
 }

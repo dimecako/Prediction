@@ -1,17 +1,18 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 public partial class ProductionConsensusAggregator
 {
-    public void ExecutePipeline(List<SiteMatch> forebet, List<SiteMatch> statarea, List<SiteMatch> predictz, List<SiteMatch> wdw, List<SiteMatch> zulubet)
+    public void ExecutePipeline(List<SiteMatch> forebet, List<SiteMatch> statarea, List<SiteMatch> predictz, List<SiteMatch> wdw, List<SiteMatch> zulubet, List<SiteMatch> vitibet)
     {
-        Console.WriteLine("\n--- ФАЗА НА СПОЈУВАЊЕ (MERGE) ---");
-        Console.WriteLine($"Forebet: {forebet.Count} | PredictZ: {predictz.Count} | Statarea: {statarea.Count} | WinDrawWin: {wdw.Count} | Zulubet: {zulubet.Count}");
+        Console.WriteLine("\n--- MERGE PHASE ---");
+        Console.WriteLine($"Forebet: {forebet.Count} | PredictZ: {predictz.Count} | Statarea: {statarea.Count} | WinDrawWin: {wdw.Count} | Zulubet: {zulubet.Count} | Vitibet: {vitibet.Count}");
 
         foreach (var m in forebet)   MergeMatch(m);
         foreach (var m in predictz)  MergeMatch(m);
         foreach (var m in statarea)  MergeMatch(m);
         foreach (var m in wdw)       MergeMatch(m);
         foreach (var match in zulubet) MergeMatch(match);
+        foreach (var match in vitibet) MergeMatch(match);
 
         Console.WriteLine();
         Console.WriteLine("--- MERGE DIAGNOSTICS ---");
@@ -79,3 +80,5 @@ public partial class ProductionConsensusAggregator
             
     }
 }
+
+
