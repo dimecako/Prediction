@@ -677,13 +677,29 @@ public partial class Program
                     var vitibetTask =
                         aggregator.ParseVitibetAsync(browser);
 
+                    var feedincoTask =
+                        aggregator.ParseFeedincoAsync(browser);
+
+                    var soccerVistaTask =
+                        aggregator.ParseSoccerVistaAsync(browser);
+
+                    var footyStatsTask =
+                        aggregator.ParseFootyStatsAsync(browser);
+
+                    var oddslotTask =
+                        aggregator.ParseOddslotAsync(browser);
+
                     await Task.WhenAll(
                         forebetTask,
                         statareaTask,
                         predictzTask,
                         wdwTask,
                         zulubetTask,
-                        vitibetTask);
+                        vitibetTask,
+                        feedincoTask,
+                        soccerVistaTask,
+                        footyStatsTask,
+                        oddslotTask);
 
                     aggregator.ExecutePipeline(
                         await forebetTask,
@@ -691,7 +707,11 @@ public partial class Program
                         await predictzTask,
                         await wdwTask,
                         await zulubetTask,
-                        await vitibetTask);
+                        await vitibetTask,
+                        await feedincoTask,
+                        await soccerVistaTask,
+                        await footyStatsTask,
+                        await oddslotTask);
 
                     var cliConnectionString =
                         Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb");
@@ -839,6 +859,18 @@ public partial class Program
                         
                         var vitibetTask =
                             aggregator.ParseVitibetAsync(browser);
+                        
+                        var feedincoTask =
+                            aggregator.ParseFeedincoAsync(browser);
+
+                        var soccerVistaTask =
+                            aggregator.ParseSoccerVistaAsync(browser);
+
+                        var footyStatsTask =
+                            aggregator.ParseFootyStatsAsync(browser);
+
+                        var oddslotTask =
+                            aggregator.ParseOddslotAsync(browser);
 
                         await Task.WhenAll(
                             forebetTask,
@@ -846,7 +878,11 @@ public partial class Program
                             predictzTask,
                             wdwTask,
                             zulubetTask,
-                            vitibetTask);
+                            vitibetTask,
+                            feedincoTask,
+                            soccerVistaTask,
+                            footyStatsTask,
+                            oddslotTask);
 
                         aggregator.ExecutePipeline(
                             await forebetTask,
@@ -854,7 +890,11 @@ public partial class Program
                             await predictzTask,
                             await wdwTask,
                             await zulubetTask,
-                            await vitibetTask);
+                            await vitibetTask,
+                            await feedincoTask,
+                            await soccerVistaTask,
+                            await footyStatsTask,
+                            await oddslotTask);
 
                         aggregator.PrintGuaranteedReport();
                     }
@@ -917,3 +957,6 @@ public partial class Program
         await app.RunAsync();
     }    
 }
+
+
+

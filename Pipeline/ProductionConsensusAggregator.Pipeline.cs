@@ -1,11 +1,31 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 public partial class ProductionConsensusAggregator
 {
-    public void ExecutePipeline(List<SiteMatch> forebet, List<SiteMatch> statarea, List<SiteMatch> predictz, List<SiteMatch> wdw, List<SiteMatch> zulubet, List<SiteMatch> vitibet)
+    public void ExecutePipeline(
+    List<SiteMatch> forebet,
+    List<SiteMatch> statarea,
+    List<SiteMatch> predictz,
+    List<SiteMatch> wdw,
+    List<SiteMatch> zulubet,
+    List<SiteMatch> vitibet,
+    List<SiteMatch> feedinco,
+    List<SiteMatch> soccerVista,
+    List<SiteMatch> footyStats,
+    List<SiteMatch> oddslot)
     {
         Console.WriteLine("\n--- MERGE PHASE ---");
-        Console.WriteLine($"Forebet: {forebet.Count} | PredictZ: {predictz.Count} | Statarea: {statarea.Count} | WinDrawWin: {wdw.Count} | Zulubet: {zulubet.Count} | Vitibet: {vitibet.Count}");
+        Console.WriteLine(
+    $"Forebet: {forebet.Count} | " +
+    $"PredictZ: {predictz.Count} | " +
+    $"Statarea: {statarea.Count} | " +
+    $"WinDrawWin: {wdw.Count} | " +
+    $"ZuluBet: {zulubet.Count} | " +
+    $"Vitibet: {vitibet.Count} | " +
+    $"Feedinco: {feedinco.Count} | " +
+    $"SoccerVista: {soccerVista.Count} | " +
+    $"FootyStats: {footyStats.Count} | " +
+    $"Oddslot: {oddslot.Count}");
 
         foreach (var m in forebet)   MergeMatch(m);
         foreach (var m in predictz)  MergeMatch(m);
@@ -80,5 +100,6 @@ public partial class ProductionConsensusAggregator
             
     }
 }
+
 
 
