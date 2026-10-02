@@ -22,7 +22,7 @@ public partial class ProductionConsensusAggregator
         // punctuation
         name = name
             .Replace("'", "")
-            .Replace("вЂ™", "")
+            .Replace("’", "")
             .Replace(".", "")
             .Replace(",", "")
             .Replace("-", " ")
@@ -95,20 +95,20 @@ public partial class ProductionConsensusAggregator
 
             // Current cross-source aliases
 
-            // Additional cross-source aliases
-            { "kristianstads ff", "kristianstad" },
-            { "hammarby ttf", "hammarby talang" },
-            { "hammarby talang ff", "hammarby talang" },
-            { "ifk stocksund", "stocksund" },
-            { "dalstorps if", "dalstorps" },
-            { "if boljan", "boljan" },
-            { "dominican rep", "dominican republic" },
-            { "el entag el harby", "al intagh al harbi" },
-            { "tanta sc", "tanta" },
-            { "haras el hodood", "haras al hodoud" },
-            { "dairut", "dayrout" },
-            { "bangor 1876", "bangor city" },
+            // Vitibet cross-source aliases
+            { "ca tembetary", "tembetary" },
 
+            { "fortaleza ceif", "fortaleza col" },
+            { "fortaleza (col)", "fortaleza col" },
+
+            { "dubocica", "dubocica leskovac" },
+
+            { "ofk bor 1919", "bor 1919" },
+
+            { "metalac gm", "metalac" },
+            { "fk metalac", "metalac" },
+
+            { "ind yumbo", "independiente yumbo" },
             // Italy
             { "as bari", "bari" },
             { "cosenza calcio", "cosenza" },
@@ -130,6 +130,32 @@ public partial class ProductionConsensusAggregator
             { "b93 copenhagen", "b93" },
             { "b93 kobenhavn", "b93" },
             { "sheffield wed", "sheffield wednesday" },
+
+            // Sweden
+            { "kristianstads ff", "kristianstad" },
+            { "kristianstad", "kristianstad" },
+
+            { "hammarby ttf", "hammarby talang" },
+            { "hammarby talang ff", "hammarby talang" },
+
+            { "ifk stocksund", "stocksund" },
+
+            { "dalstorps if", "dalstorps" },
+            { "if boljan", "boljan" },
+
+            // Dominican Republic
+            { "dominican rep", "dominican republic" },
+
+            // Egypt
+            { "el entag el harby", "al intagh al harbi" },
+            { "tanta sc", "tanta" },
+            { "tanta", "tanta" },
+
+            { "haras el hodood", "haras al hodoud" },
+            { "dairut", "dayrout" },
+
+            // Wales
+            { "bangor 1876", "bangor city" },
 
             { "bradford city", "bradford" },
             { "crewe alexandra", "crewe" },
@@ -154,6 +180,11 @@ public partial class ProductionConsensusAggregator
             { "fulham b", "fulham youth" },
             { "ipswich town b", "ipswich town youth" },
             { "ipswich youth", "ipswich town youth" },
+            // Vitibet cross-source aliases
+
+            { "sportivo huracan", "huracan uru" },
+            { "huracan fc (uru)", "huracan uru" },
+            { "atletico tembetary", "tembetary" },           
             { "newcastle youth", "newcastle united youth" }
         };
 

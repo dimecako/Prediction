@@ -64,9 +64,14 @@ public sealed class PredictionSnapshotWriter
                     unified.HomeOrig,
                     unified.AwayOrig);
 
-            var match = await db.Matches
-                .SingleOrDefaultAsync(
-                    x => x.ExternalMatchId == externalMatchId);
+            var match =
+                db.Matches.Local
+                    .FirstOrDefault(
+                        x => x.ExternalMatchId == externalMatchId)
+                ??
+                await db.Matches
+                    .SingleOrDefaultAsync(
+                        x => x.ExternalMatchId == externalMatchId);
 
             if (match == null)
             {
