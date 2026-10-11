@@ -33,6 +33,7 @@ public partial class ProductionConsensusAggregator
         foreach (var m in wdw)       MergeMatch(m);
         foreach (var match in zulubet) MergeMatch(match);
         foreach (var match in vitibet) MergeMatch(match);
+        foreach (var match in feedinco) MergeMatch(match);
 
         Console.WriteLine();
         Console.WriteLine("--- MERGE DIAGNOSTICS ---");

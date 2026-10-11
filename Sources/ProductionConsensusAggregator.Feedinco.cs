@@ -10,6 +10,10 @@ public partial class ProductionConsensusAggregator
 
         try
         {
+            var bttsMatches = await ParseFeedincoBttsAsync(browser);
+            var goalsMatches = await ParseFeedincoGoalsAsync(browser);
+
+
             var date = targetDate;
             var url = $"https://www.feedinco.com/predictions/{date}";
 
@@ -25,6 +29,38 @@ public partial class ProductionConsensusAggregator
             var count = await rows.CountAsync();
 
             Console.WriteLine($"[Feedinco] DOM rows: {count}");
+
+           var previewUrl = await rows
+                .Nth(0)
+                .Locator("a[href*='-prediction']")
+                .First
+                .GetAttributeAsync("href");
+
+            Console.WriteLine($"URL={previewUrl}");
+
+            
+            var matchPage = await browser.NewPageAsync();
+
+            await matchPage.GotoAsync(
+                "https://www.feedinco.com" + previewUrl,
+                new()
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60000
+                });
+
+            var html = await matchPage.ContentAsync();
+
+            Console.WriteLine(
+                html.Contains("Recommended Betting Tips"));
+
+            Console.WriteLine(
+                html.Contains("Both teams to score"));
+
+            Console.WriteLine(
+                html.Contains("Prediction"));
+
+            await matchPage.CloseAsync();
 
             for (var i = 0; i < count; i++)
             {
@@ -88,6 +124,38 @@ public partial class ProductionConsensusAggregator
 
                     MapFeedincoMarket(siteMatch, tip);
 
+                    var btts = bttsMatches.FirstOrDefault(x =>
+                        string.Equals(
+                            x.HomeTeam,
+                            siteMatch.HomeTeam,
+                            StringComparison.OrdinalIgnoreCase)
+                        &&
+                        string.Equals(
+                            x.AwayTeam,
+                            siteMatch.AwayTeam,
+                            StringComparison.OrdinalIgnoreCase));
+
+                    if (btts != null)
+                    {
+                        siteMatch.BttsMarket = btts.BttsMarket;
+                    }
+
+                    var goals = goalsMatches.FirstOrDefault(x =>
+                        string.Equals(
+                            x.HomeTeam,
+                            siteMatch.HomeTeam,
+                            StringComparison.OrdinalIgnoreCase)
+                        &&
+                        string.Equals(
+                            x.AwayTeam,
+                            siteMatch.AwayTeam,
+                            StringComparison.OrdinalIgnoreCase));
+
+                    if (goals != null)
+                    {
+                        siteMatch.GoalsMarket = goals.GoalsMarket;
+                    }
+
                     matches.Add(siteMatch);
                 }
                 catch (Exception ex)
@@ -96,6 +164,15 @@ public partial class ProductionConsensusAggregator
                         $"[Feedinco] Row {i} skipped: {ex.Message}");
                 }
             }
+
+            var withBtts = matches.Count(x =>
+                !string.IsNullOrWhiteSpace(x.BttsMarket));
+
+            var withGoals = matches.Count(x =>
+                !string.IsNullOrWhiteSpace(x.GoalsMarket));
+
+            Console.WriteLine(
+                $"[Feedinco Merge] Result={matches.Count} BTTS={withBtts} Goals={withGoals}");
 
             Console.WriteLine($"[Feedinco] Parsed: {matches.Count}");
 
@@ -111,6 +188,195 @@ public partial class ProductionConsensusAggregator
             await page.CloseAsync();
         }
     }
+
+    public async Task<List<SiteMatch>> ParseFeedincoBttsAsync(
+    IBrowser browser)
+    {
+        var matches = new List<SiteMatch>();
+
+        var page = await browser.NewPageAsync();
+
+        try
+        {
+            await page.GotoAsync(
+                "https://www.feedinco.com/tips/tomorrow/btts",
+                new()
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60000
+                });
+
+                var rows = page.Locator("div[itemprop='broadcastOfEvent']");
+                var count = await rows.CountAsync();
+
+                for (var i = 0; i < count; i++)
+                {
+                    var row = rows.Nth(i);
+
+                    var home = await row
+                        .Locator("[itemprop='homeTeam']")
+                        .InnerTextAsync();
+
+                    var away = await row
+                        .Locator("[itemprop='awayTeam']")
+                        .InnerTextAsync();
+
+                    var tipLocator = row.Locator("[id$='_btts_tip']");
+
+                    if (await tipLocator.CountAsync() == 0)
+                        continue;
+
+                    var tip = await tipLocator.First.InnerTextAsync();
+
+
+                    var chanceLocator = row.Locator(".yellowpercentage");
+
+                    var chance = "";
+
+                    if (await chanceLocator.CountAsync() > 0)
+                    {
+                        chance = await chanceLocator.First.InnerTextAsync();
+                    }
+
+                    int? probability = null;
+
+                    if (!string.IsNullOrWhiteSpace(chance))
+                    {
+                        var m = Regex.Match(chance, @"(\d+)");
+
+                        if (m.Success)
+                            probability = int.Parse(m.Groups[1].Value);
+                    }
+
+                    matches.Add(new SiteMatch
+                    {
+                        SiteName = "Feedinco",
+                        HomeTeam = home.Trim(),
+                        AwayTeam = away.Trim(),
+                        BttsMarket = tip.StartsWith("GG")
+                            ? "YES"
+                            : "NO",
+                        Prob = probability
+                    });
+                }
+
+            Console.WriteLine(
+                $"[Feedinco BTTS] Parsed: {matches.Count}");
+
+            return matches;
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
+    }
+
+        public async Task<List<SiteMatch>> ParseFeedincoGoalsAsync(
+        IBrowser browser)
+            {
+                var matches = new List<SiteMatch>();
+
+                var page = await browser.NewPageAsync();
+
+                try
+                {
+                    await page.GotoAsync(
+                        "https://www.feedinco.com/tips/tomorrow/overunder",
+                        new()
+                        {
+                            WaitUntil = WaitUntilState.DOMContentLoaded,
+                            Timeout = 60000
+                        });
+
+                    var rows = page.Locator("div[itemprop='broadcastOfEvent']");
+                    var count = await rows.CountAsync();
+
+                    for (var i = 0; i < count; i++)
+                    {
+                        try
+                        {
+                            var row = rows.Nth(i);
+
+                            var home = (await row
+                                .Locator("[itemprop='homeTeam']")
+                                .InnerTextAsync()).Trim();
+
+                            var away = (await row
+                                .Locator("[itemprop='awayTeam']")
+                                .InnerTextAsync()).Trim();
+
+                            var tipLocator = row.Locator("[id$='_ou_tip']");
+
+                            if (await tipLocator.CountAsync() == 0)
+                                continue;
+
+                            var tip = (await tipLocator.First.InnerTextAsync())
+                                .Trim();
+
+                            var chanceLocator = row.Locator(".greensm");
+
+                            if (await chanceLocator.CountAsync() == 0)
+                            {
+                                chanceLocator = row.Locator(".yellowpercentage");
+                            }
+
+                            string chance = "";
+
+                            if (await chanceLocator.CountAsync() > 0)
+                            {
+                                chance = await chanceLocator.First.InnerTextAsync();
+                            }
+
+                            int? probability = null;
+
+                            if (!string.IsNullOrWhiteSpace(chance))
+                            {
+                                var match = Regex.Match(chance, @"(\d+)");
+
+                                if (match.Success)
+                                {
+                                    probability =
+                                        int.Parse(match.Groups[1].Value);
+                                }
+                            }
+
+                            matches.Add(new SiteMatch
+                            {
+                                SiteName = "Feedinco",
+                                HomeTeam = home,
+                                AwayTeam = away,
+                                Tip = tip,
+                                Prob = probability,
+                                GoalsMarket =
+                                    tip.StartsWith("Over 1.5", StringComparison.OrdinalIgnoreCase) ? "O1.5" :
+                                    tip.StartsWith("Over 2.5", StringComparison.OrdinalIgnoreCase) ? "O2.5" :
+                                    tip.StartsWith("Over 3.5", StringComparison.OrdinalIgnoreCase) ? "O3.5" :
+                                    tip.StartsWith("Under 1.5", StringComparison.OrdinalIgnoreCase) ? "U1.5" :
+                                    tip.StartsWith("Under 2.5", StringComparison.OrdinalIgnoreCase) ? "U2.5" :
+                                    tip.StartsWith("Under 3.5", StringComparison.OrdinalIgnoreCase) ? "U3.5" :
+                                    null
+                            });
+
+                            Console.WriteLine(
+                                $"{home} | {away} | {tip} | {chance}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(
+                                $"[Feedinco Goals] Row {i} skipped: {ex.Message}");
+                        }
+                    }
+
+                    Console.WriteLine(
+                        $"[Feedinco Goals] Parsed: {matches.Count}");
+
+                    return matches;
+                }
+                finally
+                {
+                    await page.CloseAsync();
+                }
+            }
 
     private static string CleanHomeTeam(string value)
     {

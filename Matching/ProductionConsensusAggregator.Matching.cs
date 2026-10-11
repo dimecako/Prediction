@@ -185,7 +185,19 @@ public partial class ProductionConsensusAggregator
             { "sportivo huracan", "huracan uru" },
             { "huracan fc (uru)", "huracan uru" },
             { "atletico tembetary", "tembetary" },           
-            { "newcastle youth", "newcastle united youth" }
+            { "newcastle youth", "newcastle united youth" },
+
+            // Feedinco aliases
+            { "l mikulas", "liptovsky mikulas" },
+            { "samorin", "stk samorin" },
+
+            { "sp luqueno", "sportivo luqueno" },
+
+            { "dep riestra", "deportivo riestra" },
+
+            { "central cordoba", "central cordoba de santiago" },
+
+            { "sol de america", "sol de america par" }
         };
 
         if (aliases.TryGetValue(name, out string alias))
