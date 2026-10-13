@@ -12,7 +12,8 @@ public partial class ProductionConsensusAggregator
     List<SiteMatch> feedinco,
     List<SiteMatch> soccerVista,
     List<SiteMatch> footyStats,
-    List<SiteMatch> oddslot)
+    List<SiteMatch> oddslot,
+    List<SiteMatch> theDatabetics)
     {
         Console.WriteLine("\n--- MERGE PHASE ---");
         Console.WriteLine(
@@ -25,7 +26,8 @@ public partial class ProductionConsensusAggregator
     $"Feedinco: {feedinco.Count} | " +
     $"SoccerVista: {soccerVista.Count} | " +
     $"FootyStats: {footyStats.Count} | " +
-    $"Oddslot: {oddslot.Count}");
+    $"Oddslot: {oddslot.Count} | " +
+    $"TheDatabetics: {theDatabetics.Count}");
 
         foreach (var m in forebet)   MergeMatch(m);
         foreach (var m in predictz)  MergeMatch(m);
@@ -37,6 +39,7 @@ public partial class ProductionConsensusAggregator
         foreach (var match in soccerVista) MergeMatch(match);
         foreach (var match in footyStats) MergeMatch(match);
         foreach (var match in oddslot) MergeMatch(match);
+        foreach (var match in theDatabetics) MergeMatch(match);
 
         Console.WriteLine();
         Console.WriteLine("--- MERGE DIAGNOSTICS ---");
@@ -104,5 +107,4 @@ public partial class ProductionConsensusAggregator
             
     }
 }
-
 

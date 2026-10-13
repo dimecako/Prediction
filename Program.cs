@@ -689,6 +689,9 @@ public partial class Program
                     var oddslotTask =
                         aggregator.ParseOddslotAsync(browser);
 
+                    var theDatabeticsTask =
+                        aggregator.ParseTheDatabeticsAsync(browser);
+
                     await Task.WhenAll(
                         forebetTask,
                         statareaTask,
@@ -699,7 +702,8 @@ public partial class Program
                         feedincoTask,
                         soccerVistaTask,
                         footyStatsTask,
-                        oddslotTask);
+                        oddslotTask,
+                        theDatabeticsTask);
 
                     aggregator.ExecutePipeline(
                         await forebetTask,
@@ -711,7 +715,8 @@ public partial class Program
                         await feedincoTask,
                         await soccerVistaTask,
                         await footyStatsTask,
-                        await oddslotTask);
+                        await oddslotTask,
+                        await theDatabeticsTask);
 
                     var cliConnectionString =
                         Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb");
@@ -872,6 +877,9 @@ public partial class Program
                         var oddslotTask =
                             aggregator.ParseOddslotAsync(browser);
 
+                        var theDatabeticsTask =
+                            aggregator.ParseTheDatabeticsAsync(browser);
+
                         await Task.WhenAll(
                             forebetTask,
                             statareaTask,
@@ -882,7 +890,8 @@ public partial class Program
                             feedincoTask,
                             soccerVistaTask,
                             footyStatsTask,
-                            oddslotTask);
+                            oddslotTask,
+                            theDatabeticsTask);
 
                         aggregator.ExecutePipeline(
                             await forebetTask,
@@ -894,7 +903,8 @@ public partial class Program
                             await feedincoTask,
                             await soccerVistaTask,
                             await footyStatsTask,
-                            await oddslotTask);
+                            await oddslotTask,
+                            await theDatabeticsTask);
 
                         aggregator.PrintGuaranteedReport();
                     }
@@ -957,6 +967,5 @@ public partial class Program
         await app.RunAsync();
     }    
 }
-
 
 
