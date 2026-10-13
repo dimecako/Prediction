@@ -1,5 +1,20 @@
 pass: prediction_dev
 
+psql -h localhost -U prediction_app -d prediction
+
+sudo -i
+
+pg_ctlcluster 16 main start
+pg_isready -h localhost -p 5432
+
+pg_isready
+
+ps aux | grep postgres
+
+sudo -u postgres psql -l
+
+psql -U postgres -l
+
 docker update --restart unless-stopped flaresolverr
 
 docker ps
@@ -19,7 +34,48 @@ docker run --rm \
   -e OPENAI_API_KEY="$OPENAI_API_KEY" \
   football-ai 2026-09-19
 
+dotnet run -- 2026-09-30
+
 dotnet run --no-build -- 2026-09-21
+
+dotnet run --no-build -- 2026-09-26 2>&1 | Tee-Object -FilePath ".\full-output.txt"
+
+$lines = Get-Content ".\full-output.txt"
+$start = ($lines | Select-String "СИТЕ ПОДАТОЦИ ЗА ДАТУМ").LineNumber
+$lines[($start-1)..($lines.Count-1)] | Set-Content ".\predictions-2026-09-26.txt"
+
+$lines = Get-Content ".\full-output.txt"
+$start = ($lines | Select-String "СИТЕ ПОДАТОЦИ ЗА ДАТУМ").LineNumber
+$lines[($start-1)..($lines.Count-1)] | Set-Content ".\predictions-2026-09-26.xlsx"
+
+code ".\predictions-2026-09-26.txt"
+
+ode ".\predictions-2026-09-26.exls"
+
+dotnet run --no-build -- collect-results 2026-09-23 //za sobiranje rezultati
+
+dotnet run --no-build -- backtest 2026-09-22 
+
+.\daily.ps1 
+
+ili
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\daily.ps1
+
+# Sabajle
+.\daily.ps1
+
+Get-ChildItem *.ps1 ili Get-ChildItem -Recurse -Filter night.ps1
+
+ Get-ExecutionPolicy
+Restricted
+PS C:\Users\Dimitar\Desktop\Prediction-local> Set-ExecutionPolicy -Scope Process Bypass
+
+# Navecer, po zavrsuvanje na natprevarite
+.\night.ps1
+
+dotnet run --no-build -- train-model
 
 docker run -d --name=flaresolverr -p 8191:8191 -e LOG_LEVEL=info ghcr.io/flaresolverr/flaresolverr:latest
 
@@ -39,43 +95,40 @@ docker ps -a --filter "name=flaresolverr"
 
   docker system prune //cistenje
 
-За твојов случај пушти:
+$env:ConnectionStrings__FootballDb
 
-Shell
-1
-docker system prune -a
-Show more lines
+$env:ConnectionStrings__FootballDb='Host=localhost;Port=5432;Database=prediction;Username=prediction_app;Password=prediction_dev' 
 
-Docker ќе ти покаже што планира да избрише и ќе побара:
+if ($env:ConnectionStrings__FootballDb) { "FootballDb OK" } else { "FootballDb MISSING" }
 
-Plain Text
-1
-Are you sure you want to continue? [y/N]
-Show more lines
+$conn = 'Host=localhost;Port=5432;Database=prediction;Username=prediction_app;Password=prediction_dev'
+[Environment]::SetEnvironmentVariable('ConnectionStrings__FootballDb', $conn, 'User')
+$env:ConnectionStrings__FootballDb = $conn
 
-стави:
+Test-NetConnection localhost -Port 5432
 
-Plain Text
-1
-y
-Show more lines
+# PostgreSQL
+DB: prediction
+User: prediction_app
 
-Ова ги чисти unused images, stopped containers, unused networks и unused build cache. Active container-ите не се предмет на prune. docker system prune
+# Linux / terminal env
+export ConnectionStrings__FootballDb='Host=localhost;Port=5432;Database=prediction;Username=prediction_app;Password=prediction_dev'
 
-Не додавај--volumes, бидејќи не ни треба и volumes може да содржат податоци. Prune unused Docker objects
 
-После тоа провери:
+# Check PostgreSQL
+pg_isready -h localhost -p 5432
 
-Shell
-1
-docker system df
-Show more lines
+Test-NetConnection localhost -Port 5432
 
-Можеш дополнително да исчистиш build cache со:
+# Test login
+psql -h localhost -U prediction_app -d prediction
 
-Shell
-1
-docker builder prune -a
-Show more lines
+# Run predictions
+dotnet run --no-build -- 2026-09-24
 
-но прво пушти docker system prune -a, бидејќи тој веќе чисти unused build cache. docker system prune
+# Collect/backtest
+dotnet run --no-build -- backtest 2026-09-22
+
+# FlareSolverr
+docker start flaresolverr
+docker ps

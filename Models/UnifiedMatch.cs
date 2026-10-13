@@ -16,5 +16,9 @@ public class UnifiedMatch
         Sources.TryAdd("WinDrawWin", null);
         Sources.TryAdd("ZuluBet", null);
         Sources.TryAdd("Vitibet", null);
+        Sources.TryAdd("Feedinco", null);
+        Sources.TryAdd("SoccerVista", null);
+        Sources.TryAdd("FootyStats", null);
+        Sources.TryAdd("Oddslot", null);
     }
 }

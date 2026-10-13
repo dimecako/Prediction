@@ -19,7 +19,16 @@ public partial class ProductionConsensusAggregator
             .ToLowerInvariant()
             .Trim();
 
-        // punctuation
+        name = name
+            .Replace("ø", "o")
+            .Replace("ł", "l")
+            .Replace("đ", "d")
+            .Replace("ð", "d")
+            .Replace("þ", "th")
+            .Replace("æ", "ae")
+            .Replace("œ", "oe")
+            .Replace("ß", "ss");
+
         name = name
             .Replace("'", "")
             .Replace("’", "")
@@ -27,8 +36,11 @@ public partial class ProductionConsensusAggregator
             .Replace(",", "")
             .Replace("-", " ")
             .Replace("_", " ")
+            .Replace("/", " ")
+            .Replace("\\", " ")
             .Replace("&", " and ");
 
+        name = Regex.Replace(name, @"[^\p{L}\p{Nd}\s()]", " ");
         name = Regex.Replace(name, @"\s+", " ").Trim();
 
         // -------------------------------------------------

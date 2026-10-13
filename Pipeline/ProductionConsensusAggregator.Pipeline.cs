@@ -34,6 +34,9 @@ public partial class ProductionConsensusAggregator
         foreach (var match in zulubet) MergeMatch(match);
         foreach (var match in vitibet) MergeMatch(match);
         foreach (var match in feedinco) MergeMatch(match);
+        foreach (var match in soccerVista) MergeMatch(match);
+        foreach (var match in footyStats) MergeMatch(match);
+        foreach (var match in oddslot) MergeMatch(match);
 
         Console.WriteLine();
         Console.WriteLine("--- MERGE DIAGNOSTICS ---");
@@ -101,6 +104,5 @@ public partial class ProductionConsensusAggregator
             
     }
 }
-
 
 

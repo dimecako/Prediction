@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ClosedXML.Excel;
 
 public partial class ProductionConsensusAggregator
 {
@@ -117,6 +118,22 @@ public partial class ProductionConsensusAggregator
             .ThenBy(x => x.Match.AwayOrig)
 
             .ToList();
+
+        var exportRows = new List<string[]>();
+
+        string[] headers =
+        {
+            "Натпревар",
+            "Тип",
+            "Гласови",
+            "Confidence",
+            "Prob.",
+            "Извори",
+            "BTTS",
+            "BTTS Prob.",
+            "Goals Prob.",
+            "Goals"
+        };
 
         foreach (var item in orderedMatches)
         {
@@ -300,6 +317,20 @@ public partial class ProductionConsensusAggregator
             string fixture =
                 $"{match.HomeOrig} vs {match.AwayOrig}";
 
+            exportRows.Add(new[]
+            {
+                fixture,
+                finalTip,
+                votesLabel,
+                confidence,
+                probabilityLabel,
+                sourcesLabel,
+                bttsConsensus,
+                bttsProbabilityLabel,
+                goalsProbabilityLabel,
+                goalsConsensus
+            });
+
             Console.WriteLine(
                 $"{fixture,-42} | " +
                 $"{finalTip,-8} | " +
@@ -319,6 +350,123 @@ public partial class ProductionConsensusAggregator
 
         Console.WriteLine(
             $"TOTAL MATCHES: {orderedMatches.Count}");
+
+        string exportPath =
+            Path.GetFullPath($"predictions-{targetDate}.xlsx");
+
+        ExportExcelReport(exportPath, targetDate, headers, exportRows);
+
+        Console.WriteLine($"[EXCEL] Report exported: {exportPath}");
+    }
+
+    private static void ExportExcelReport(
+        string exportPath,
+        string reportDate,
+        IReadOnlyList<string> headers,
+        IReadOnlyList<string[]> rows)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Predictions");
+        const int columnCount = 10;
+
+        worksheet.Cell(1, 1).Value = "FOOTBALL PREDICTIONS";
+        worksheet.Range(1, 1, 1, columnCount).Merge();
+        worksheet.Cell(1, 1).Style.Font.Bold = true;
+        worksheet.Cell(1, 1).Style.Font.FontSize = 18;
+        worksheet.Cell(1, 1).Style.Font.FontColor = XLColor.White;
+        worksheet.Cell(1, 1).Style.Fill.BackgroundColor =
+            XLColor.FromHtml("#17365D");
+        worksheet.Cell(1, 1).Style.Alignment.Vertical =
+            XLAlignmentVerticalValues.Center;
+        worksheet.Row(1).Height = 32;
+
+        worksheet.Cell(2, 1).Value =
+            $"Датум: {reportDate}     |     Вкупно натпревари: {rows.Count}";
+        worksheet.Range(2, 1, 2, columnCount).Merge();
+        worksheet.Cell(2, 1).Style.Font.FontColor =
+            XLColor.FromHtml("#44546A");
+        worksheet.Cell(2, 1).Style.Font.Italic = true;
+        worksheet.Row(2).Height = 23;
+
+        const int headerRow = 4;
+        for (int column = 0; column < headers.Count; column++)
+        {
+            worksheet.Cell(headerRow, column + 1).Value = headers[column];
+        }
+
+        for (int row = 0; row < rows.Count; row++)
+        {
+            for (int column = 0; column < rows[row].Length; column++)
+            {
+                worksheet.Cell(headerRow + row + 1, column + 1).Value =
+                    rows[row][column];
+            }
+        }
+
+        int lastRow = headerRow + rows.Count;
+        var tableRange = worksheet.Range(headerRow, 1, lastRow, columnCount);
+        worksheet.Row(headerRow).Height = 30;
+        tableRange.FirstRow().Style.Fill.BackgroundColor =
+            XLColor.FromHtml("#1F4E78");
+        tableRange.FirstRow().Style.Font.FontColor = XLColor.White;
+        tableRange.FirstRow().Style.Font.Bold = true;
+        worksheet.Row(headerRow).Style.Alignment.WrapText = true;
+        worksheet.Row(headerRow).Style.Alignment.Vertical =
+            XLAlignmentVerticalValues.Center;
+
+        if (rows.Count > 0)
+        {
+            var table = tableRange.CreateTable("PredictionsTable");
+            table.Theme = XLTableTheme.TableStyleMedium2;
+            table.ShowAutoFilter = true;
+
+            var dataRange =
+                worksheet.Range(headerRow + 1, 1, lastRow, columnCount);
+            dataRange.Style.Alignment.Vertical =
+                XLAlignmentVerticalValues.Center;
+            dataRange.Style.Alignment.WrapText = true;
+            dataRange.Style.Border.BottomBorder =
+                XLBorderStyleValues.Hair;
+
+            for (int row = headerRow + 1; row <= lastRow; row++)
+            {
+                worksheet.Row(row).Height = 30;
+                var confidenceCell = worksheet.Cell(row, 4);
+                confidenceCell.Style.Font.Bold = true;
+                confidenceCell.Style.Font.FontColor =
+                    confidenceCell.GetString() switch
+                    {
+                        "VERY STRONG" or "STRONG" => XLColor.FromHtml("#008000"),
+                        "MEDIUM" => XLColor.FromHtml("#BF9000"),
+                        "WEAK" or "SINGLE SOURCE" => XLColor.FromHtml("#C65911"),
+                        "CONFLICT" => XLColor.FromHtml("#C00000"),
+                        _ => XLColor.Black
+                    };
+
+                if (worksheet.Cell(row, 2).GetString() == "CONFLICT")
+                {
+                    worksheet.Cell(row, 2).Style.Font.FontColor =
+                        XLColor.FromHtml("#C00000");
+                    worksheet.Cell(row, 2).Style.Font.Bold = true;
+                }
+            }
+        }
+
+        worksheet.Column(1).Width = 37;
+        worksheet.Column(2).Width = 13;
+        worksheet.Column(3).Width = 11;
+        worksheet.Column(4).Width = 18;
+        worksheet.Column(5).Width = 12;
+        worksheet.Column(6).Width = 42;
+        worksheet.Column(7).Width = 23;
+        worksheet.Column(8).Width = 14;
+        worksheet.Column(9).Width = 14;
+        worksheet.Column(10).Width = 23;
+        worksheet.SheetView.FreezeRows(headerRow);
+        worksheet.PageSetup.PageOrientation = XLPageOrientation.Landscape;
+        worksheet.PageSetup.FitToPages(1, 0);
+
+        workbook.SaveAs(exportPath);
     }
     
     private void PrintPotentialMergeMisses()
