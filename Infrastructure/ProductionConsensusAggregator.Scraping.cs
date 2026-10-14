@@ -8,16 +8,27 @@ using Newtonsoft.Json;
 
 public partial class ProductionConsensusAggregator
 {
+    private HttpClient CreateFlareSolverrClient()
+    {
+        var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(210)
+        };
+
+        string? apiKey = Environment.GetEnvironmentVariable("FLARESOLVERR_API_KEY");
+        if (!string.IsNullOrWhiteSpace(apiKey))
+            client.DefaultRequestHeaders.Add("X-FlareSolverr-Key", apiKey);
+
+        return client;
+    }
+
     private async Task<HtmlDocument> GetPageFromFlareSolverrCore(string url)
     {
         await flareSemaphore.WaitAsync();
 
         try
         {
-            using var client = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(210)
-            };
+            using var client = CreateFlareSolverrClient();
 
             var payload = new
             {
@@ -124,10 +135,7 @@ public partial class ProductionConsensusAggregator
 
         try
         {
-            using var client = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(210)
-            };
+            using var client = CreateFlareSolverrClient();
 
             var payload = new
             {

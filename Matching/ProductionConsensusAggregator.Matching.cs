@@ -106,6 +106,25 @@ public partial class ProductionConsensusAggregator
             { "internazionale", "inter" },
 
             // Current cross-source aliases
+            { "rigas futbola skola", "rigas fs" },
+            { "supernova riga", "super nova" },
+            { "din minsk", "dinamo minsk" },
+            { "din zagreb", "dinamo zagreb" },
+            { "al ahli benghazi", "al ahly benghazi" },
+            { "al tahaddi", "tahaddy" },
+            { "al arabi irbid jordan", "al arabi irbid" },
+            { "arabi irbid", "al arabi irbid" },
+            { "shabab al ordon", "shabab al urdun" },
+            { "al kharitiyath", "al kharaitiyat" },
+            { "kharitiyath", "al kharaitiyat" },
+            { "kharaitiyat", "al kharaitiyat" },
+            { "atletico mg", "atletico mineiro" },
+            { "atletico torque", "montevideo city torque" },
+            { "ca torque", "montevideo city torque" },
+            { "bangkok glass", "pathum united" },
+            { "tampines", "tampines rovers" },
+            { "atl nacional", "atletico nacional" },
+            { "real san andres", "real santander" },
 
             // Vitibet cross-source aliases
             { "ca tembetary", "tembetary" },

@@ -1,0 +1,14 @@
+.git
+.vs
+.vscode
+bin
+obj
+TestResults
+*.xlsx
+*.zip
+*.log
+*.txt
+*.ps1
+rebuild and start
+.env
+.env.*

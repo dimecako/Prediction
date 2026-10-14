@@ -18,10 +18,7 @@ public partial class ProductionConsensusAggregator
 
         try
         {
-            using var flareClient = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(210)
-            };
+            using var flareClient = CreateFlareSolverrClient();
 
             Console.WriteLine(
                 $"[Forebet FLARE] GET {jsonUrl}");

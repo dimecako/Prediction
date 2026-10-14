@@ -768,6 +768,18 @@ public partial class Program
 
         var app = builder.Build();
 
+        ConfigureWebAccess(app);
+
+        if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
+        {
+            if (string.IsNullOrWhiteSpace(connectionString))
+                throw new InvalidOperationException("ConnectionStrings__FootballDb is not configured.");
+
+            await using var scope = app.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<FootballDbContext>();
+            await db.Database.MigrateAsync();
+        }
+
         // Render go dava PORT kako environment variable.
         // Lokalno koristime 10000.
         string port =
@@ -906,6 +918,11 @@ public partial class Program
                             await oddslotTask,
                             await theDatabeticsTask);
 
+                        await using var scope = app.Services.CreateAsyncScope();
+                        var db = scope.ServiceProvider.GetRequiredService<FootballDbContext>();
+                        var snapshotWriter = new PredictionSnapshotWriter(db);
+                        await snapshotWriter.SaveAsync(targetDate, aggregator.UnifiedMatches);
+
                         aggregator.PrintGuaranteedReport();
                     }
                     finally
@@ -967,5 +984,4 @@ public partial class Program
         await app.RunAsync();
     }    
 }
-
 
