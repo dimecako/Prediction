@@ -68,52 +68,58 @@ public partial class ProductionConsensusAggregator
             Console.WriteLine(
                 $"[Oddslot] Match pages: {matchLinks.Count}");
 
-            Task<HtmlDocument>[] pageTasks =
-                matchLinks
-                    .Select(link =>
-                        GetPageFromFlareSolverr(
-                            new Uri(
-                                new Uri(baseUrl),
-                                link)
-                            .ToString()))
-                    .ToArray();
-
-            HtmlDocument[] pages =
-                await Task.WhenAll(pageTasks);
-
             int invalidPages = 0;
+            const int pageBatchSize = 4;
 
-            foreach (HtmlDocument? page in pages)
+            for (int offset = 0; offset < matchLinks.Count; offset += pageBatchSize)
             {
-                try
-                {
-                    SiteMatch? match =
-                        ParseOddslotMatchPage(page);
+                Task<HtmlDocument>[] pageTasks =
+                    matchLinks
+                        .Skip(offset)
+                        .Take(pageBatchSize)
+                        .Select(link =>
+                            GetPageFromFlareSolverr(
+                                new Uri(
+                                    new Uri(baseUrl),
+                                    link)
+                                .ToString()))
+                        .ToArray();
 
-                    if (match == null)
+                HtmlDocument[] pages =
+                    await Task.WhenAll(pageTasks);
+
+                foreach (HtmlDocument? page in pages)
+                {
+                    try
+                    {
+                        SiteMatch? match =
+                            ParseOddslotMatchPage(page);
+
+                        if (match == null)
+                        {
+                            invalidPages++;
+                            continue;
+                        }
+
+                        bool exists = matches.Any(existing =>
+                            string.Equals(
+                                existing.HomeTeam,
+                                match.HomeTeam,
+                                StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(
+                                existing.AwayTeam,
+                                match.AwayTeam,
+                                StringComparison.OrdinalIgnoreCase));
+
+                        if (!exists)
+                            matches.Add(match);
+                    }
+                    catch (Exception ex)
                     {
                         invalidPages++;
-                        continue;
+                        Console.WriteLine(
+                            $"[Oddslot] Match page error: {ex.Message}");
                     }
-
-                    bool exists = matches.Any(existing =>
-                        string.Equals(
-                            existing.HomeTeam,
-                            match.HomeTeam,
-                            StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals(
-                            existing.AwayTeam,
-                            match.AwayTeam,
-                            StringComparison.OrdinalIgnoreCase));
-
-                    if (!exists)
-                        matches.Add(match);
-                }
-                catch (Exception ex)
-                {
-                    invalidPages++;
-                    Console.WriteLine(
-                        $"[Oddslot] Match page error: {ex.Message}");
                 }
             }
 

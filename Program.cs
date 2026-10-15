@@ -48,8 +48,33 @@ public partial class Program
     private static readonly SemaphoreSlim analysisLock =
         new SemaphoreSlim(1, 1);
 
+    private static readonly SemaphoreSlim scraperConcurrency =
+        new SemaphoreSlim(3, 3);
+
+    private static async Task<List<SiteMatch>> RunScraperAsync(
+        Func<Task<List<SiteMatch>>> scrape)
+    {
+        await scraperConcurrency.WaitAsync();
+
+        try
+        {
+            return await scrape();
+        }
+        finally
+        {
+            scraperConcurrency.Release();
+        }
+    }
+
     public static async Task Main(string[] args)
     {
+        if (args.Length > 0 &&
+            args[0].Equals("weighted-consensus", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunWeightedConsensusAsync(args);
+            return;
+        }
+
         if (args.Length >= 2 &&
     args[0].Equals(
         "db-status",
@@ -364,6 +389,11 @@ public partial class Program
             }
 
             Console.WriteLine();
+            await PrintWeightedConsensusAsync(
+                backtestDb,
+                backtestDate,
+                showFixtures: false);
+
             Console.WriteLine("[BACKTEST] Done.");
 
             return;
@@ -660,37 +690,37 @@ public partial class Program
                 try
                 {
                     var forebetTask =
-                        aggregator.ParseForebetAsync(browser);
+                        RunScraperAsync(() => aggregator.ParseForebetAsync(browser));
 
                     var statareaTask =
-                        aggregator.ParseStatareaAsync(browser);
+                        RunScraperAsync(() => aggregator.ParseStatareaAsync(browser));
 
                     var predictzTask =
-                        aggregator.ParsePredictzAsync(browser);
+                        RunScraperAsync(() => aggregator.ParsePredictzAsync(browser));
 
                     var wdwTask =
-                        aggregator.ParseWinDrawWinAsync(browser);
+                        RunScraperAsync(() => aggregator.ParseWinDrawWinAsync(browser));
 
                     var zulubetTask =
-                        aggregator.ParseZuluBetAsync(browser);
+                        RunScraperAsync(() => aggregator.ParseZuluBetAsync(browser));
 
                     var vitibetTask =
-                        aggregator.ParseVitibetAsync(browser);
+                        RunScraperAsync(() => aggregator.ParseVitibetAsync(browser));
 
                     var feedincoTask =
-                        aggregator.ParseFeedincoAsync(browser);
+                        RunScraperAsync(() => aggregator.ParseFeedincoAsync(browser));
 
                     var soccerVistaTask =
-                        aggregator.ParseSoccerVistaAsync(browser);
+                        RunScraperAsync(() => aggregator.ParseSoccerVistaAsync(browser));
 
                     var footyStatsTask =
-                        aggregator.ParseFootyStatsAsync(browser);
+                        RunScraperAsync(() => aggregator.ParseFootyStatsAsync(browser));
 
                     var oddslotTask =
-                        aggregator.ParseOddslotAsync(browser);
+                        RunScraperAsync(() => aggregator.ParseOddslotAsync(browser));
 
                     var theDatabeticsTask =
-                        aggregator.ParseTheDatabeticsAsync(browser);
+                        RunScraperAsync(() => aggregator.ParseTheDatabeticsAsync(browser));
 
                     await Task.WhenAll(
                         forebetTask,
@@ -860,37 +890,37 @@ public partial class Program
                     try
                     {
                         var forebetTask =
-                            aggregator.ParseForebetAsync(browser);
+                            RunScraperAsync(() => aggregator.ParseForebetAsync(browser));
 
                         var statareaTask =
-                            aggregator.ParseStatareaAsync(browser);
+                            RunScraperAsync(() => aggregator.ParseStatareaAsync(browser));
 
                         var predictzTask =
-                            aggregator.ParsePredictzAsync(browser);
+                            RunScraperAsync(() => aggregator.ParsePredictzAsync(browser));
 
                         var wdwTask =
-                            aggregator.ParseWinDrawWinAsync(browser);
+                            RunScraperAsync(() => aggregator.ParseWinDrawWinAsync(browser));
 
                         var zulubetTask =
-                            aggregator.ParseZuluBetAsync(browser);
+                            RunScraperAsync(() => aggregator.ParseZuluBetAsync(browser));
                         
                         var vitibetTask =
-                            aggregator.ParseVitibetAsync(browser);
+                            RunScraperAsync(() => aggregator.ParseVitibetAsync(browser));
                         
                         var feedincoTask =
-                            aggregator.ParseFeedincoAsync(browser);
+                            RunScraperAsync(() => aggregator.ParseFeedincoAsync(browser));
 
                         var soccerVistaTask =
-                            aggregator.ParseSoccerVistaAsync(browser);
+                            RunScraperAsync(() => aggregator.ParseSoccerVistaAsync(browser));
 
                         var footyStatsTask =
-                            aggregator.ParseFootyStatsAsync(browser);
+                            RunScraperAsync(() => aggregator.ParseFootyStatsAsync(browser));
 
                         var oddslotTask =
-                            aggregator.ParseOddslotAsync(browser);
+                            RunScraperAsync(() => aggregator.ParseOddslotAsync(browser));
 
                         var theDatabeticsTask =
-                            aggregator.ParseTheDatabeticsAsync(browser);
+                            RunScraperAsync(() => aggregator.ParseTheDatabeticsAsync(browser));
 
                         await Task.WhenAll(
                             forebetTask,
@@ -984,4 +1014,3 @@ public partial class Program
         await app.RunAsync();
     }    
 }
-
