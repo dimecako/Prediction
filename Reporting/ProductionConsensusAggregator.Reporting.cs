@@ -5,18 +5,27 @@ using ClosedXML.Excel;
 
 public partial class ProductionConsensusAggregator
 {
-    private string GetConfidenceLevel(int matchingVotes, int totalVotes)
+    public static string GetConfidenceLevel(
+        int matchingVotes,
+        int totalVotes,
+        bool conflict = false)
     {
-        if (totalVotes == 4 && matchingVotes == 4)
+        if (totalVotes <= 0)
+            return "WEAK";
+
+        if (totalVotes == 1)
+            return "SINGLE SOURCE";
+
+        if (conflict)
+            return "CONFLICT";
+
+        if (matchingVotes >= 4 && matchingVotes * 5 >= totalVotes * 4)
             return "VERY STRONG";
 
-        if (totalVotes == 3 && matchingVotes == 3)
+        if (matchingVotes >= 3 && matchingVotes * 3 >= totalVotes * 2)
             return "STRONG";
 
-        if (totalVotes == 4 && matchingVotes == 3)
-            return "STRONG";
-
-        if (totalVotes == 2 && matchingVotes == 2)
+        if (matchingVotes >= 2 && matchingVotes * 2 > totalVotes)
             return "MEDIUM";
 
         return "WEAK";
@@ -156,36 +165,15 @@ public partial class ProductionConsensusAggregator
                 tipGroups.Count > 1 &&
                 tipGroups[0].Count() == tipGroups[1].Count();
 
-            string finalTip;
-            string confidence;
+            string finalTip =
+                totalVotes == 1
+                    ? tips[0]
+                    : conflict
+                        ? "CONFLICT"
+                        : tipGroups.First().Key;
 
-            if (totalVotes == 1)
-            {
-                finalTip = tips[0];
-                confidence = "SINGLE SOURCE";
-            }
-            else if (conflict)
-            {
-                finalTip = "CONFLICT";
-                confidence = "CONFLICT";
-            }
-            else
-            {
-                finalTip = tipGroups.First().Key;
-
-                if (totalVotes == 4 && matchingVotes == 4)
-                    confidence = "VERY STRONG";
-                else if (totalVotes == 4 && matchingVotes == 3)
-                    confidence = "STRONG";
-                else if (totalVotes == 3 && matchingVotes == 3)
-                    confidence = "STRONG";
-                else if (totalVotes == 3 && matchingVotes == 2)
-                    confidence = "MEDIUM";
-                else if (totalVotes == 2 && matchingVotes == 2)
-                    confidence = "MEDIUM";
-                else
-                    confidence = "WEAK";
-            }
+            string confidence =
+                GetConfidenceLevel(matchingVotes, totalVotes, conflict);
 
             var probabilityValues = activeSources
                 .Where(x =>
@@ -209,13 +197,17 @@ public partial class ProductionConsensusAggregator
                 string.Join(",",
                     activeSources.Select(x => x.Key));
 
+            var allPresentSources = match.Sources
+                .Where(x => x.Value != null)
+                .ToList();
+
             // -----------------------------
             // BTTS consensus
             // -----------------------------
 
             var bttsList = new List<string>();
 
-            foreach (var source in activeSources)
+            foreach (var source in allPresentSources)
             {
                 var src = source.Value;
 
@@ -272,7 +264,7 @@ public partial class ProductionConsensusAggregator
             // GOALS consensus
             // -----------------------------
 
-            var goalsList = activeSources
+            var goalsList = allPresentSources
                 .Where(x =>
                     !string.IsNullOrWhiteSpace(
                         x.Value.GoalsMarket) &&

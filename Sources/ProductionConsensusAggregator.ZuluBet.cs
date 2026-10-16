@@ -41,6 +41,11 @@ public partial class ProductionConsensusAggregator
                     "dd-MM",
                     CultureInfo.InvariantCulture);
 
+            string prevShortDate =
+                parsedDate.AddDays(-1).ToString(
+                    "dd-MM",
+                    CultureInfo.InvariantCulture);
+
             string url =
                 $"https://www.zulubet.com/tips-{zuluDate}.html";
 
@@ -123,9 +128,21 @@ public partial class ProductionConsensusAggregator
                             CleanZuluBetText(
                                 cells[0].InnerText);
 
-                        if (!dateText.Contains(
+                        bool isTargetDateRow =
+                            dateText.Contains(
                                 targetShortDate,
-                                StringComparison.Ordinal))
+                                StringComparison.Ordinal) ||
+                            Regex.IsMatch(
+                                dateText,
+                                @"^\d{1,2}:\d{2}$") ||
+                            (dateText.Contains(
+                                prevShortDate,
+                                StringComparison.Ordinal) &&
+                             Regex.IsMatch(
+                                dateText,
+                                @"\b(21|22|23):\d{2}\b"));
+
+                        if (!isTargetDateRow)
                         {
                             // Ignore headers and rows for other dates.
                             if (Regex.IsMatch(

@@ -22,7 +22,9 @@ public partial class ProductionConsensusAggregator
         return client;
     }
 
-    private async Task<HtmlDocument> GetPageFromFlareSolverrCore(string url)
+    private async Task<HtmlDocument> GetPageFromFlareSolverrCore(
+        string url,
+        int waitInSeconds = 0)
     {
         await flareSemaphore.WaitAsync();
 
@@ -30,12 +32,20 @@ public partial class ProductionConsensusAggregator
         {
             using var client = CreateFlareSolverrClient();
 
-            var payload = new
-            {
-                cmd = "request.get",
-                url = url,
-                maxTimeout = 180000
-            };
+            object payload = waitInSeconds > 0
+                ? new
+                {
+                    cmd = "request.get",
+                    url = url,
+                    waitInSeconds = waitInSeconds,
+                    maxTimeout = 180000
+                }
+                : new
+                {
+                    cmd = "request.get",
+                    url = url,
+                    maxTimeout = 180000
+                };
 
             string json = JsonConvert.SerializeObject(payload);
 
@@ -74,6 +84,14 @@ public partial class ProductionConsensusAggregator
             Console.WriteLine(
                 $"[FlareSolverr] HTML length: {html.Length}");
 
+            if (html.Contains("<title>Robot Challenge Screen</title>", StringComparison.OrdinalIgnoreCase) ||
+                html.Contains("sgchallenge=", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine(
+                    "[FlareSolverr] SiteGround Robot Challenge Screen still active; will retry.");
+                return null;
+            }
+
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
 
@@ -92,7 +110,9 @@ public partial class ProductionConsensusAggregator
         }
     }
     
-    private async Task<HtmlDocument> GetPageFromFlareSolverr(string url)
+    private async Task<HtmlDocument> GetPageFromFlareSolverr(
+        string url,
+        int waitInSeconds = 0)
     {
         const int maxAttempts = 3;
 
@@ -100,7 +120,11 @@ public partial class ProductionConsensusAggregator
         {
             try
             {
-                var doc = await GetPageFromFlareSolverrCore(url);
+                int effectiveWait = waitInSeconds > 0
+                    ? waitInSeconds + (attempt - 1) * 3
+                    : 0;
+
+                var doc = await GetPageFromFlareSolverrCore(url, effectiveWait);
 
                 if (doc != null)
                     return doc;

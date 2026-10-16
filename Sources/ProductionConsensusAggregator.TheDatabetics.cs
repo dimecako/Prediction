@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using Microsoft.Playwright;
@@ -34,33 +33,61 @@ public partial class ProductionConsensusAggregator
             return matches;
         }
 
-        string dateSlug =
+        string dateSlugPadded =
             parsedDate.ToString(
                 "dd-MMMM-yyyy",
                 CultureInfo.InvariantCulture)
             .ToLowerInvariant();
 
-        var page = await browser.NewPageAsync();
+        string dateSlugUnpadded =
+            parsedDate.ToString(
+                "d-MMMM-yyyy",
+                CultureInfo.InvariantCulture)
+            .ToLowerInvariant();
+
+        List<HtmlNode>? SelectTargetCards(HtmlDocument? document)
+        {
+            return document?.DocumentNode
+                .SelectNodes("//a[contains(concat(' ', normalize-space(@class), ' '), ' tm__card ')]")
+                ?.Where(node =>
+                {
+                    string href = HtmlEntity.DeEntitize(node.GetAttributeValue("href", ""));
+                    return href.Contains($"-{dateSlugPadded}/", StringComparison.OrdinalIgnoreCase) ||
+                           href.Contains($"-{dateSlugUnpadded}/", StringComparison.OrdinalIgnoreCase);
+                })
+                .ToList();
+        }
 
         try
         {
             Console.WriteLine();
             Console.WriteLine($"[TheDatabetics] Loading {url}");
 
-            await page.GotoAsync(
-                url,
-                new PageGotoOptions
+            HtmlDocument? doc =
+                await GetPageFromFlareSolverr(url, waitInSeconds: 12);
+
+            var cardNodes = SelectTargetCards(doc);
+
+            if (cardNodes == null || cardNodes.Count == 0)
+            {
+                string? fallbackUrl = GetTheDatabeticsFallbackListingUrl(parsedDate, url);
+                if (fallbackUrl != null)
                 {
-                    WaitUntil = WaitUntilState.DOMContentLoaded,
-                    Timeout = 60000
-                });
+                    Console.WriteLine(
+                        $"[TheDatabetics] No cards for {targetDate} on {url}; checking {fallbackUrl}");
 
-            var cards = page.Locator(
-                $"a.tm__card[href*='-{dateSlug}/']");
+                    HtmlDocument? fallbackDoc =
+                        await GetPageFromFlareSolverr(fallbackUrl, waitInSeconds: 12);
 
-            int count = await cards.CountAsync();
+                    var fallbackCards = SelectTargetCards(fallbackDoc);
+                    if (fallbackCards != null && fallbackCards.Count > 0)
+                    {
+                        cardNodes = fallbackCards;
+                    }
+                }
+            }
 
-            if (count == 0)
+            if (cardNodes == null || cardNodes.Count == 0)
             {
                 Console.WriteLine(
                     $"[TheDatabetics] No prediction cards found for {targetDate}.");
@@ -69,49 +96,40 @@ public partial class ProductionConsensusAggregator
             }
 
             int invalidCards = 0;
-            var detailUrls =
-                new Dictionary<SiteMatch, string>();
 
-            for (int index = 0; index < count; index++)
+            foreach (var card in cardNodes)
             {
                 try
                 {
-                    var card = cards.Nth(index);
-                    var teams = card.Locator(".tm__team-name");
+                    var teams = card.SelectNodes(
+                        ".//*[contains(concat(' ', normalize-space(@class), ' '), ' tm__team-name ')]");
 
-                    if (await teams.CountAsync() != 2)
+                    if (teams == null || teams.Count < 2)
                     {
                         invalidCards++;
                         continue;
                     }
 
-                    string home =
-                        CleanPredictionText(
-                            await teams.Nth(0).InnerTextAsync());
+                    string home = CleanPredictionText(teams[0].InnerText);
+                    string away = CleanPredictionText(teams[1].InnerText);
 
-                    string away =
-                        CleanPredictionText(
-                            await teams.Nth(1).InnerTextAsync());
-
-                    string prediction =
-                        CleanPredictionText(
-                            await card
-                                .Locator(".tm__pred")
-                                .InnerTextAsync());
+                    string prediction = CleanPredictionText(
+                        card.SelectSingleNode(
+                            ".//*[contains(concat(' ', normalize-space(@class), ' '), ' tm__pred ')]")
+                        ?.InnerText);
 
                     string tip = prediction.ToUpperInvariant() switch
                     {
-                        "HOME WIN" => "1",
+                        "HOME WIN" or "HOME OR DRAW" or "1X" => "1",
                         "DRAW" => "X",
-                        "AWAY WIN" => "2",
+                        "AWAY WIN" or "AWAY OR DRAW" or "X2" => "2",
                         _ => "-"
                     };
 
-                    string probabilityText =
-                        CleanPredictionText(
-                            await card
-                                .Locator(".tm__pct")
-                                .InnerTextAsync());
+                    string probabilityText = CleanPredictionText(
+                        card.SelectSingleNode(
+                            ".//*[contains(concat(' ', normalize-space(@class), ' '), ' tm__pct ')]")
+                        ?.InnerText);
 
                     Match probabilityMatch =
                         Regex.Match(
@@ -126,8 +144,8 @@ public partial class ProductionConsensusAggregator
                             ? parsedProbability
                             : null;
 
-                    string? detailUrl =
-                        await card.GetAttributeAsync("href");
+                    string detailUrl = HtmlEntity.DeEntitize(
+                        card.GetAttributeValue("href", ""));
 
                     if (string.IsNullOrWhiteSpace(home) ||
                         string.IsNullOrWhiteSpace(away) ||
@@ -137,6 +155,19 @@ public partial class ProductionConsensusAggregator
                         invalidCards++;
                         continue;
                     }
+
+                    bool exists = matches.Any(existing =>
+                        string.Equals(
+                            existing.HomeTeam,
+                            home,
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(
+                            existing.AwayTeam,
+                            away,
+                            StringComparison.OrdinalIgnoreCase));
+
+                    if (exists)
+                        continue;
 
                     var match = new SiteMatch
                     {
@@ -152,58 +183,23 @@ public partial class ProductionConsensusAggregator
                     };
 
                     matches.Add(match);
-                    detailUrls.Add(match, detailUrl);
                 }
                 catch (Exception ex)
                 {
                     invalidCards++;
                     Console.WriteLine(
-                        $"[TheDatabetics] Card {index} skipped: {ex.Message}");
+                        $"[TheDatabetics] Card skipped: {ex.Message}");
                 }
             }
-
-            using var client = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(30)
-            };
-
-            client.DefaultRequestHeaders.UserAgent.Add(
-                new ProductInfoHeaderValue(
-                    "PredictionAggregator",
-                    "1.0"));
-
-            using var requestSemaphore = new SemaphoreSlim(6);
-
-            await Task.WhenAll(
-                matches.Select(match =>
-                    PopulateTheDatabeticsMarketsAsync(
-                        client,
-                        requestSemaphore,
-                        match,
-                        detailUrls[match])));
-
-            int withBtts =
-                matches.Count(match =>
-                    match.BttsMarket != "-");
-
-            int withGoals =
-                matches.Count(match =>
-                    match.GoalsMarket != "-");
 
             Console.WriteLine(
                 $"[TheDatabetics] Parsed matches: {matches.Count}");
             Console.WriteLine(
                 $"[TheDatabetics] Invalid cards: {invalidCards}");
-            Console.WriteLine(
-                $"[TheDatabetics] Markets: BTTS={withBtts} Goals={withGoals}");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[TheDatabetics ERROR] {ex}");
-        }
-        finally
-        {
-            await page.CloseAsync();
         }
 
         return matches;
@@ -216,7 +212,7 @@ public partial class ProductionConsensusAggregator
             "https://thedatabetics.com/football-predictions/";
 
         int dayOffset =
-            (target.Date - DateTime.UtcNow.Date).Days;
+            (target.Date - DateTime.Today).Days;
 
         return dayOffset switch
         {
@@ -228,8 +224,31 @@ public partial class ProductionConsensusAggregator
         };
     }
 
+    private static string? GetTheDatabeticsFallbackListingUrl(
+        DateTime target,
+        string primaryUrl)
+    {
+        const string baseUrl =
+            "https://thedatabetics.com/football-predictions/";
+
+        int localOffset = (target.Date - DateTime.Today).Days;
+
+        string? candidate = localOffset switch
+        {
+            0 => $"{baseUrl}tomorrow/",
+            1 => baseUrl,
+            -1 => baseUrl,
+            _ => null
+        };
+
+        return candidate != null &&
+               !string.Equals(candidate, primaryUrl, StringComparison.OrdinalIgnoreCase)
+            ? candidate
+            : null;
+    }
+
     private static async Task PopulateTheDatabeticsMarketsAsync(
-        HttpClient client,
+        IAPIRequestContext apiRequest,
         SemaphoreSlim requestSemaphore,
         SiteMatch match,
         string detailUrl)
@@ -238,8 +257,16 @@ public partial class ProductionConsensusAggregator
 
         try
         {
-            string html =
-                await client.GetStringAsync(detailUrl);
+            var response = await apiRequest.GetAsync(detailUrl);
+            if (!response.Ok)
+                return;
+
+            string html = await response.TextAsync();
+            if (string.IsNullOrWhiteSpace(html) ||
+                !html.Contains("mp-mpred", StringComparison.Ordinal))
+            {
+                return;
+            }
 
             var document = new HtmlDocument();
             document.LoadHtml(html);

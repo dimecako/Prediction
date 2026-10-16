@@ -284,6 +284,40 @@ public sealed class WeightedConsensusCalculatorTests
             WeightedConsensusCalculator.Calculate(fixture, after));
     }
 
+    [Theory]
+    [InlineData(1, 1, false, "SINGLE SOURCE")]
+    [InlineData(2, 4, true, "CONFLICT")]
+    [InlineData(4, 8, true, "CONFLICT")]
+    [InlineData(4, 4, false, "VERY STRONG")]
+    [InlineData(5, 5, false, "VERY STRONG")]
+    [InlineData(8, 9, false, "VERY STRONG")]
+    [InlineData(9, 9, false, "VERY STRONG")]
+    [InlineData(11, 11, false, "VERY STRONG")]
+    [InlineData(3, 3, false, "STRONG")]
+    [InlineData(3, 4, false, "STRONG")]
+    [InlineData(6, 9, false, "STRONG")]
+    [InlineData(7, 9, false, "STRONG")]
+    [InlineData(2, 2, false, "MEDIUM")]
+    [InlineData(2, 3, false, "MEDIUM")]
+    [InlineData(3, 5, false, "MEDIUM")]
+    [InlineData(5, 9, false, "MEDIUM")]
+    [InlineData(2, 4, false, "WEAK")]
+    [InlineData(3, 6, false, "WEAK")]
+    [InlineData(4, 9, false, "WEAK")]
+    public void ReportConfidenceScalesAcrossAllSourceCounts(
+        int matchingVotes,
+        int totalVotes,
+        bool conflict,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            ProductionConsensusAggregator.GetConfidenceLevel(
+                matchingVotes,
+                totalVotes,
+                conflict));
+    }
+
     private static Match Fixture(DateOnly date, params PredictionSnapshot[] predictions) => new()
     {
         MatchDate = date,
