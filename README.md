@@ -52,6 +52,27 @@ Sparse output on old dates may be expected under the strict capture rule.
 The original per-source backtest uses its existing latest-snapshot logic and
 is therefore not the strict baseline; use the new `CONSENSUS BACKTEST` rows.
 
+### Calibration and ticket
+
+```powershell
+dotnet run --no-build -- calibration
+dotnet run --no-build -- ticket 2026-10-17 15
+dotnet run --no-build -- ticket 2026-10-17 15 nodc
+dotnet run --no-build -- ticket 2026-10-17 5 safe
+```
+
+`calibration` (read-only) measures real accuracy of the 1X2 consensus grouped
+by average source Prob., confidence label and source, plus BTTS/Goals source
+agreement. Groups under 30 matches are flagged; `Safe` is the 95% Wilson lower
+bound. `ticket` builds up to N picks (default 15) from unfinished matches. Each
+match uses the market with the best measured historical accuracy x odds among 1X2,
+double chance (skip with `nodc`), BTTS and Goals; a signal needs 100+ historical
+cases. Odds come from Maxbet MK (matched by team names; the ticket works without
+them if Maxbet is unreachable). EV = historical accuracy x odds; picks with EV > 0
+are ranked first. `safe` ranks by safety only. The chance shown is measured
+history, not a guarantee, and EV is optimistic because accuracy is averaged per
+signal, not per league.
+
 ### Tests
 
 ```powershell

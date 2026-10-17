@@ -1,3 +1,61 @@
+# ROADMAP (status)
+[x] Collection
+[x] Aggregation
+[x] Results Collection
+[x] Backtesting
+[x] Performance Analytics
+[x] Consensus Analytics
+[x] Weighted Consensus   (kodot e gotov, 22 testa pominaa; ne e pustena vrz bazata)
+[x] Confidence Engine    (calibration komanda gotova; merenite Prob. grupi go potvrdija pragot: 65-70 -> 69%, 70+ -> 78%, 55-65 -> ~58-60%, <50 -> 41%)
+[~] Value Detection      (Maxbet MK kvoti vo ticket: EV = tocnost x kvota; ostanuva: tocnost po liga, praten rezultat na tiketi)
+[~] AI Ranking           (ticket komanda v1 gotova: samo 1X2 so Prob>=65, shansa = izmerena istoriska tocnost. ML model sleduva)
+
+# =====================================================================
+# KOMANDI (dotnet run --no-build -- ...)  prvo: dotnet build
+# =====================================================================
+
+dotnet build                                                  // kompajlirj posle sekoja promena na kodot
+
+dotnet run --no-build -- 2026-10-17                           // glaven pipeline: sobira prognozi od site izvori, snima vo baza, pravi predictions-DATUM.xlsx
+
+dotnet run --no-build -- collect-results 2026-10-17           // sobira vistinski rezultati za toj den i gi snima vo baza (pusti navecer)
+
+dotnet run --no-build -- db-status 2026-10-17                 // brza proverka sto ima vo bazata za toj den
+
+dotnet run --no-build -- backtest 2026-09-22                  // tocnost po izvor + sporedba Equal vs Weighted consensus od toj datum
+
+dotnet run --no-build -- weighted-consensus 2026-10-16        // glasanje so tezini spored istoriska tocnost na izvor/market (1X2, BTTS, Goals)
+
+dotnet run --no-build -- calibration                          // vistinska tocnost po Prob. grupa, confidence nivo i izvor (samo cita bazata)
+
+dotnet run --no-build -- ticket 2026-10-17 15                 // tiket so 15 izbori (1X2 / dvojna sansa / BTTS / Goals), sekoj spored izmerena tocnost
+dotnet run --no-build -- ticket 2026-10-17 5                  // pomal tiket (poveke sansa da pomine; preporaceno 4-6)
+dotnet run --no-build -- ticket 2026-10-17 15 nodc            // bez dvojna sansa (cist 1X2: pogolemi kvoti, mnogu pomala sansa)
+dotnet run --no-build -- ticket 2026-10-17 5 safe             // rangiranje samo po sigurnost, bez kvoti
+                                                              // kvoti se vlecat od Maxbet MK (maxbet.mk/restapi); ako ne e dostapen, raboti bez kvoti
+                                                              // EV = istoriska tocnost x kvota; EV je optimisticen (prosek po signal, ne po liga)
+
+dotnet run --no-build -- train-model                          // trenira ML modeli (rezultat, BTTS, goals) od istorijata vo bazata
+
+.\daily.ps1                                                   // sabajle: sobira dneshni prognozi (isto kako glavniot pipeline za deneshen datum)
+.\night.ps1                                                   // navecer, po natprevarite: collect-results + backtest za deneshen datum
+.\all.ps1 -Date 2026-10-17                                    // pusta site: collect-results, db-status, backtest, weighted-consensus, calibration (ako ne dozvoluva: powershell -ExecutionPolicy Bypass -File .\all.ps1 -Date 2026-10-17)
+dotnet test .\Tests\Prediction.Tests.csproj                   // pusti testovi
+
+# =====================================================================
+# Naodi od calibration (5401 natprevari, 24.09-16.10)
+# =====================================================================
+- 1X2 Prob. e kalibriran: >=65 e vistinski signal. "VERY STRONG" so cap = 76% (n=42)
+- BTTS i Goals soglasnost na izvorite = ~50% (moneta). Ne gi koristi za tiket.
+- Single source bez Prob. (PredictZ, SoccerVista, WinDrawWin) ~44% - bez vrednost
+- Najdobri izvori: Statarea, ZuluBet, Vitibet (so visok Prob.), Forebet samo >=70
+- Dvojna sansa ~84-88%, cist 1X2 ~71-78% na Prob>=65. Tiket od 15 = mala sansa (1.9% 1X2, ~14% DC)
+
+# Napraveno posle roadmap-ot (17.10)
+- BTTS Prob./Goals Prob. preimenuvani vo BTTS Agree/Goals Agree (se samo soglasnost, ne verojatnost)
+- Goals glasovite se sporeduvaat na linija 2.5 (O3.5->O2.5, U1.5/U0.5->U2.5)
+- Sortiranje: CONFLICT na kraj, potoa soglasni glasovi, pomal vkupen broj glasovi, pa Prob.
+
 pass: prediction_dev
 
 psql -h localhost -U prediction_app -d prediction
@@ -76,6 +134,9 @@ PS C:\Users\Dimitar\Desktop\Prediction-local> Set-ExecutionPolicy -Scope Process
 
 # Navecer, po zavrsuvanje na natprevarite
 .\night.ps1
+
+.\all.ps1 -Date 2026-10-17  
+powershell -ExecutionPolicy Bypass -File .\all.ps1 -Date 2026-10-17
 
 dotnet run --no-build -- train-model
 

@@ -69,6 +69,20 @@ public partial class Program
     public static async Task Main(string[] args)
     {
         if (args.Length > 0 &&
+            args[0].Equals("ticket", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunTicketAsync(args);
+            return;
+        }
+
+        if (args.Length > 0 &&
+            args[0].Equals("calibration", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunCalibrationAsync();
+            return;
+        }
+
+        if (args.Length > 0 &&
             args[0].Equals("weighted-consensus", StringComparison.OrdinalIgnoreCase))
         {
             await RunWeightedConsensusAsync(args);

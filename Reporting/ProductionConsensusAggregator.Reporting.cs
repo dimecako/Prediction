@@ -31,6 +31,53 @@ public partial class ProductionConsensusAggregator
         return "WEAK";
     }
 
+    // Vote agreement alone says nothing about how likely the pick is, so the
+    // label is capped by the average source probability for the picked outcome.
+    // Thresholds are heuristic; tune them from backtest accuracy per Prob. bucket.
+    public static string CapConfidenceByProbability(
+        string level,
+        double? probability)
+    {
+        int rank = level switch
+        {
+            "VERY STRONG" => 3,
+            "STRONG" => 2,
+            "MEDIUM" => 1,
+            _ => -1
+        };
+
+        if (rank < 0)
+            return level;
+
+        int cap =
+            !probability.HasValue ? 1 :
+            probability.Value >= 65 ? 3 :
+            probability.Value >= 58 ? 2 :
+            probability.Value >= 50 ? 1 : 0;
+
+        if (rank <= cap)
+            return level;
+
+        return cap switch
+        {
+            2 => "STRONG",
+            1 => "MEDIUM",
+            _ => "WEAK"
+        };
+    }
+
+    // Maps every goals pick to the 2.5 line so different lines are comparable.
+    // O3.5 implies O2.5, U1.5/U0.5 imply U2.5; picks that say nothing about 2.5 are skipped.
+    public static string? NormalizeGoalsTo25(string? market)
+    {
+        return market?.Trim().ToUpperInvariant() switch
+        {
+            "O2.5" or "O3.5" => "O2.5",
+            "U2.5" or "U1.5" or "U0.5" => "U2.5",
+            _ => null
+        };
+    }
+
     public void PrintGuaranteedReport()
     {
         Console.WriteLine(
@@ -46,8 +93,8 @@ public partial class ProductionConsensusAggregator
         $"{"Prob.",-10} | " +        
         $"{"Извори",-40} | " +
         $"{"BTTS",-14} | " +
-        $"{"BTTS Prob.",-11} | " +
-        $"{"Goals Prob.",-12} | " +
+        $"{"BTTS Agree",-11} | " +
+        $"{"Goals Agree",-12} | " +
         $"{"Goals",-14}");
 
         Console.WriteLine(new string('-', 150));
@@ -107,13 +154,17 @@ public partial class ProductionConsensusAggregator
                     ActiveSources = activeSources,
                     MatchingVotes = matchingVotes,
                     TotalVotes = totalVotes,
+                    Conflict = conflict,
                     AverageProbability = averageProbability
                 };
             })
             .Where(x => x.ActiveSources.Count > 0)
 
-            // prvo po broj na soglasni glasovi
-            .OrderByDescending(x => x.MatchingVotes)
+            // konfliktite na kraj
+            .OrderBy(x => x.Conflict)
+
+            // potoa po broj na soglasni glasovi
+            .ThenByDescending(x => x.MatchingVotes)
 
             // ako se isti glasovite, prednost ima pomal vkupen broj
             // 3/3 pred 3/4, 2/2 pred 2/3
@@ -139,8 +190,8 @@ public partial class ProductionConsensusAggregator
             "Prob.",
             "Извори",
             "BTTS",
-            "BTTS Prob.",
-            "Goals Prob.",
+            "BTTS Agree",
+            "Goals Agree",
             "Goals"
         };
 
@@ -172,9 +223,6 @@ public partial class ProductionConsensusAggregator
                         ? "CONFLICT"
                         : tipGroups.First().Key;
 
-            string confidence =
-                GetConfidenceLevel(matchingVotes, totalVotes, conflict);
-
             var probabilityValues = activeSources
                 .Where(x =>
                     x.Value.Prob.HasValue &&
@@ -182,16 +230,20 @@ public partial class ProductionConsensusAggregator
                 .Select(x => x.Value.Prob.Value)
                 .ToList();
 
-            string probabilityLabel = "-";
+            double? averageProb =
+                probabilityValues.Count > 0
+                    ? probabilityValues.Average()
+                    : (double?)null;
 
-            if (probabilityValues.Count > 0)
-            {
-                double averageProbability =
-                    probabilityValues.Average();
+            string confidence =
+                CapConfidenceByProbability(
+                    GetConfidenceLevel(matchingVotes, totalVotes, conflict),
+                    averageProb);
 
-                probabilityLabel =
-                    $"{averageProbability:F1}%";
-            }
+            string probabilityLabel =
+                averageProb.HasValue
+                    ? $"{averageProb.Value:F1}%"
+                    : "-";
 
             string sourcesLabel =
                 string.Join(",",
@@ -265,11 +317,9 @@ public partial class ProductionConsensusAggregator
             // -----------------------------
 
             var goalsList = allPresentSources
-                .Where(x =>
-                    !string.IsNullOrWhiteSpace(
-                        x.Value.GoalsMarket) &&
-                    x.Value.GoalsMarket != "-")
-                .Select(x => x.Value.GoalsMarket)
+                .Select(x => NormalizeGoalsTo25(x.Value.GoalsMarket))
+                .Where(x => x != null)
+                .Select(x => x!)
                 .ToList();
 
             string goalsConsensus = "-";

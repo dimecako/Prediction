@@ -318,6 +318,31 @@ public sealed class WeightedConsensusCalculatorTests
                 conflict));
     }
 
+    [Theory]
+    [InlineData("VERY STRONG", 68.6, "VERY STRONG")]
+    [InlineData("VERY STRONG", 65.0, "VERY STRONG")]
+    [InlineData("VERY STRONG", 64.0, "STRONG")]
+    [InlineData("VERY STRONG", 58.0, "STRONG")]
+    [InlineData("VERY STRONG", 56.1, "MEDIUM")]
+    [InlineData("VERY STRONG", 49.9, "WEAK")]
+    [InlineData("VERY STRONG", null, "MEDIUM")]
+    [InlineData("STRONG", 70.0, "STRONG")]
+    [InlineData("STRONG", 55.0, "MEDIUM")]
+    [InlineData("MEDIUM", 40.0, "WEAK")]
+    [InlineData("MEDIUM", 52.0, "MEDIUM")]
+    [InlineData("WEAK", 90.0, "WEAK")]
+    [InlineData("CONFLICT", 90.0, "CONFLICT")]
+    [InlineData("SINGLE SOURCE", 30.0, "SINGLE SOURCE")]
+    public void ConfidenceIsCappedByProbability(
+        string level,
+        double? probability,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            ProductionConsensusAggregator.CapConfidenceByProbability(level, probability));
+    }
+
     private static Match Fixture(DateOnly date, params PredictionSnapshot[] predictions) => new()
     {
         MatchDate = date,
