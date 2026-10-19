@@ -14,5 +14,9 @@ public sealed class ExternalMatchResult
 
     public int AwayGoals { get; set; }
 
+    public int? HalfTimeHomeGoals { get; set; }
+
+    public int? HalfTimeAwayGoals { get; set; }
+
     public string Source { get; set; } = string.Empty;
 }

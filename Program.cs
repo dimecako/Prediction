@@ -580,10 +580,12 @@ public partial class Program
             await using var collectDb =
                 new FootballDbContext(collectDbOptions);
 
+            await collectDb.Database.MigrateAsync();
             int matched = 0;
             int inserted = 0;
             int existing = 0;
             int unmatched = 0;
+            int halfTimeUpdated = 0;
 
             foreach (var external in externalResults)
             {
@@ -613,6 +615,18 @@ public partial class Program
 
                 if (match.Result != null)
                 {
+                    if (external.HalfTimeHomeGoals.HasValue && external.HalfTimeAwayGoals.HasValue &&
+                        (!match.Result.HalfTimeHomeGoals.HasValue || !match.Result.HalfTimeAwayGoals.HasValue))
+                    {
+                        if (match.Result.HomeGoals == external.HomeGoals && match.Result.AwayGoals == external.AwayGoals)
+                        {
+                            match.Result.HalfTimeHomeGoals = external.HalfTimeHomeGoals;
+                            match.Result.HalfTimeAwayGoals = external.HalfTimeAwayGoals;
+                            halfTimeUpdated++;
+                        }
+                        else
+                            Console.WriteLine($"[RESULTS] Conflicting stored final score for #{match.Id}; half-time not updated.");
+                    }
                     Console.WriteLine(
                         $"[EXISTS] #{match.Id} | " +
                         $"{match.HomeTeam} | {match.AwayTeam} | " +
@@ -636,6 +650,8 @@ public partial class Program
 
                         HomeGoals = external.HomeGoals,
                         AwayGoals = external.AwayGoals,
+                        HalfTimeHomeGoals = external.HalfTimeHomeGoals,
+                        HalfTimeAwayGoals = external.HalfTimeAwayGoals,
 
                         Result = result,
 
@@ -670,6 +686,8 @@ public partial class Program
             Console.WriteLine($"[RESULTS] Matched: {matched}");
             Console.WriteLine($"[RESULTS] Inserted: {inserted}");
             Console.WriteLine($"[RESULTS] Existing: {existing}");
+            Console.WriteLine($"[RESULTS] Half-time backfilled: {halfTimeUpdated}");
+            Console.WriteLine($"[RESULTS] Half-time supplied: {externalResults.Count(x => x.HalfTimeHomeGoals.HasValue && x.HalfTimeAwayGoals.HasValue)}");
             Console.WriteLine($"[RESULTS] Unmatched: {unmatched}");
             Console.WriteLine($"[RESULTS] EF changes: {changes}");
             Console.WriteLine("[RESULTS] Done.");

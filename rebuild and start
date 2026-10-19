@@ -7,8 +7,8 @@
 [x] Consensus Analytics
 [x] Weighted Consensus   (kodot e gotov, 22 testa pominaa; ne e pustena vrz bazata)
 [x] Confidence Engine    (calibration komanda gotova; merenite Prob. grupi go potvrdija pragot: 65-70 -> 69%, 70+ -> 78%, 55-65 -> ~58-60%, <50 -> 41%)
-[~] Value Detection      (Maxbet MK kvoti vo ticket: EV = tocnost x kvota; ostanuva: tocnost po liga, praten rezultat na tiketi)
-[~] AI Ranking           (ticket komanda v1 gotova: samo 1X2 so Prob>=65, shansa = izmerena istoriska tocnost. ML model sleduva)
+[~] Value Detection      (potvrdeni Maxbet osnovni kvoti >=1.40; >=1.70 fix, pod 1.70 alternativa >=1.50; EV = tocnost x kvota - 1; ostanuva: kvoti za kombinacii, tocnost po liga, ROI/pratenje tiketi)
+[~] AI Ranking           (pravila: pobeda/celosen tip >=55%, koristen BTTS/Goals >=60%, n>=100; nepotvrdeni predlozi odvoeni; 81 ticket/poluvreme testovi pominaa; ML ranking/model validacija sleduva)
 
 # =====================================================================
 # KOMANDI (dotnet run --no-build -- ...)  prvo: dotnet build
@@ -28,18 +28,38 @@ dotnet run --no-build -- weighted-consensus 2026-10-16        // glasanje so tez
 
 dotnet run --no-build -- calibration                          // vistinska tocnost po Prob. grupa, confidence nivo i izvor (samo cita bazata)
 
-dotnet run --no-build -- ticket 2026-10-17 15                 // tiket so 15 izbori (1X2 / dvojna sansa / BTTS / Goals), sekoj spored izmerena tocnost
-dotnet run --no-build -- ticket 2026-10-17 5                  // pomal tiket (poveke sansa da pomine; preporaceno 4-6)
-dotnet run --no-build -- ticket 2026-10-17 15 nodc            // bez dvojna sansa (cist 1X2: pogolemi kvoti, mnogu pomala sansa)
-dotnet run --no-build -- ticket 2026-10-17 5 safe             // rangiranje samo po sigurnost, bez kvoti
-                                                              // kvoti se vlecat od Maxbet MK (maxbet.mk/restapi); ako ne e dostapen, raboti bez kvoti
-                                                              // EV = istoriska tocnost x kvota; EV je optimisticen (prosek po signal, ne po liga)
+dotnet run --no-build -- 2026-10-20                           // prvo soberi predictions i napravi mecuvanje; NE pravi tiket avtomatski
+dotnet run --no-build -- ticket 2026-10-20 15                 // potoa do 15 razlicni natprevari: potvrden tiket + odvoeni predlozi za preostanatite mesta
+dotnet run --no-build -- ticket 2026-10-20 5                  // pomal tiket so istite dozvoleni tipovi
+dotnet run --no-build -- ticket 2026-10-20 15 nodc            // istiot nov miks; nodc e kompatibilen flag, nema dvojna sansa vo nitu eden tiket
+dotnet run --no-build -- ticket 2026-10-20 5 safe             // istite tipovi, rangiranje samo po sigurnost (kvotite se prikazuvaat ako gi ima)
+                                                              // fix 1, fix 2
+                                                              // 1 & 1+ prvo; 2 & 1+ prvo
+                                                              // 1 & 1+ prvo & 1+ vtoro; 2 & 1+ prvo & 1+ vtoro
+                                                              // 1 & 2-5 golovi; 1 & 2-6 golovi; 2 & 2-5 golovi; 2 & 2-6 golovi
+                                                              // BTTS; BTTS & 3+; 3+
+                                                              // 1-1; 2-2; 1-1 & 2+; 2-2 & 2+
+                                                              // 1-1 / 2-2 = poluvreme/kraj, NE tocen rezultat
+                                                              // 1+ prvo/vtoro = barem 1 vkupen gol vo toa poluvreme; 2+/3+ = vkupni golovi na mecot
+                                                              // zadolzitelno: osnovna fix kvota >=1.40 i pobeda >=55% (n>=100); 1.2/1.3 se iskluceni
+                                                              // osnovna kvota >=1.70: ostanuva fix; 1.40 do <1.70: baraj dozvolena alternativa so kvota >=1.50
+                                                              // sekoj celosen tip bara >=55% i 100+ primeri; koristen BTTS/Goals signal bara >=60% i 100+ primeri
+                                                              // fix i cist poluvreme/kraj ne baraat BTTS/Goals prag; NO/Under se signali, ne novi dozvoleni tipovi
+                                                              // kvoti od Maxbet; bez potvrdena osnovna kvota nema izbor/predlog
+                                                              // kombinaciite bez potvrdena kvota se samo PREDLOZI so n/a, vo odvoen Excel list; ne se del od tiketot
+                                                              // ne se mnozat komponentni kvoti/procenti; nepoznato poluvreme ne se ocenuva
+                                                              // EV = istoriska tocnost x kvota - 1; EV e optimisticen (prosek po signal, ne po liga)
+
+dotnet run --no-build -- collect-results 2026-10-18           // dodava i poluvreme od Forebet; dopolnuva postoecki rezultati ako krajnite golovi se isti
+                                                              // collect-results i ticket avtomatski ja primenuvaat migracijata za nullable poluvreme
+                                                              // povtori collect-results za starite datumi za da se napolni istorijata so poluvreme
 
 dotnet run --no-build -- train-model                          // trenira ML modeli (rezultat, BTTS, goals) od istorijata vo bazata
 
 .\daily.ps1                                                   // sabajle: sobira dneshni prognozi (isto kako glavniot pipeline za deneshen datum)
 .\night.ps1                                                   // navecer, po natprevarite: collect-results + backtest za deneshen datum
 .\all.ps1 -Date 2026-10-17                                    // pusta site: collect-results, db-status, backtest, weighted-consensus, calibration (ako ne dozvoluva: powershell -ExecutionPolicy Bypass -File .\all.ps1 -Date 2026-10-17)
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\all.ps1 -Date 2026-10-18
 dotnet test .\Tests\Prediction.Tests.csproj                   // pusti testovi
 
 # =====================================================================

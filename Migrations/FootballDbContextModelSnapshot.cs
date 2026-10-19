@@ -84,6 +84,12 @@ namespace Prediction.Migrations
                     b.Property<DateTime>("CollectedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("HalfTimeAwayGoals")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("HalfTimeHomeGoals")
+                        .HasColumnType("integer");
+
                     b.Property<int>("HomeGoals")
                         .HasColumnType("integer");
 

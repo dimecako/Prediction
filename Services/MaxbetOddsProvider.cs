@@ -34,7 +34,7 @@ public static class MaxbetOddsProvider
         var matches = new List<BookmakerMatch>();
 
         if (!document.RootElement.TryGetProperty("esMatches", out var items))
-            return matches;
+            throw new JsonException("Maxbet response is missing esMatches.");
 
         foreach (var item in items.EnumerateArray())
         {

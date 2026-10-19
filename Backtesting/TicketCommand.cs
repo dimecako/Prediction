@@ -1,19 +1,11 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
-using Prediction.Entities;
 using Prediction.Services;
 
 public partial class Program
 {
-    private const int TicketMinHistory = 100;
     private const int TicketDefaultCount = 15;
-
-    private sealed record TicketCandidate(
-        string Market,
-        string Pick,
-        string Key,
-        string Detail);
 
     private static async Task RunTicketAsync(string[] args)
     {
@@ -22,7 +14,6 @@ public partial class Program
                         x.Equals("safe", StringComparison.OrdinalIgnoreCase))
             .Select(x => x.ToLowerInvariant())
             .ToHashSet();
-        bool allowDoubleChance = !flags.Contains("nodc");
         bool rankBySafety = flags.Contains("safe");
         string? countArg = args.Skip(2).FirstOrDefault(x => !flags.Contains(x.ToLowerInvariant()));
         int count = TicketDefaultCount;
@@ -51,6 +42,7 @@ public partial class Program
             .Options;
 
         await using var db = new FootballDbContext(dbOptions);
+        await db.Database.MigrateAsync();
 
         // Only results known before the target date, so the history is never contaminated by it.
         var history = await db.Matches
@@ -63,8 +55,11 @@ public partial class Program
         var calibration = new Tally();
         foreach (var match in history)
         {
-            foreach (var candidate in BuildTicketCandidates(match, allowDoubleChance))
-                calibration.Add(candidate.Key, IsTicketPickCorrect(candidate, match.Result!));
+            foreach (var candidate in TicketMarkets.BuildCalibrationCandidates(match))
+            {
+                if (TicketMarkets.IsCorrect(candidate, match.Result!) is bool correct)
+                    calibration.Add(candidate.Key, correct);
+            }
         }
 
         var today = await db.Matches
@@ -78,58 +73,71 @@ public partial class Program
         {
             bookmaker = await MaxbetOddsProvider.FetchAsync();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
         {
-            Console.WriteLine($"[TIKET] Kvotite od Maxbet ne se dostapni ({ex.Message}). Rangiranje spored sigurnost, bez kvoti.");
+            Console.WriteLine($"[TIKET] Kvotite od Maxbet ne se dostapni ({ex.Message}). " +
+                "Bez potvrdena osnovna kvota nema izbori.");
         }
 
-        bool futureOnly = date >= DateOnly.FromDateTime(DateTime.Now);
         int matched = 0;
         int started = 0;
 
         var best = new List<TicketPick>();
+        var proposals = new List<TicketPick>();
+        var rejected = new Dictionary<string, int>();
+        void Reject(string reason) => rejected[reason] = rejected.GetValueOrDefault(reason) + 1;
 
         foreach (var match in today)
         {
-            var offer = bookmaker.FirstOrDefault(b =>
-                Math.Abs(DateOnly.FromDateTime(b.KickoffUtc).DayNumber - match.MatchDate.DayNumber) <= 1 &&
-                TeamNameMatcher.SameFixture(match.HomeTeam, match.AwayTeam, b.Home, b.Away));
-
-            if (offer != null)
+            var offers = bookmaker.Where(b =>
+                DateOnly.FromDateTime(b.KickoffUtc.ToLocalTime()) == match.MatchDate &&
+                TeamNameMatcher.SameFixture(match.HomeTeam, match.AwayTeam, b.Home, b.Away)).ToList();
+            if (offers.Count != 1)
             {
-                matched++;
+                Reject(offers.Count == 0 ? "Nema spartena ponuda za datumot." : "Povekje ponudi: nejasen natprevar.");
+                continue;
+            }
+            var offer = offers[0];
 
-                if (futureOnly && offer.KickoffUtc <= DateTime.UtcNow)
-                {
-                    started++;
-                    continue;
-                }
+            matched++;
+
+            if (offer.KickoffUtc <= DateTime.UtcNow)
+            {
+                started++;
+                continue;
             }
 
-            var scored = BuildTicketCandidates(match, allowDoubleChance)
-                .Select(c =>
+            var decision = TicketSelector.Select(match, calibration,
+                c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), rankBySafety);
+            string SignalText(TicketCandidate? c)
+            {
+                if (c == null)
+                    return "n/a";
+                var stat = calibration.Get(c.Key);
+                string label = c.Pick switch
                 {
-                    var stat = calibration.Get(c.Key);
-                    double? odds = offer != null
-                        ? MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick)
-                        : null;
-                    return (Candidate: c, stat.Total, stat.Correct, Odds: odds);
-                })
-                .Where(x => x.Total >= TicketMinHistory)
-                .Select(x => new TicketPick(
-                    $"{match.HomeTeam} vs {match.AwayTeam}",
-                    x.Candidate,
-                    (double)x.Correct / x.Total,
-                    CalibrationAnalyzer.WilsonLower(x.Correct, x.Total),
-                    x.Total,
-                    x.Odds))
-                .OrderByDescending(x => rankBySafety || x.Odds == null ? x.Safe : x.Safe * x.Odds.Value)
-                .ToList();
-
-            if (scored.Count == 0)
-                continue;
-
-            best.Add(scored[0]);
+                    "YES" => "YES",
+                    "NO" => "NO",
+                    "O2.5" => "Over 2.5",
+                    "U2.5" => "Under 2.5",
+                    _ => c.DisplayPick
+                };
+                return stat.Total == 0 ? $"{label}: n/a (n=0)" :
+                    $"{label}: {(double)stat.Correct / stat.Total:P1} (n={stat.Total})";
+            }
+            var fix = TicketMarkets.BuildCandidates(match).FirstOrDefault(x => x.Market == "1X2");
+            string evidence = $"Pobeda {SignalText(fix)}; " +
+                $"BTTS {SignalText(TicketMarkets.BinarySignal(match, "BTTS"))}; " +
+                $"Goals {SignalText(TicketMarkets.BinarySignal(match, "Goals"))}";
+            TicketPick ToPick(ScoredTicketCandidate c) => new(
+                $"{match.HomeTeam} vs {match.AwayTeam}", c.Candidate, c.Accuracy,
+                c.Safe, c.Sample, c.Odds, decision.BaseOdds!.Value, evidence);
+            if (decision.Confirmed != null)
+                best.Add(ToPick(decision.Confirmed));
+            else if (decision.Proposal != null)
+                proposals.Add(ToPick(decision.Proposal));
+            else
+                Reject(decision.Reason);
         }
 
         Console.WriteLine();
@@ -139,23 +147,35 @@ public partial class Program
         Console.WriteLine(
             $"[TIKET] Maxbet: {bookmaker.Count} natprevari vcitani | Sparteni po iminja na timovi: {matched}/{today.Count} | " +
             $"Vekje zapocnati (preskoknati): {started}");
+        int halfTimeHistory = history.Count(x =>
+            x.Result!.HalfTimeHomeGoals.HasValue && x.Result.HalfTimeAwayGoals.HasValue);
+        Console.WriteLine($"[TIKET] Istorija so poluvreme: {halfTimeHistory}/{history.Count}. " +
+            "Nepoznato poluvreme ne se ocenuva; tipovite bez 100+ primeri se preskoknuvaat.");
+        if (flags.Contains("nodc"))
+            Console.WriteLine("[TIKET] nodc e zadrzan za kompatibilnost; site novi tiketi se bez dvojna sansa.");
+        Console.WriteLine("[TIKET] Nepotvrdenite kombinacii se ODVOENI predlozi, ne izbori vo tiketot.");
         Console.WriteLine(
-            "[TIKET] Za sekoj natprevar se koristi pazarot so najdobra izmerena tocnost x kvota " +
-            $"(1X2, dvojna sansa, BTTS, Golovi). Potrebni se {TicketMinHistory}+ istoriski slucai po signal.");
+            "[TIKET] Osnovna kvota >=1.40, pobeda >=55% (n>=100). >=1.70: fix; " +
+            "1.40-1.69: alternativa so kvota >=1.50, tocnost >=55% (n>=100). " +
+            "Koristen BTTS/Goals signal mora >=60% (n>=100).");
 
-        if (best.Count == 0)
-        {
-            Console.WriteLine("[TIKET] Nema izbori so dovolno istorija za ovoj den.");
-            return;
-        }
-
-        // Value picks first (measured accuracy x odds > 1); the rest only fill the ticket.
+        foreach (var rejection in rejected.OrderByDescending(x => x.Value))
+            Console.WriteLine($"[TIKET] Preskoknati {rejection.Value}: {rejection.Key}");
         var picks = best
             .OrderByDescending(x => !rankBySafety && x.HasValue)
-            .ThenByDescending(x => rankBySafety || x.Odds == null ? x.Safe : x.Safe * x.Odds.Value)
+            .ThenByDescending(x => rankBySafety ? x.Safe : x.Safe * x.Odds!.Value)
             .ThenByDescending(x => x.Accuracy)
             .Take(count)
             .ToList();
+        var suggested = proposals.OrderByDescending(x => x.Safe).ThenByDescending(x => x.Accuracy)
+            .Take(count - picks.Count).ToList();
+        Console.WriteLine($"[PREDLOZI] Bez potvrdena kvota: {proposals.Count}; prikazani: {suggested.Count}. NE se del od tiketot.");
+        foreach (var p in suggested)
+        {
+            Console.WriteLine($"[PREDLOG] {p.Fixture} | {p.Candidate.DisplayPick} | " +
+                $"Osnovna kvota={p.BaseOdds:F2} | Kvota=n/a | Istor.={p.Accuracy:P1} (n={p.Sample})");
+            Console.WriteLine($"[SIGNALI] {p.Evidence}");
+        }
 
         double combined = 1.0;
         double combinedSafe = 1.0;
@@ -178,9 +198,10 @@ public partial class Program
             string flag = p.HasValue ? "VREDNOST" : "nema vrednost";
 
             Console.WriteLine(
-                $"[TIKET] {i + 1,2}. {p.Fixture,-44} {p.Candidate.Market,-5} {p.Candidate.Pick,-5} | " +
+                $"[TIKET] {i + 1,2}. {p.Fixture,-44} {p.Candidate.Market,-5} {p.Candidate.DisplayPick,-30} | " +
                 $"Kvota={odds,5} | Istor.={p.Accuracy * 100:F1}% (n={p.Sample}, sigurno {p.Safe * 100:F1}%) | " +
                 $"EV={value,5} {flag}");
+            Console.WriteLine($"[SIGNALI] Osnovna kvota={p.BaseOdds:F2}; {p.Evidence}");
         }
 
         Console.WriteLine();
@@ -189,22 +210,23 @@ public partial class Program
             $"Izbori so vrednost: {picks.Count(x => x.HasValue)}");
 
         if (picks.Count < count)
-            Console.WriteLine("[TIKET] Pomalku izbori od baranite: ostanatite nemaa pouzdana istorija.");
+            Console.WriteLine("[TIKET] Pomalku potvrdeni izbori od baranite: nema dopolnuvanje so izbori pod pragovite.");
 
         foreach (var group in picks.GroupBy(x => x.Candidate.Market))
             Console.WriteLine($"[TIKET] Pazar {group.Key}: {group.Count()} izbori");
 
-        Console.WriteLine(
-            $"[TIKET] Sansa da pominat SITE {picks.Count}: {combined * 100:F2}% " +
-            $"(konzervativno {combinedSafe * 100:F2}%).");
+        if (picks.Count > 0)
+            Console.WriteLine(
+                $"[TIKET] Sansa da pominat SITE {picks.Count}: {combined * 100:F2}% " +
+                $"(konzervativno {combinedSafe * 100:F2}%; pretpostavka na nezavisnost).");
 
-        if (allOdds)
+        if (picks.Count > 0 && allOdds)
         {
             Console.WriteLine(
                 $"[TIKET] Vkupna kvota: {combinedOdds:F2} | Ocekuvan povrat za 1 uplateno: {combined * combinedOdds:F2} " +
                 $"(konzervativno {combinedSafe * combinedOdds:F2}). Nad 1.00 znaci vrednost.");
         }
-        else
+        else if (picks.Count > 0)
         {
             Console.WriteLine(
                 "[TIKET] Nekoi izbori nemaat Maxbet kvota (imeto ne e sparteno ili pazarot ne postoi), " +
@@ -215,19 +237,20 @@ public partial class Program
             "[TIKET] Ocekuvaniot povrat se bazira na minata tocnost; ne e garancija, a kvotite se menuvaat.");
 
         string safeSuffix = rankBySafety ? "-safe" : "";
-        string dcSuffix = allowDoubleChance ? "" : "-nodc";
+        string dcSuffix = flags.Contains("nodc") ? "-nodc" : "";
         string exportPath = Path.Combine(
             Directory.GetCurrentDirectory(),
             $"ticket-{date:yyyy-MM-dd}-{picks.Count}{dcSuffix}{safeSuffix}.xlsx");
 
         try
         {
-            ExportTicketToExcel(exportPath, date, picks, combined, combinedSafe, combinedOdds, allOdds);
+            ExportTicketToExcel(exportPath, date, picks, suggested, combined, combinedSafe, combinedOdds, allOdds);
             Console.WriteLine($"[TIKET] Excel snimen: {exportPath}");
         }
         catch (IOException ex)
         {
-            Console.WriteLine($"[TIKET] Excel ne mozese da se snimi (dali e otvoren?): {ex.Message}");
+            Console.Error.WriteLine($"[TIKET] Excel ne mozese da se snimi (dali e otvoren?): {ex.Message}");
+            Environment.ExitCode = 1;
         }
     }
 
@@ -235,6 +258,7 @@ public partial class Program
         string path,
         DateOnly date,
         IReadOnlyList<TicketPick> picks,
+        IReadOnlyList<TicketPick> proposals,
         double combined,
         double combinedSafe,
         double combinedOdds,
@@ -246,7 +270,7 @@ public partial class Program
         string[] headers =
         [
             "#", "Natprevar", "Pazar", "Izbor", "Kvota", "Istoriska tocnost %",
-            "Sigurna tocnost %", "Primerok (n)", "EV %", "Vrednost"
+            "Sigurna tocnost %", "Primerok (n)", "EV %", "Vrednost", "Osnovna kvota", "Signali"
         ];
 
         for (int c = 0; c < headers.Length; c++)
@@ -264,7 +288,7 @@ public partial class Program
             sheet.Cell(r, 1).Value = i + 1;
             sheet.Cell(r, 2).Value = p.Fixture;
             sheet.Cell(r, 3).Value = p.Candidate.Market;
-            sheet.Cell(r, 4).Value = p.Candidate.Pick;
+            sheet.Cell(r, 4).Value = p.Candidate.DisplayPick;
 
             if (p.Odds.HasValue)
             {
@@ -281,16 +305,21 @@ public partial class Program
             sheet.Cell(r, 7).Value = Math.Round(p.Safe * 100, 1);
             sheet.Cell(r, 8).Value = p.Sample;
             sheet.Cell(r, 10).Value = p.HasValue ? "VREDNOST" : "nema vrednost";
+            sheet.Cell(r, 11).Value = p.BaseOdds;
+            sheet.Cell(r, 12).Value = p.Evidence;
         }
 
         int s = picks.Count + 3;
         sheet.Cell(s, 2).Value = $"Datum: {date:yyyy-MM-dd}";
-        sheet.Cell(s + 1, 2).Value = "Sansa da pominat site (%)";
-        sheet.Cell(s + 1, 5).Value = Math.Round(combined * 100, 2);
-        sheet.Cell(s + 2, 2).Value = "Konzervativna sansa (%)";
-        sheet.Cell(s + 2, 5).Value = Math.Round(combinedSafe * 100, 2);
+        sheet.Cell(s + 1, 2).Value = picks.Count == 0 ? "Nema potvrdeni izbori." : "Sansa da pominat site (%, nezavisnost)";
+        if (picks.Count > 0)
+        {
+            sheet.Cell(s + 1, 5).Value = Math.Round(combined * 100, 2);
+            sheet.Cell(s + 2, 2).Value = "Konzervativna sansa (%)";
+            sheet.Cell(s + 2, 5).Value = Math.Round(combinedSafe * 100, 2);
+        }
 
-        if (allOdds)
+        if (picks.Count > 0 && allOdds)
         {
             sheet.Cell(s + 3, 2).Value = "Vkupna kvota";
             sheet.Cell(s + 3, 5).Value = Math.Round(combinedOdds, 2);
@@ -302,6 +331,31 @@ public partial class Program
 
         sheet.SheetView.FreezeRows(1);
         sheet.Columns().AdjustToContents();
+        sheet.Column(12).Width = 90;
+        sheet.Column(12).Style.Alignment.WrapText = true;
+
+        var suggestions = workbook.Worksheets.Add("Predlozi - nepotvrdeni");
+        string[] suggestionHeaders = ["Natprevar", "Predlog (NE e vo tiket)", "Kvota", "Istoriska tocnost %",
+            "Primerok (n)", "Osnovna kvota", "Signali"];
+        for (int c = 0; c < suggestionHeaders.Length; c++)
+            suggestions.Cell(1, c + 1).Value = suggestionHeaders[c];
+        suggestions.Row(1).Style.Font.Bold = true;
+        for (int i = 0; i < proposals.Count; i++)
+        {
+            var p = proposals[i];
+            int r = i + 2;
+            suggestions.Cell(r, 1).Value = p.Fixture;
+            suggestions.Cell(r, 2).Value = p.Candidate.DisplayPick;
+            suggestions.Cell(r, 3).Value = "n/a";
+            suggestions.Cell(r, 4).Value = Math.Round(p.Accuracy * 100, 1);
+            suggestions.Cell(r, 5).Value = p.Sample;
+            suggestions.Cell(r, 6).Value = p.BaseOdds;
+            suggestions.Cell(r, 7).Value = p.Evidence;
+        }
+        suggestions.SheetView.FreezeRows(1);
+        suggestions.Columns().AdjustToContents();
+        suggestions.Column(7).Width = 90;
+        suggestions.Column(7).Style.Alignment.WrapText = true;
         workbook.SaveAs(path);
     }
 
@@ -311,73 +365,11 @@ public partial class Program
         double Accuracy,
         double Safe,
         int Sample,
-        double? Odds)
+        double? Odds,
+        double BaseOdds,
+        string Evidence)
     {
         public bool HasValue => Odds.HasValue && Accuracy * Odds.Value > 1.0;
     }
 
-    private static IEnumerable<TicketCandidate> BuildTicketCandidates(Match match, bool allowDoubleChance)
-    {
-        var snapshots = CalibrationAnalyzer.LatestPerSource(match);
-        var consensus = CalibrationAnalyzer.BuildResultConsensus(snapshots);
-
-        if (consensus?.AverageProbability is double probability)
-        {
-            string bucket = CalibrationAnalyzer.ProbBucket(probability);
-            string detail = $"Prob={probability:F1}% {consensus.MatchingVotes}/{consensus.TotalVotes}";
-
-            yield return new("1X2", consensus.Pick, $"1X2|{bucket}", detail);
-
-            if (allowDoubleChance && consensus.Pick != "X")
-                yield return new(
-                    "DC",
-                    consensus.Pick == "1" ? "1X" : "X2",
-                    $"DC|{bucket}",
-                    detail);
-        }
-
-        int bttsTotal = snapshots.Count(x => x.Btts is "YES" or "NO");
-
-        foreach (var group in snapshots
-            .Where(x => x.Btts is "YES" or "NO")
-            .GroupBy(x => x.Btts!))
-        {
-            int votes = Math.Min(group.Count(), 3);
-            yield return new(
-                "BTTS",
-                group.Key,
-                $"BTTS|{group.Key}|{votes}",
-                $"{group.Count()}/{bttsTotal} sources");
-        }
-
-        var goalVotes = snapshots
-            .Select(x => x.Goals?.Trim().ToUpperInvariant())
-            .Where(x => x is "O0.5" or "U0.5" or "O1.5" or "U1.5" or "O2.5" or "U2.5" or "O3.5" or "U3.5")
-            .ToList();
-
-        foreach (var group in goalVotes.GroupBy(x => x!))
-        {
-            int votes = Math.Min(group.Count(), 3);
-            yield return new(
-                "Goals",
-                group.Key,
-                $"GOALS|{group.Key}|{votes}",
-                $"{group.Count()}/{goalVotes.Count} sources");
-        }
-    }
-
-    private static bool IsTicketPickCorrect(TicketCandidate candidate, MatchResult result) =>
-        candidate.Market switch
-        {
-            "1X2" => candidate.Pick == result.Result,
-            "DC" => candidate.Pick == "1X" ? result.Result != "2" : result.Result != "1",
-            "BTTS" => candidate.Pick == (result.Btts ? "YES" : "NO"),
-            _ => IsGoalsPickCorrect(candidate.Pick, result.TotalGoals)
-        };
-
-    private static bool IsGoalsPickCorrect(string pick, int totalGoals)
-    {
-        double line = double.Parse(pick[1..], CultureInfo.InvariantCulture);
-        return pick[0] == 'O' ? totalGoals > line : totalGoals < line;
-    }
 }

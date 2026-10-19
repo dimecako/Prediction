@@ -350,9 +350,6 @@ public partial class ProductionConsensusAggregator
     public async Task<List<Prediction.Models.ExternalMatchResult>>
     GetForebetResultsAsync(DateOnly date)
     {
-        var results =
-            new List<Prediction.Models.ExternalMatchResult>();
-
         string dateText =
             date.ToString("yyyy-MM-dd");
 
@@ -367,6 +364,13 @@ public partial class ProductionConsensusAggregator
         string json =
             await GetForebetJsonWithSession(url);
 
+        return ParseForebetResults(json, date);
+    }
+
+    public static List<Prediction.Models.ExternalMatchResult> ParseForebetResults(string json, DateOnly date)
+    {
+        var results = new List<Prediction.Models.ExternalMatchResult>();
+        string dateText = date.ToString("yyyy-MM-dd");
         if (string.IsNullOrWhiteSpace(json))
             return results;
 
@@ -434,6 +438,22 @@ public partial class ProductionConsensusAggregator
                 continue;
             }
 
+            int? halfTimeHome = null;
+            int? halfTimeAway = null;
+            string halfHomeText = item["Host_SC_HT"]?.ToString() ?? "";
+            string halfAwayText = item["Guest_SC_HT"]?.ToString() ?? "";
+            if (!string.IsNullOrWhiteSpace(halfHomeText) || !string.IsNullOrWhiteSpace(halfAwayText))
+            {
+                if (int.TryParse(halfHomeText, out int h) && int.TryParse(halfAwayText, out int a) &&
+                    h >= 0 && a >= 0 && h <= homeGoals && a <= awayGoals)
+                {
+                    halfTimeHome = h;
+                    halfTimeAway = a;
+                }
+                else
+                    Console.WriteLine($"[Forebet RESULTS] Invalid half-time score for {home} vs {away}; left ungraded.");
+            }
+
             results.Add(
                 new Prediction.Models.ExternalMatchResult
                 {
@@ -445,6 +465,8 @@ public partial class ProductionConsensusAggregator
 
                     HomeGoals = homeGoals,
                     AwayGoals = awayGoals,
+                    HalfTimeHomeGoals = halfTimeHome,
+                    HalfTimeAwayGoals = halfTimeAway,
 
                     KickoffUtc = null,
 

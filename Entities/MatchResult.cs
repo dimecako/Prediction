@@ -10,6 +10,10 @@ public sealed class MatchResult
 
     public int AwayGoals { get; set; }
 
+    public int? HalfTimeHomeGoals { get; set; }
+
+    public int? HalfTimeAwayGoals { get; set; }
+
     // 1 / X / 2
     public string Result { get; set; } = string.Empty;
 
