@@ -36,6 +36,8 @@ public static class TeamNameMatcher
         if (ta.Count == 0 || tb.Count == 0)
             return false;
 
+        (ta, tb) = (ExpandInitials(ta, tb), ExpandInitials(tb, ta));
+
         var ma = ta.Where(x => Marker.IsMatch(x)).OrderBy(x => x).ToList();
         var mb = tb.Where(x => Marker.IsMatch(x)).OrderBy(x => x).ToList();
         if (!ma.SequenceEqual(mb))
@@ -59,10 +61,41 @@ public static class TeamNameMatcher
     }
 
     private static List<string> Tokens(string normalized) =>
-        normalized
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        MergeInitialRuns(normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries))
             .Select(x => x switch { "utd" => "united", "st" => "saint", _ => x })
             .Where(x => !Noise.Contains(x))
+            .ToList();
+
+    // "U.A.N.L." arrives as separate letters; three or more in a row form one acronym token.
+    private static IEnumerable<string> MergeInitialRuns(IEnumerable<string> tokens)
+    {
+        var run = new List<string>();
+        foreach (string token in tokens.Append(string.Empty))
+        {
+            if (token.Length == 1)
+            {
+                run.Add(token);
+                continue;
+            }
+
+            if (run.Count >= 3)
+                yield return string.Concat(run);
+            else
+                foreach (string initial in run)
+                    yield return initial;
+            run.Clear();
+
+            if (token.Length > 0)
+                yield return token;
+        }
+    }
+
+    // A lone letter ("Bayern M.", "Guadalajara C.") stands for a word of the other name starting with it.
+    // It is replaced only when such a word exists, so "Real Madrid C" never equals "Real Madrid".
+    private static List<string> ExpandInitials(List<string> tokens, List<string> other) =>
+        tokens.Select(t => t.Length == 1 && char.IsLetter(t[0]) && tokens.Count > 1
+                ? other.FirstOrDefault(o => o.Length > 1 && o[0] == t[0] && !tokens.Contains(o)) ?? t
+                : t)
             .ToList();
 
     private static bool TokenMatch(string a, string b)
@@ -73,7 +106,9 @@ public static class TeamNameMatcher
         // Abbreviations such as "dep" / "deportivo" or "atl" / "atletico".
         string shortToken = a.Length <= b.Length ? a : b;
         string longToken = a.Length <= b.Length ? b : a;
-        return shortToken.Length >= 3 && longToken.StartsWith(shortToken, StringComparison.Ordinal);
+        return (shortToken.Length >= 3 && longToken.StartsWith(shortToken, StringComparison.Ordinal)) ||
+            // Glued club prefixes such as "kusatsu" in "thespakusatsu".
+            (shortToken.Length >= 6 && longToken.EndsWith(shortToken, StringComparison.Ordinal));
     }
 
     private static double Ratio(string a, string b)

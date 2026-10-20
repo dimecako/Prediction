@@ -15,6 +15,13 @@ public sealed record TicketCandidate(string Market, string Pick, string Key, str
 
 public static class TicketMarkets
 {
+    public static readonly IReadOnlyList<string> HalfGoalPicks = Array.AsReadOnly(new[]
+    {
+        "1-2 prvo & 1-2 vtoro",
+        "1-3 prvo & 1-3 vtoro",
+        "1-3 prvo & 3+"
+    });
+
     public static IEnumerable<TicketCandidate> BuildCalibrationCandidates(Match match)
     {
         foreach (var candidate in BuildCandidates(match))
@@ -79,6 +86,8 @@ public static class TicketMarkets
         }
         if (overVotes > 0)
             yield return new("Goals", "O2.5", $"GOALS|O2.5|{Math.Min(overVotes, 3)}", $"{overVotes} sources");
+        foreach (string pick in HalfGoalPicks)
+            yield return new("HalfGoals", pick, $"HALFGOALS|{pick}", "");
     }
 
     // A missing half-time score is ungraded, not a lost bet or an inferred 0-0.
@@ -93,6 +102,23 @@ public static class TicketMarkets
             return (result.HomeGoals > 0 && result.AwayGoals > 0) == (candidate.Pick == "YES");
         if (candidate.Market == "Goals" && candidate.Pick is "O2.5" or "U2.5")
             return (total >= 3) == (candidate.Pick == "O2.5");
+        if (candidate.Market == "HalfGoals")
+        {
+            if (!HalfGoalPicks.Contains(candidate.Pick))
+                throw new ArgumentException($"Unsupported ticket pick: {candidate.Pick}");
+            if (result.HalfTimeHomeGoals is not int htHome || result.HalfTimeAwayGoals is not int htAway)
+                return null;
+            ValidateHalfTime(result, htHome, htAway);
+            int first = htHome + htAway;
+            int second = total - first;
+            return candidate.Pick switch
+            {
+                "1-2 prvo & 1-2 vtoro" => first is >= 1 and <= 2 && second is >= 1 and <= 2,
+                "1-3 prvo & 1-3 vtoro" => first is >= 1 and <= 3 && second is >= 1 and <= 3,
+                "1-3 prvo & 3+" => first is >= 1 and <= 3 && total >= 3,
+                _ => throw new ArgumentException($"Unsupported ticket pick: {candidate.Pick}")
+            };
+        }
         if (candidate.Market != "Combo")
             throw new ArgumentException($"Unsupported ticket market: {candidate.Market}");
         if (candidate.Pick == "BTTS & 3+")
@@ -111,8 +137,7 @@ public static class TicketMarkets
             throw new ArgumentException($"Unsupported ticket pick: {candidate.Pick}");
         if (result.HalfTimeHomeGoals is not int home || result.HalfTimeAwayGoals is not int away)
             return null;
-        if (home < 0 || away < 0 || home > result.HomeGoals || away > result.AwayGoals)
-            throw new InvalidOperationException("Invalid stored half-time score.");
+        ValidateHalfTime(result, home, away);
         string htWinner = home > away ? "1" : home < away ? "2" : "X";
         return winner == side && condition switch
         {
@@ -120,5 +145,11 @@ public static class TicketMarkets
             " & 1+ prvo & 1+ vtoro" => home + away >= 1 && total - home - away >= 1,
             _ => htWinner == side && (!condition.EndsWith(" & 2+", StringComparison.Ordinal) || total >= 2)
         };
+    }
+
+    private static void ValidateHalfTime(MatchResult result, int home, int away)
+    {
+        if (home < 0 || away < 0 || home > result.HomeGoals || away > result.AwayGoals)
+            throw new InvalidOperationException("Invalid stored half-time score.");
     }
 }

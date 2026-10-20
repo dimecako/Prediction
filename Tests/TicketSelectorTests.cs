@@ -10,13 +10,12 @@ public sealed class TicketSelectorTests
     [InlineData(1.2)]
     [InlineData(1.3)]
     [InlineData(1.399)]
-    public void BaseOddsBelowMinimumRejectEvenStrongCombinations(double odds)
+    public void LowBaseOddsAllowHalfTimeFullTime(double odds)
     {
         var match = Fixture();
-        var decision = TicketSelector.Select(match, Calibrate(match), _ => odds, false);
-        Assert.Null(decision.Confirmed);
-        Assert.Null(decision.Proposal);
-        Assert.Contains("1.40", decision.Reason);
+        var decision = TicketSelector.Select(match, Calibrate(match),
+            c => c.Market == "1X2" ? odds : c.Pick == "1-1" ? 1.7 : 1.1, false);
+        Assert.Equal("1-1", decision.Confirmed!.Candidate.Pick);
     }
 
     [Fact]
@@ -29,7 +28,44 @@ public sealed class TicketSelectorTests
     }
 
     [Theory]
+    [InlineData(1.0)]
+    [InlineData(0.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void InvalidBaseOddsDoNotProduceSelections(double odds)
+    {
+        var match = Fixture();
+        var decision = TicketSelector.Select(match, Calibrate(match),
+            c => c.Market == "1X2" ? odds : 2.0, false);
+        Assert.Null(decision.Confirmed);
+        Assert.Null(decision.Proposal);
+    }
+
+    [Theory]
+    [InlineData(1.3, "2-2")]
+    [InlineData(1.5, "2 & 2-5 golovi")]
+    public void AwayWinnerUsesSameOddsBands(double odds, string pick)
+    {
+        var match = Fixture("2");
+        var decision = TicketSelector.Select(match, Calibrate(match),
+            c => c.Market == "1X2" ? odds : c.Pick == pick ? 1.7 : 1.1, false);
+        Assert.Equal(pick, decision.Confirmed!.Candidate.Pick);
+    }
+
+    [Fact]
+    public void HighBaseOddsAllowStandaloneOverWithReliableGoalsSignal()
+    {
+        var match = Fixture();
+        var decision = TicketSelector.Select(match, Calibrate(match),
+            c => c.Market == "1X2" ? 2.1 : c.Market == "Goals" ? 1.8 : 1.1, false);
+        Assert.Equal("Goals", decision.Confirmed!.Candidate.Market);
+        Assert.Equal("O2.5", decision.Confirmed.Candidate.Pick);
+        Assert.Null(decision.Proposal);
+    }
+
+    [Theory]
     [InlineData("1", 1.7)]
+    [InlineData("1", 1.999)]
     [InlineData("2", 2.0)]
     public void HighBaseOddsKeepFixEvenIfCombinationLooksBetter(string side, double odds)
     {
@@ -49,7 +85,7 @@ public sealed class TicketSelectorTests
     {
         var match = Fixture();
         var decision = TicketSelector.Select(match, Calibrate(match), c =>
-            c.Market == "1X2" ? odds : c.Pick == "1 & 2-5 golovi" ? 1.50 : null, false);
+            c.Market == "1X2" ? odds : c.Pick == "1 & 2-5 golovi" ? 1.70 : null, false);
         Assert.Equal("1 & 2-5 golovi", decision.Confirmed!.Candidate.Pick);
         Assert.Null(decision.Proposal);
     }
@@ -59,7 +95,7 @@ public sealed class TicketSelectorTests
     {
         var match = Fixture();
         var decision = TicketSelector.Select(match, Calibrate(match),
-            c => c.Market == "1X2" ? 1.4 : 1.49, false);
+            c => c.Market == "1X2" ? 1.4 : 1.699, false);
         Assert.Null(decision.Confirmed);
         Assert.Null(decision.Proposal);
     }
@@ -97,15 +133,16 @@ public sealed class TicketSelectorTests
     }
 
     [Theory]
-    [InlineData(54, 100, false)]
-    [InlineData(55, 99, false)]
-    [InlineData(55, 100, true)]
-    public void EntireCombinationMustMeetItsOwnThreshold(int correct, int total, bool accepted)
+    [InlineData(27, 50, 1.8, false)]
+    [InlineData(25, 49, 2.2, false)]
+    [InlineData(25, 50, 2.2, true)]
+    [InlineData(28, 50, 1.8, true)]
+    public void EntireCombinationMustMeetAccuracyOrExpectedReturnThreshold(int correct, int total, double odds, bool accepted)
     {
         var match = Fixture();
         var tally = Calibrate(match, comboCorrect: correct, comboTotal: total);
         var decision = TicketSelector.Select(match, tally,
-            c => c.Market == "1X2" ? 1.4 : c.Pick == "1 & 2-5 golovi" ? 1.8 : 1.1, false);
+            c => c.Market == "1X2" ? 1.4 : c.Pick == "1 & 2-5 golovi" ? odds : 1.1, false);
         Assert.Equal(accepted, decision.Confirmed != null);
     }
 
@@ -135,7 +172,7 @@ public sealed class TicketSelectorTests
     {
         var match = Fixture();
         var decision = TicketSelector.Select(match, Calibrate(match, signalCorrect: 10),
-            c => c.Market == "1X2" ? 1.4 : c.Pick == "1-1" ? 1.8 : 1.1, false);
+            c => c.Market == "1X2" ? 1.3 : c.Pick == "1-1" ? 1.8 : 1.1, false);
         Assert.Equal("1-1", decision.Confirmed!.Candidate.Pick);
     }
 
@@ -161,7 +198,7 @@ public sealed class TicketSelectorTests
         for (int i = 0; i < 100; i++)
             tally.Add(btts.Key, false);
         var decision = TicketSelector.Select(match, tally, c =>
-            c.Market == "1X2" ? 1.4 : c.Pick == "BTTS & 3+" ? 1.8 : 1.1, false);
+            c.Market == "1X2" ? 2.1 : c.Pick == "BTTS & 3+" ? 1.8 : 1.1, false);
         Assert.Null(decision.Confirmed);
         Assert.Null(decision.Proposal);
     }
@@ -177,18 +214,17 @@ public sealed class TicketSelectorTests
         Assert.Null(TicketMarkets.BinarySignal(match, "BTTS"));
         Assert.Null(TicketMarkets.BinarySignal(match, "Goals"));
         var decision = TicketSelector.Select(match, Calibrate(match), c =>
-            c.Market == "1X2" ? 1.4 : c.Pick == "BTTS & 3+" ? 1.8 : 1.1, false);
+            c.Market == "1X2" ? 2.1 : c.Pick == "BTTS & 3+" ? 1.8 : 1.1, false);
         Assert.Null(decision.Confirmed);
     }
 
     [Theory]
     [InlineData("BTTS", "YES")]
-    [InlineData("Goals", "O2.5")]
     public void StandaloneAlternativeRequiresReliableRelevantSignal(string market, string pick)
     {
         var match = Fixture();
         var decision = TicketSelector.Select(match, Calibrate(match), c =>
-            c.Market == "1X2" ? 1.4 : c.Market == market && c.Pick == pick ? 1.5 : 1.1, false);
+            c.Market == "1X2" ? 2.1 : c.Market == market && c.Pick == pick ? 1.65 : 1.1, false);
         Assert.Equal(market, decision.Confirmed!.Candidate.Market);
         Assert.Equal(pick, decision.Confirmed.Candidate.Pick);
     }
@@ -198,7 +234,7 @@ public sealed class TicketSelectorTests
     {
         var match = Fixture();
         var decision = TicketSelector.Select(match, Calibrate(match), c =>
-            c.Market == "1X2" ? 1.4 : c.Pick == "1 & 2-5 golovi" ? 1.5 : 1.49, true);
+            c.Market == "1X2" ? 1.4 : c.Pick == "1 & 2-5 golovi" ? 1.7 : 1.699, true);
         Assert.Equal("1 & 2-5 golovi", decision.Confirmed!.Candidate.Pick);
     }
 
@@ -208,6 +244,96 @@ public sealed class TicketSelectorTests
         var decision = TicketSelector.Select(Fixture(), new Tally(), _ => 1.8, false);
         Assert.Null(decision.Confirmed);
         Assert.Null(decision.Proposal);
+    }
+
+    [Theory]
+    [InlineData(1.399, "1-1", true)]
+    [InlineData(1.399, "1-1 & 2+", true)]
+    [InlineData(1.399, "1 & 2-5 golovi", true)]
+    [InlineData(1.4, "1-1", false)]
+    [InlineData(1.4, "1 & 2-5 golovi", true)]
+    [InlineData(1.699, "1 & 2-6 golovi", true)]
+    [InlineData(1.699, "BTTS & 3+", false)]
+    [InlineData(2.001, "1 & 2-5 golovi", false)]
+    [InlineData(2.001, "O2.5", true)]
+    [InlineData(2.001, "BTTS & 3+", true)]
+    [InlineData(2.001, "1-2 prvo & 1-2 vtoro", true)]
+    [InlineData(2.001, "1-3 prvo & 1-3 vtoro", true)]
+    [InlineData(2.001, "1-3 prvo & 3+", true)]
+    public void OddsBandsOnlyAllowRequestedMarkets(double baseOdds, string pick, bool accepted)
+    {
+        var match = Fixture();
+        var decision = TicketSelector.Select(match, Calibrate(match),
+            c => c.Market == "1X2" ? baseOdds : c.Pick == pick ? 1.7 : 1.1, false);
+        Assert.Equal(accepted, decision.Confirmed != null);
+        Assert.Null(decision.Proposal);
+        if (accepted)
+            Assert.Equal(pick, decision.Confirmed!.Candidate.Pick);
+    }
+
+    [Theory]
+    [InlineData("YES", 1.65, true)]
+    [InlineData("YES", 1.649, false)]
+    [InlineData("BTTS & 3+", 1.70, true)]
+    [InlineData("BTTS & 3+", 1.699, false)]
+    [InlineData("1-2 prvo & 1-2 vtoro", 1.70, true)]
+    [InlineData("1-2 prvo & 1-2 vtoro", 1.699, false)]
+    public void HighOddsAlternativesUseTheirOwnMinimum(string pick, double odds, bool accepted)
+    {
+        var match = Fixture();
+        var decision = TicketSelector.Select(match, Calibrate(match),
+            c => c.Market == "1X2" ? 2.1 : c.Pick == pick ? odds : 1.1, false);
+        Assert.Equal(accepted, decision.Confirmed != null);
+        Assert.Null(decision.Proposal);
+    }
+
+    [Theory]
+    [InlineData(27, 50, 1.8, 60, false)]
+    [InlineData(28, 49, 1.8, 60, false)]
+    [InlineData(28, 50, 1.8, 59, false)]
+    [InlineData(28, 50, 1.8, 60, true)]
+    [InlineData(24, 50, 2.2, 60, true)]
+    public void HalfGoalsNeedReliableOverSignalAndHistoryOrExpectedReturn(int correct, int total, double odds, int signalCorrect, bool accepted)
+    {
+        var match = Fixture(btts: "NO", goals: "O2.5");
+        var decision = TicketSelector.Select(match,
+            Calibrate(match, winCorrect: 0, comboCorrect: correct, comboTotal: total, signalCorrect: signalCorrect),
+            c => c.Market == "1X2" ? 2.1 : c.Pick == "1-3 prvo & 3+" ? odds : 1.1, false);
+        Assert.Equal(accepted, decision.Confirmed != null);
+    }
+
+    [Fact]
+    public void UnknownHalfGoalsOddsRemainSeparateProposal()
+    {
+        var match = Fixture();
+        var decision = TicketSelector.Select(match, Calibrate(match),
+            c => c.Market == "1X2" ? 2.1 : c.Pick == "1-3 prvo & 3+" ? null : 1.1, false);
+        Assert.Null(decision.Confirmed);
+        Assert.Equal("HalfGoals", decision.Proposal!.Candidate.Market);
+    }
+
+    [Fact]
+    public void HighOddsBttsDoesNotRequireReliableWinner()
+    {
+        var match = Fixture();
+        var decision = TicketSelector.Select(match, Calibrate(match, winCorrect: 0),
+            c => c.Market == "1X2" ? 2.1 : c.Market == "BTTS" ? 1.65 : 1.1, false);
+        Assert.Equal("BTTS", decision.Confirmed!.Candidate.Market);
+    }
+
+    [Theory]
+    [InlineData(false, "1 & 2-6 golovi")]
+    [InlineData(true, "1 & 2-5 golovi")]
+    public void SafetyFlagPreservesRankingWithinAllowedBand(bool safe, string expected)
+    {
+        var match = Fixture();
+        var tally = Calibrate(match);
+        string key = TicketMarkets.BuildCandidates(match).Single(c => c.Pick == "1 & 2-5 golovi").Key;
+        for (int i = 0; i < 100; i++)
+            tally.Add(key, true);
+        var decision = TicketSelector.Select(match, tally, c => c.Market == "1X2" ? 1.4 :
+            c.Pick == "1 & 2-5 golovi" ? 1.7 : c.Pick == "1 & 2-6 golovi" ? 3.0 : 1.1, safe);
+        Assert.Equal(expected, decision.Confirmed!.Candidate.Pick);
     }
 
     [Fact]

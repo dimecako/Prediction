@@ -13,21 +13,23 @@ public sealed class TicketMarketsTests
     {
         var match = Fixture(side, "YES", "O2.5");
         var candidates = TicketMarkets.BuildCandidates(match).ToList();
-        Assert.Equal(10, candidates.Count);
+        Assert.Equal(13, candidates.Count);
         Assert.Equal(new[]
         {
             $"fix {side}", $"{side} & 1+ prvo", $"{side} & 1+ prvo & 1+ vtoro",
             $"{side} & 2-5 golovi", $"{side} & 2-6 golovi",
-            $"{side}-{side}", $"{side}-{side} & 2+", "BTTS", "BTTS & 3+", "3+"
+            $"{side}-{side}", $"{side}-{side} & 2+", "BTTS", "BTTS & 3+", "3+",
+            "1-2 prvo & 1-2 vtoro", "1-3 prvo & 1-3 vtoro", "1-3 prvo & 3+"
         }, candidates.Select(x => x.DisplayPick));
         Assert.DoesNotContain(candidates, x => x.Market == "DC");
         Assert.Equal(candidates.Count, candidates.Select(x => x.Key).Distinct().Count());
     }
 
     [Fact]
-    public void DrawNoBttsAndUnderCannotEnterTicket()
+    public void DrawNoBttsAndUnderOnlyGenerateIndependentHalfGoals()
     {
-        Assert.Empty(TicketMarkets.BuildCandidates(Fixture("X", "NO", "U2.5")));
+        Assert.All(TicketMarkets.BuildCandidates(Fixture("X", "NO", "U2.5")),
+            c => Assert.Equal("HalfGoals", c.Market));
     }
 
     [Fact]
@@ -112,6 +114,81 @@ public sealed class TicketMarketsTests
         Assert.Null(MaxbetOddsProvider.GetOdds(offer, "Combo", "1 & 2-5 golovi"));
         Assert.Null(MaxbetOddsProvider.GetOdds(offer, "Combo", "BTTS & 3+"));
         Assert.Equal(2, MaxbetOddsProvider.GetOdds(offer, "1X2", "1"));
+    }
+
+    [Theory]
+    [InlineData("1-2 prvo & 1-2 vtoro", 2, 0, 1, 0, true)]
+    [InlineData("1-2 prvo & 1-2 vtoro", 2, 2, 1, 1, true)]
+    [InlineData("1-2 prvo & 1-2 vtoro", 3, 2, 1, 1, false)]
+    [InlineData("1-2 prvo & 1-2 vtoro", 2, 0, 0, 0, false)]
+    [InlineData("1-2 prvo & 1-2 vtoro", 2, 0, 2, 0, false)]
+    [InlineData("1-3 prvo & 1-3 vtoro", 3, 3, 2, 1, true)]
+    [InlineData("1-3 prvo & 1-3 vtoro", 4, 3, 2, 1, false)]
+    [InlineData("1-3 prvo & 1-3 vtoro", 4, 1, 3, 1, false)]
+    [InlineData("1-3 prvo & 1-3 vtoro", 1, 0, 0, 0, false)]
+    [InlineData("1-3 prvo & 1-3 vtoro", 2, 0, 2, 0, false)]
+    [InlineData("1-3 prvo & 3+", 2, 1, 1, 0, true)]
+    [InlineData("1-3 prvo & 3+", 3, 0, 3, 0, true)]
+    [InlineData("1-3 prvo & 3+", 1, 1, 1, 0, false)]
+    [InlineData("1-3 prvo & 3+", 3, 1, 3, 1, false)]
+    [InlineData("1-3 prvo & 3+", 2, 1, 0, 0, false)]
+    public void HalfGoalsGradeInclusiveRanges(
+        string pick, int home, int away, int htHome, int htAway, bool expected)
+    {
+        Assert.Equal(expected, TicketMarkets.IsCorrect(new("HalfGoals", pick, "", ""),
+            Result(home, away, htHome, htAway)));
+    }
+
+    [Fact]
+    public void HalfGoalsRequireCompleteValidHalfTimeScores()
+    {
+        foreach (string pick in TicketMarkets.HalfGoalPicks)
+        {
+            var candidate = new TicketCandidate("HalfGoals", pick, "", "");
+            Assert.Null(TicketMarkets.IsCorrect(candidate, Result(2, 1)));
+            Assert.Null(TicketMarkets.IsCorrect(candidate, Result(2, 1, 1)));
+            Assert.Throws<InvalidOperationException>(() =>
+                TicketMarkets.IsCorrect(candidate, Result(2, 1, 3, 0)));
+        }
+    }
+
+    [Fact]
+    public void StandaloneHalfGoalCalibrationDoesNotDependOnPredictedWinner()
+    {
+        var home = TicketMarkets.BuildCalibrationCandidates(Fixture("1", "YES", "O2.5"))
+            .Where(c => c.Market == "HalfGoals").Select(c => c.Key).ToList();
+        var away = TicketMarkets.BuildCalibrationCandidates(Fixture("2", "NO", "U2.5"))
+            .Where(c => c.Market == "HalfGoals").Select(c => c.Key).ToList();
+        Assert.Equal(3, home.Count);
+        Assert.Equal(home, away);
+    }
+
+    [Theory]
+    [InlineData("Combo", "1 & 1+ prvo", "50247")]
+    [InlineData("Combo", "2 & 1+ prvo", "50250")]
+    [InlineData("Combo", "1 & 1+ prvo & 1+ vtoro", "50726")]
+    [InlineData("Combo", "2 & 1+ prvo & 1+ vtoro", "50730")]
+    [InlineData("Combo", "1 & 2-5 golovi", "50723")]
+    [InlineData("Combo", "2 & 2-5 golovi", "50727")]
+    [InlineData("Combo", "1 & 2-6 golovi", "51784")]
+    [InlineData("Combo", "2 & 2-6 golovi", "51785")]
+    [InlineData("Combo", "1-1", "10")]
+    [InlineData("Combo", "2-2", "18")]
+    [InlineData("Combo", "1-1 & 2+", "862")]
+    [InlineData("Combo", "2-2 & 2+", "863")]
+    [InlineData("Combo", "BTTS & 3+", "303")]
+    [InlineData("HalfGoals", "1-2 prvo & 1-2 vtoro", "51428")]
+    [InlineData("HalfGoals", "1-3 prvo & 1-3 vtoro", "51568")]
+    [InlineData("HalfGoals", "1-3 prvo & 3+", "55173")]
+    public void VerifiedCombinedMarketUsesExactPrice(string market, string pick, string code)
+    {
+        var offer = new BookmakerMatch("Home", "Away", DateTime.UtcNow,
+            new Dictionary<string, double>
+            {
+                [code] = 1.85, ["1"] = 1.3, ["24"] = 1.9, ["272"] = 1.75,
+                ["536"] = 1.1
+            });
+        Assert.Equal(1.85, MaxbetOddsProvider.GetOdds(offer, market, pick));
     }
 
     private static TicketCandidate Combo(string pick) => new("Combo", pick, pick, "");

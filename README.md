@@ -62,6 +62,7 @@ dotnet run --no-build -- ticket 2026-10-20 15
 dotnet run --no-build -- ticket 2026-10-20 5
 dotnet run --no-build -- ticket 2026-10-20 15 nodc
 dotnet run --no-build -- ticket 2026-10-20 5 safe
+dotnet run --no-build -- ticket 2026-10-20 15 why
 ```
 
 `calibration` (read-only) measures real accuracy of the 1X2 consensus grouped
@@ -75,40 +76,78 @@ and using remaining places for separately labelled unconfirmed proposals.
 ### Ticket selection rules
 
 - A uniquely matched Maxbet offer on the requested local calendar date must have
-  actual odds **>=1.40** for the predicted home/away win. Odds of 1.20 or 1.30 and
-  unknown base odds are excluded, even from proposals.
-- The win signal needs **>=55% measured historical accuracy with >=100 cases**.
-- Base win odds **>=1.70** keep the straight home/away win; no combination replaces it.
-- Base win odds **1.40 to <1.70** require an eligible alternative with actual odds
-  **>=1.50**, >=55% whole-selection historical accuracy and >=100 cases.
-- If that alternative uses BTTS YES, its majority BTTS signal also needs
-  **>=60% measured accuracy with >=100 cases**. `BTTS & 3+` needs both BTTS YES and
-  Over 2.5 to pass that threshold; `3+` needs Over 2.5.
-- Goal-range, first/second-half goal and HT/FT-with-goals selections require a
+  a valid actual price for the predicted home/away win. Unknown base odds are
+  excluded, even from proposals. The base win requires an unambiguous 1/2 consensus
+  with a source probability, even when an independent goals selection is chosen.
+- The base price determines which selections are allowed:
+
+  | Base win odds | Allowed selections | Minimum final odds |
+  |---|---|---|
+  | Below 1.40 | HT/FT `1-1` / `2-2` (with or without 2+ goals) or Win & Goals combinations | 1.70 |
+  | 1.40 to below 1.70 | Win with first-half goals, goals in both halves, or 2-5 / 2-6 total goals | 1.70 |
+  | 1.70 through 2.00 inclusive | Straight win only; no goals or HT/FT replacement | Base win price |
+  | Above 2.00 | BTTS YES, 3+ (Over 2.5), BTTS & 3+, or the three standalone half-goal selections below | 1.65 for BTTS; 1.70 otherwise |
+
+- Straight win, standalone BTTS and standalone 3+ selections need **>=55% measured
+  historical accuracy with >=100 graded cases**. Composite (`Combo` / `HalfGoals`)
+  selections need **>=50 graded cases** and either **>=55% historical accuracy**
+  or **expected return >=1.05 (EV >= +5%)** at the actual Maxbet price. Win and
+  winner-combination selections additionally require the win signal to meet `>=55%`
+  (`n>=100`). Above 2.00, standalone BTTS/goal selections do not require the win
+  signal's historical accuracy.
+- If an alternative uses BTTS YES, its majority BTTS signal needs
+  **>=55% measured accuracy with >=100 cases**. `BTTS & 3+` needs both BTTS YES
+  (`>=55%`) and Over 2.5 (`>=60%`, `n>=100`); standalone `3+` and standalone
+  half-goal markets require Over 2.5 (`>=60%`, `n>=100`).
+- Winner goal-range, first/second-half goal and HT/FT-with-goals selections require a
   reliable majority Over/Under 2.5 signal (>=60%, >=100 cases), plus the
   whole-selection threshold. An Under signal is evidence for calibration, not a
   new permitted Under bet. Plain HT/FT uses only the winner and whole-selection
   thresholds. No BTTS/Goals threshold is required when that component is unused.
+- Standalone half-goal markets use their own whole-selection historical hit rate,
+  across all historical matches with valid half-time scores, not the winner's
+  probability bucket. No generic BTTS/Over signal is imposed on these markets:
+  over 2.5 does not predict a specific distribution of goals between halves.
 - Missing, tied or insufficient binary signals do not pass. These percentages
   are historical hit rates, **not source agreement** or guaranteed match probabilities.
 - If no qualifying priced alternative exists, an otherwise eligible combination
   with unknown odds may appear only as a proposal with `n/a`, outside the confirmed
-  ticket and its combined odds/return. Known odds below 1.50 are not treated as
+  ticket and its combined odds/return. Known odds below the applicable minimum are not treated as
   unknown. There is no fallback to a low-priced straight win or a below-threshold pick.
 
-The allowed final selections remain:
+The allowed final selections, subject to the odds bands above, are:
 
 - `fix 1`, `fix 2`;
 - `1 & 1+ prvo`, `2 & 1+ prvo`;
 - `1 & 1+ prvo & 1+ vtoro`, `2 & 1+ prvo & 1+ vtoro`;
 - `1 & 2-5 golovi`, `1 & 2-6 golovi`, `2 & 2-5 golovi`, `2 & 2-6 golovi`;
 - `BTTS`, `BTTS & 3+`, `3+`;
-- `1-1`, `2-2`, `1-1 & 2+`, `2-2 & 2+`.
+- `1-1`, `2-2`, `1-1 & 2+`, `2-2 & 2+`;
+- `1-2 prvo & 1-2 vtoro`: 1-2 total goals in each half;
+- `1-3 prvo & 1-3 vtoro`: 1-3 total goals in each half;
+- `1-3 prvo & 3+`: 1-3 total goals in the first half and at least 3 in the match.
 
 `1-1` / `2-2` mean half-time/full-time home win / away win, **not exact scores**.
 `1+ prvo` / `1+ vtoro` require at least one total goal in the first / second half.
 `2+` / `3+` require at least two / three full-time goals; goal ranges are inclusive.
-Draws, double chance, BTTS NO and other totals are excluded in all four commands.
+Draws, double chance and BTTS NO are not ticket selections.
+Existing calibration commands can still grade their supported markets.
+
+The ticket can never hold more picks than Maxbet offers: its public football offer
+is capped at roughly 500 matches for the whole coming week (about 70 per day), so
+most of the day's predicted matches simply have no Maxbet price and are reported as
+`Nema spartena ponuda`. The `why` flag prints the history hit rate of the standalone
+half-goal markets, one `[ODBIEN]` line per matched fixture with its base odds, reason
+and signals, and `[BEZ-PAR]` lines for Maxbet offers that no stored match was paired
+with. One Maxbet fixture stored under several spellings counts once (the record with
+the most sources is kept). Team names tolerate Maxbet's initials ("Bayern M." =
+"Bayern Munich"); an initial is expanded only when the other name has a word that
+starts with it, so "Real Madrid C" never equals "Real Madrid".
+
+The standalone half-goal markets use one global hit rate (about 29%, 47% and 47.5%)
+that cannot distinguish matches. Relaxing the 55% gate for them would select
+fixtures only because their price happens to be high; they need a match-specific
+signal before they can be treated as value bets.
 `nodc` remains accepted for compatibility but no longer changes the allowed markets.
 
 Each complete selection needs 100+ graded historical cases and >=55% accuracy for its signal.
@@ -130,9 +169,14 @@ migration using the configured database.
 
 Odds come from Maxbet MK. Without a verified base win price no selection or proposal
 is produced; unavailable offers and rejection reasons are reported explicitly.
-Combined markets currently have no verified odds mapping: they can only be
-unconfirmed proposals. Component odds are never multiplied to invent a combined-market
-price. The console and Excel include base odds and winner, BTTS YES/NO and Over/Under
+Combined-market codes were verified against Maxbet's public
+`/restapi/offer/en/ttg_lang` metadata on 2026-10-20. HT/FT uses codes 10/18;
+HT/FT & 2+ uses 862/863; BTTS & 3+ uses 303; standalone half-goal combinations
+use 51428, 51568 and 55173 respectively. The `v` in Maxbet labels means OR;
+`&` means AND: `GGv3+` (536) is not `GG3+` (303).
+An offer must contain the exact mapped combined-market price; otherwise the
+selection is only an unconfirmed proposal. Component odds are never multiplied
+to invent a combined-market price. The console and Excel include base odds and winner, BTTS YES/NO and Over/Under
 2.5 historical signal accuracy/sample sizes. Excel separates `Tiket` from
 `Predlozi - nepotvrdeni`; proposals do not contribute to combined odds or chance.
 EV = historical accuracy x odds - 1; picks with EV > 0

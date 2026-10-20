@@ -72,6 +72,7 @@ public static class MaxbetOddsProvider
 
     public static double? GetOdds(BookmakerMatch match, string market, string pick)
     {
+        // Combined tip codes verified against /offer/en/ttg_lang; prices must exist in this offer.
         string? key = (market, pick) switch
         {
             ("1X2", "1") => "1",
@@ -85,6 +86,22 @@ public static class MaxbetOddsProvider
             ("Goals", "O2.5") => "24",
             ("Goals", "O1.5") => "242",
             ("Goals", "O3.5") => "25",
+            ("Combo", "1 & 1+ prvo") => "50247",
+            ("Combo", "2 & 1+ prvo") => "50250",
+            ("Combo", "1 & 1+ prvo & 1+ vtoro") => "50726",
+            ("Combo", "2 & 1+ prvo & 1+ vtoro") => "50730",
+            ("Combo", "1 & 2-5 golovi") => "50723",
+            ("Combo", "2 & 2-5 golovi") => "50727",
+            ("Combo", "1 & 2-6 golovi") => "51784",
+            ("Combo", "2 & 2-6 golovi") => "51785",
+            ("Combo", "1-1") => "10",
+            ("Combo", "2-2") => "18",
+            ("Combo", "1-1 & 2+") => "862",
+            ("Combo", "2-2 & 2+") => "863",
+            ("Combo", "BTTS & 3+") => "303",
+            ("HalfGoals", "1-2 prvo & 1-2 vtoro") => "51428",
+            ("HalfGoals", "1-3 prvo & 1-3 vtoro") => "51568",
+            ("HalfGoals", "1-3 prvo & 3+") => "55173",
             _ => null
         };
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
+using Prediction.Entities;
 using Prediction.Services;
 
 public partial class Program
@@ -11,7 +12,8 @@ public partial class Program
     {
         var flags = args.Skip(2)
             .Where(x => x.Equals("nodc", StringComparison.OrdinalIgnoreCase) ||
-                        x.Equals("safe", StringComparison.OrdinalIgnoreCase))
+                        x.Equals("safe", StringComparison.OrdinalIgnoreCase) ||
+                        x.Equals("why", StringComparison.OrdinalIgnoreCase))
             .Select(x => x.ToLowerInvariant())
             .ToHashSet();
         bool rankBySafety = flags.Contains("safe");
@@ -27,7 +29,7 @@ public partial class Program
                 out var date) ||
             (countArg != null && (!int.TryParse(countArg, out count) || count < 1)))
         {
-            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket yyyy-MM-dd [count] [nodc] [safe]");
+            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket yyyy-MM-dd [count] [nodc] [safe] [why]");
             Environment.ExitCode = 1;
             return;
         }
@@ -87,6 +89,7 @@ public partial class Program
         var rejected = new Dictionary<string, int>();
         void Reject(string reason) => rejected[reason] = rejected.GetValueOrDefault(reason) + 1;
 
+        var paired = new List<(Match Match, BookmakerMatch Offer)>();
         foreach (var match in today)
         {
             var offers = bookmaker.Where(b =>
@@ -97,8 +100,19 @@ public partial class Program
                 Reject(offers.Count == 0 ? "Nema spartena ponuda za datumot." : "Povekje ponudi: nejasen natprevar.");
                 continue;
             }
-            var offer = offers[0];
+            paired.Add((match, offers[0]));
+        }
 
+        // The same Maxbet fixture can be stored under several team spellings; keep the best-covered record.
+        var unique = paired
+            .GroupBy(p => (p.Offer.Home, p.Offer.Away, p.Offer.KickoffUtc))
+            .Select(g => g.OrderByDescending(p => CalibrationAnalyzer.LatestPerSource(p.Match).Count).First())
+            .ToList();
+        int duplicates = paired.Count - unique.Count;
+        var rejectedDetails = new List<string>();
+
+        foreach (var (match, offer) in unique)
+        {
             matched++;
 
             if (offer.KickoffUtc <= DateTime.UtcNow)
@@ -137,16 +151,41 @@ public partial class Program
             else if (decision.Proposal != null)
                 proposals.Add(ToPick(decision.Proposal));
             else
+            {
                 Reject(decision.Reason);
+                rejectedDetails.Add(
+                    $"{match.HomeTeam} vs {match.AwayTeam} | osnovna kvota={(decision.BaseOdds.HasValue ? decision.BaseOdds.Value.ToString("F2") : "n/a")} | " +
+                    $"{decision.Reason} | {evidence}");
+            }
         }
+
+        var pairedOffers = paired.Select(p => (p.Offer.Home, p.Offer.Away, p.Offer.KickoffUtc)).ToHashSet();
+        int dayOffers = bookmaker.Count(b => DateOnly.FromDateTime(b.KickoffUtc.ToLocalTime()) == date);
 
         Console.WriteLine();
         Console.WriteLine(
             $"[TIKET] Datum: {date:yyyy-MM-dd} | Neodigrani natprevari: {today.Count} | " +
             $"Istorija: {history.Count} natprevari so rezultat");
         Console.WriteLine(
-            $"[TIKET] Maxbet: {bookmaker.Count} natprevari vcitani | Sparteni po iminja na timovi: {matched}/{today.Count} | " +
+            $"[TIKET] Maxbet: {bookmaker.Count} natprevari vcitani, od niv {dayOffers} za {date:yyyy-MM-dd} | " +
+            $"Sparteni ponudi: {matched} (duplikati so razlicno ime spojuvani: {duplicates}) | " +
             $"Vekje zapocnati (preskoknati): {started}");
+        if (flags.Contains("why"))
+        {
+            foreach (string pick in TicketMarkets.HalfGoalPicks)
+            {
+                var stat = calibration.Get($"HALFGOALS|{pick}");
+                Console.WriteLine($"[ISTORIJA] {pick}: " +
+                    (stat.Total == 0 ? "n/a" : $"{(double)stat.Correct / stat.Total:P1} (n={stat.Total})"));
+            }
+            foreach (var detail in rejectedDetails)
+                Console.WriteLine($"[ODBIEN] {detail}");
+            foreach (var offer in bookmaker
+                .Where(b => DateOnly.FromDateTime(b.KickoffUtc.ToLocalTime()) == date &&
+                            !pairedOffers.Contains((b.Home, b.Away, b.KickoffUtc)))
+                .OrderBy(b => b.KickoffUtc))
+                Console.WriteLine($"[BEZ-PAR] Maxbet ponuda bez nas natprevar: {offer.Home} vs {offer.Away}");
+        }
         int halfTimeHistory = history.Count(x =>
             x.Result!.HalfTimeHomeGoals.HasValue && x.Result.HalfTimeAwayGoals.HasValue);
         Console.WriteLine($"[TIKET] Istorija so poluvreme: {halfTimeHistory}/{history.Count}. " +
@@ -155,9 +194,10 @@ public partial class Program
             Console.WriteLine("[TIKET] nodc e zadrzan za kompatibilnost; site novi tiketi se bez dvojna sansa.");
         Console.WriteLine("[TIKET] Nepotvrdenite kombinacii se ODVOENI predlozi, ne izbori vo tiketot.");
         Console.WriteLine(
-            "[TIKET] Osnovna kvota >=1.40, pobeda >=55% (n>=100). >=1.70: fix; " +
-            "1.40-1.69: alternativa so kvota >=1.50, tocnost >=55% (n>=100). " +
-            "Koristen BTTS/Goals signal mora >=60% (n>=100).");
+            "[TIKET] Osnovna kvota <1.40: PK/PK & 2+ ili pobeda & golovi; 1.40-<1.70: pobeda & golovi; " +
+            "1.70-2.00: samo fix; >2.00: BTTS (>=1.65), 3+, BTTS & 3+ ili golovi po poluvreme. " +
+            "Drugite alternativi baraat kvota >=1.70. Fix/BTTS/3+: tocnost >=55% (n>=100); " +
+            "kombinacii: >=55% ili EV>=+5% (n>=50). Signal BTTS >=55%, Goals >=60% (n>=100).");
 
         foreach (var rejection in rejected.OrderByDescending(x => x.Value))
             Console.WriteLine($"[TIKET] Preskoknati {rejection.Value}: {rejection.Key}");

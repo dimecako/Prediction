@@ -14,11 +14,16 @@ public sealed record TicketDecision(
 public static class TicketSelector
 {
     public const int MinHistory = 100;
+    public const int MinComboHistory = 50;
     public const double MinAccuracy = 0.55;
     public const double MinSignalAccuracy = 0.60;
+    public const double MinBttsSignalAccuracy = 0.55;
+    public const double MinComboExpectedReturn = 1.05;
     public const double MinBaseOdds = 1.40;
     public const double KeepFixOdds = 1.70;
-    public const double MinFinalOdds = 1.50;
+    public const double MaxFixOdds = 2.00;
+    public const double MinFinalOdds = 1.70;
+    public const double MinBttsOdds = 1.65;
 
     public static TicketDecision Select(
         Match match, Tally calibration, Func<TicketCandidate, double?> getOdds, bool safe)
@@ -28,12 +33,12 @@ public static class TicketSelector
         if (fix == null)
             return new(null, null, null, "Nema nedvosmislen 1/2 signal so Prob.");
         double? baseOdds = getOdds(fix);
-        if (!baseOdds.HasValue || !double.IsFinite(baseOdds.Value) || baseOdds < MinBaseOdds)
-            return new(null, null, baseOdds, "Nema potvrdena osnovna kvota >=1.40.");
-        bool Reliable(TicketCandidate c, double minimum)
+        if (!baseOdds.HasValue || !double.IsFinite(baseOdds.Value) || baseOdds <= 1)
+            return new(null, null, baseOdds, "Nema validna potvrdena osnovna kvota.");
+        bool Reliable(TicketCandidate c, double minimum, int minSamples = MinHistory)
         {
             var stat = calibration.Get(c.Key);
-            return stat.Total >= MinHistory && (double)stat.Correct / stat.Total >= minimum;
+            return stat.Total >= minSamples && (double)stat.Correct / stat.Total >= minimum;
         }
         ScoredTicketCandidate Score(TicketCandidate c)
         {
@@ -44,39 +49,58 @@ public static class TicketSelector
             return new(c, (double)stat.Correct / stat.Total,
                 CalibrationAnalyzer.WilsonLower(stat.Correct, stat.Total), stat.Total, odds);
         }
-        if (!Reliable(fix, MinAccuracy))
+        bool highOdds = baseOdds > MaxFixOdds;
+        if (!highOdds && !Reliable(fix, MinAccuracy))
             return new(null, null, baseOdds, "Pobedata nema >=55% tocnost i 100+ primeri.");
-        if (baseOdds >= KeepFixOdds)
-            return new(Score(fix), null, baseOdds, "Osnovna kvota >=1.70: ostanuva fix.");
+        if (baseOdds >= KeepFixOdds && baseOdds <= MaxFixOdds)
+            return new(Score(fix), null, baseOdds, "Osnovna kvota 1.70-2.00: samo fix.");
 
         var btts = TicketMarkets.BinarySignal(match, "BTTS");
         var goals = TicketMarkets.BinarySignal(match, "Goals");
-        bool bttsYes = btts is { Pick: "YES" } && Reliable(btts, MinSignalAccuracy);
+        bool bttsYes = btts is { Pick: "YES" } && Reliable(btts, MinBttsSignalAccuracy);
         bool goalsReliable = goals != null && Reliable(goals, MinSignalAccuracy);
         bool over = goals is { Pick: "O2.5" } && goalsReliable;
         bool SignalsAllow(TicketCandidate c)
         {
-            if (c.Market == "BTTS")
-                return bttsYes;
-            if (c.Market == "Goals")
-                return over;
-            if (c.Pick == "BTTS & 3+")
-                return bttsYes && over;
-            // HT/FT alone uses no BTTS or Goals component.
-            if (c.Pick == $"{fix.Pick}-{fix.Pick}")
-                return true;
+            if (highOdds)
+                return (c.Market == "HalfGoals" && over) ||
+                    (c.Market == "Goals" && over) ||
+                    (c.Market == "BTTS" && bttsYes) ||
+                    (c.Pick == "BTTS & 3+" && bttsYes && over);
+            if (baseOdds < MinBaseOdds)
+            {
+                if (c.Pick == $"{fix.Pick}-{fix.Pick}")
+                    return true;
+                if (c.Pick == $"{fix.Pick}-{fix.Pick} & 2+")
+                    return goalsReliable;
+            }
+            if (c.Market != "Combo" || !c.Pick.StartsWith($"{fix.Pick} & ", StringComparison.Ordinal))
+                return false;
             return goalsReliable;
         }
+        bool CandidatePassesThreshold(ScoredTicketCandidate x)
+        {
+            bool isComposite = x.Candidate.Market is "Combo" or "HalfGoals";
+            int minSamples = isComposite ? MinComboHistory : MinHistory;
+            if (x.Sample < minSamples)
+                return false;
+            if (x.Accuracy >= MinAccuracy)
+                return true;
+            return isComposite && x.Odds.HasValue && x.Accuracy * x.Odds.Value >= MinComboExpectedReturn;
+        }
         var eligible = candidates.Where(x => x.Market != "1X2" &&
-                Reliable(x, MinAccuracy) && SignalsAllow(x))
-            .Select(Score).ToList();
-        var confirmed = eligible.Where(x => x.Odds >= MinFinalOdds)
+                calibration.Get(x.Key).Total > 0 && SignalsAllow(x))
+            .Select(Score)
+            .Where(CandidatePassesThreshold)
+            .ToList();
+        var confirmed = eligible.Where(x => x.Odds >=
+                (highOdds && x.Candidate.Market == "BTTS" ? MinBttsOdds : MinFinalOdds))
             .OrderByDescending(x => !safe && x.Accuracy * x.Odds > 1)
             .ThenByDescending(x => safe ? x.Safe : x.Safe * x.Odds!.Value)
             .ThenByDescending(x => x.Accuracy).FirstOrDefault();
         if (confirmed != null)
-            return new(confirmed, null, baseOdds, "Potvrdena alternativa so kvota >=1.50.");
-        var proposal = eligible.Where(x => x.Odds == null)
+            return new(confirmed, null, baseOdds, "Potvrdena alternativa so potrebna kvota.");
+        var proposal = eligible.Where(x => x.Odds == null && x.Accuracy >= MinAccuracy)
             .OrderByDescending(x => x.Safe).ThenByDescending(x => x.Accuracy).FirstOrDefault();
         return new(null, proposal, baseOdds, proposal == null
             ? "Nema dozvolena alternativa so potrebna tocnost, signali i kvota."
