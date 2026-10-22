@@ -258,6 +258,31 @@ generate a new ticket.
 This completes Phase 9's tracking/measurement functionality, **not proof of
 profitability**. That requires enough newly saved, subsequently graded tickets.
 
+### Phase 10: AI Ranking and out-of-time ML validation
+
+```powershell
+dotnet run --no-build -- train-model
+dotnet run --no-build -- ai-rank 2026-10-23 15
+dotnet run --no-build -- ai-rank 2026-10-23 5 safe
+dotnet run --no-build -- ticket 2026-10-23 15 ml
+```
+
+- `FootballMatchTrainingRow` and `FootballModelTrainer` encode all **11 sources**
+  (`Forebet`, `Statarea`, `Vitibet`, `PredictZ`, `ZuluBet`, `WinDrawWin`,
+  `Feedinco`, `SoccerVista`, `FootyStats`, `Oddslot`, `TheDatabetics`) together
+  with consensus vote shares (`HomeVoteShare`, `DrawVoteShare`, `AwayVoteShare`,
+  `AverageWinnerConfidence`, `BttsYesShare`, `Over25Share`).
+- `ResultModelTrainer`, `BttsModelTrainer`, and `GoalsModelTrainer` evaluate on a
+  **strictly chronological 80/20 out-of-time split** (`MlMatchRanker.SplitChronologically`)
+  before fitting the full models (`ResultModel.zip`, `BttsModel.zip`, `GoalsModel.zip`),
+  and print out-of-time calibration by ML probability bucket (`<50`, `50-55`, `55-60`,
+  `60-65`, `65-70`, `70+`).
+- `ai-rank` (or `ticket ... ml`) trains `MlMatchRanker` strictly on historical matches
+  before the target date (`MatchDate < date`), computes the normalized ML probability
+  for each match's candidate (`ML=...%` in `[SIGNALI]`), blends it with the empirical
+  95% Wilson lower bound (`RankSafe = (Safe + MlProbability) / 2`), and saves the
+  resulting simulated ticket under mode `ml` or `ml-safe`.
+
 ### Tests
 
 ```powershell

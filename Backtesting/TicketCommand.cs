@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
 using Prediction.Entities;
+using Prediction.ML;
 using Prediction.Services;
 
 public partial class Program
@@ -11,14 +12,17 @@ public partial class Program
     private static async Task RunTicketAsync(string[] args)
     {
         bool only1To3P3Plus = args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase);
+        bool useMlRanking = args[0].Equals("ai-rank", StringComparison.OrdinalIgnoreCase);
         var flags = args.Skip(2)
             .Where(x => x.Equals("nodc", StringComparison.OrdinalIgnoreCase) ||
                         x.Equals("safe", StringComparison.OrdinalIgnoreCase) ||
                         x.Equals("why", StringComparison.OrdinalIgnoreCase) ||
-                        x.Equals("1-3p3+", StringComparison.OrdinalIgnoreCase))
+                        x.Equals("1-3p3+", StringComparison.OrdinalIgnoreCase) ||
+                        x.Equals("ml", StringComparison.OrdinalIgnoreCase))
             .Select(x => x.ToLowerInvariant())
             .ToHashSet();
         only1To3P3Plus |= flags.Contains("1-3p3+");
+        useMlRanking |= flags.Contains("ml");
         bool rankBySafety = flags.Contains("safe");
         string? countArg = args.Skip(2).FirstOrDefault(x => !flags.Contains(x.ToLowerInvariant()));
         int count = TicketDefaultCount;
@@ -32,7 +36,7 @@ public partial class Program
                 out var date) ||
             (countArg != null && (!int.TryParse(countArg, out count) || count < 1)))
         {
-            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket[-1-3p3+] yyyy-MM-dd [count] [nodc] [safe] [why]");
+            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket[-1-3p3+|ai-rank] yyyy-MM-dd [count] [nodc] [safe] [ml] [why]");
             Environment.ExitCode = 1;
             return;
         }
@@ -66,6 +70,7 @@ public partial class Program
                     calibration.Add(candidate.Key, correct);
             }
         }
+        var mlRanker = useMlRanking ? MlMatchRanker.TrainFromHistory(history) : null;
 
         var today = await db.Matches
             .Where(x => x.MatchDate == date && x.Result == null)
@@ -158,16 +163,25 @@ public partial class Program
             int overVotes = snapshots.Count(x => ProductionConsensusAggregator.NormalizeGoalsTo25(x.Goals) == "O2.5");
             int bttsVotes = snapshots.Count(x => x.Btts == "YES");
             var goalsStat = goalsSignal != null ? calibration.Get(goalsSignal.Key) : default;
+            var mlProbs = mlRanker?.Predict(match);
             double signalPriority = CalibrationAnalyzer.WilsonLower(goalsStat.Correct, goalsStat.Total) * 100.0
                 + overVotes * 0.1
                 + (bttsSignal is { Pick: "YES" } ? bttsVotes * 0.01 : 0.0);
-            string evidence = $"Pobeda {SignalText(fix)}; " +
+            string baseEvidence = $"Pobeda {SignalText(fix)}; " +
                 $"BTTS {SignalText(bttsSignal)}; " +
                 $"Goals {SignalText(goalsSignal)}";
-            TicketPick ToPick(ScoredTicketCandidate c) => new(
-                match.Id, match.League, offer.KickoffUtc,
-                $"{match.HomeTeam} vs {match.AwayTeam}", c.Candidate, c.Accuracy,
-                c.Safe, c.Sample, c.Odds, decision.BaseOdds!.Value, evidence, signalPriority);
+            TicketPick ToPick(ScoredTicketCandidate c)
+            {
+                double? mlProb = mlProbs?.GetCandidateProbability(c.Candidate);
+                string evidence = mlProb.HasValue
+                    ? $"{baseEvidence}; ML={mlProb.Value:P1}"
+                    : baseEvidence;
+                return new(
+                    match.Id, match.League, offer.KickoffUtc,
+                    $"{match.HomeTeam} vs {match.AwayTeam}", c.Candidate, c.Accuracy,
+                    c.Safe, c.Sample, c.Odds, decision.BaseOdds!.Value, evidence,
+                    signalPriority, mlProb);
+            }
             if (decision.Confirmed != null)
                 best.Add(ToPick(decision.Confirmed));
             else if (decision.Proposal != null)
@@ -177,7 +191,7 @@ public partial class Program
                 Reject(decision.Reason);
                 rejectedDetails.Add(
                     $"{match.HomeTeam} vs {match.AwayTeam} | osnovna kvota={(decision.BaseOdds.HasValue ? decision.BaseOdds.Value.ToString("F2") : "n/a")} | " +
-                    $"{decision.Reason} | {evidence}");
+                    $"{decision.Reason} | {baseEvidence}");
             }
         }
 
@@ -225,13 +239,15 @@ public partial class Program
             Console.WriteLine($"[TIKET] Preskoknati {rejection.Value}: {rejection.Key}");
         var picks = best
             .OrderByDescending(x => !rankBySafety && x.HasValue)
-            .ThenByDescending(x => rankBySafety ? x.Safe : x.Safe * x.Odds!.Value)
+            .ThenByDescending(x => rankBySafety ? x.RankSafe : x.RankSafe * x.Odds!.Value)
+            .ThenByDescending(x => x.MlProbability ?? x.Accuracy)
             .ThenByDescending(x => x.Accuracy)
             .ThenByDescending(x => x.SignalPriority)
             .Take(count)
             .ToList();
         var suggested = proposals
-            .OrderByDescending(x => x.Safe)
+            .OrderByDescending(x => x.RankSafe)
+            .ThenByDescending(x => x.MlProbability ?? x.Accuracy)
             .ThenByDescending(x => x.Accuracy)
             .ThenByDescending(x => x.SignalPriority)
             .Take(count - picks.Count).ToList();
@@ -241,7 +257,9 @@ public partial class Program
         {
             string ticketMode = only1To3P3Plus
                 ? (rankBySafety ? "1-3p3+-safe" : "1-3p3+")
-                : (rankBySafety ? "safe" : "value");
+                : useMlRanking
+                    ? (rankBySafety ? "ml-safe" : "ml")
+                    : (rankBySafety ? "safe" : "value");
             var snapshot = TicketLedger.Create(date, rankBySafety, picks.Select((p, i) =>
                 new SimulatedTicketSelection
                 {
@@ -331,12 +349,13 @@ public partial class Program
             "[TIKET] Ocekuvaniot povrat se bazira na minata tocnost; ne e garancija, a kvotite se menuvaat.");
 
         string modePrefix = only1To3P3Plus ? "ticket-1-3p3+" : "ticket";
+        string aiPrefix = useMlRanking ? "-AI" : "";
         string safeSuffix = rankBySafety ? "-safe" : "";
         string dcSuffix = flags.Contains("nodc") ? "-nodc" : "";
         string simulationSuffix = simulation == null ? "" : $"-sim-{simulation.Id}";
         string exportPath = Path.Combine(
             Directory.GetCurrentDirectory(),
-            $"{modePrefix}-{date:yyyy-MM-dd}-{picks.Count}{dcSuffix}{safeSuffix}{simulationSuffix}.xlsx");
+            $"{modePrefix}{aiPrefix}-{date:yyyy-MM-dd}-{picks.Count}{dcSuffix}{safeSuffix}{simulationSuffix}.xlsx");
 
         try
         {
@@ -486,9 +505,11 @@ public partial class Program
         double? Odds,
         double BaseOdds,
         string Evidence,
-        double SignalPriority = 0)
+        double SignalPriority = 0,
+        double? MlProbability = null)
     {
         public bool HasValue => Odds.HasValue && Accuracy * Odds.Value > 1.0;
+        public double RankSafe => MlProbability.HasValue ? (Safe + MlProbability.Value) / 2.0 : Safe;
     }
 
 }

@@ -84,7 +84,8 @@ public partial class Program
 
         if (args.Length > 0 &&
             (args[0].Equals("ticket", StringComparison.OrdinalIgnoreCase) ||
-             args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase)))
+             args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase) ||
+             args[0].Equals("ai-rank", StringComparison.OrdinalIgnoreCase)))
         {
             await RunTicketAsync(args);
             return;

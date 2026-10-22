@@ -38,6 +38,7 @@ $steps = @(
     @{ Name = "backtest";            Args = @("backtest", $BacktestFrom) },      # tocnost po izvor, Equal vs Weighted
     @{ Name = "weighted-consensus";  Args = @("weighted-consensus", $Date) },    # glasanje so tezini
     @{ Name = "calibration";         Args = @("calibration") },                  # tocnost po Prob. grupa
+    @{ Name = "train-model";         Args = @("train-model") },                  # ML trening + out-of-time validacija (site 11 izvori)
     @{ Name = "ticket-report";       Args = @("ticket-report") },              # site simulacii, profit/ROI i pending
     @{ Name = "league-stats";        Args = @("league-stats", $BacktestFrom, $Date) } # tocnost po liga vo opsegot
 )

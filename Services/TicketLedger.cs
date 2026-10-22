@@ -41,7 +41,7 @@ public static class TicketLedger
     public static void Validate(SimulatedTicket ticket)
     {
         if (ticket.Stake <= 0 || ticket.Selections.Count == 0 ||
-            ticket.Mode is not ("safe" or "value" or "1-3p3+" or "1-3p3+-safe") ||
+            ticket.Mode is not ("safe" or "value" or "1-3p3+" or "1-3p3+-safe" or "ml" or "ml-safe") ||
             ticket.CreatedAtUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("A simulation needs a positive stake, selections, a valid mode and a UTC timestamp.");
         if (ticket.Selections.Select(x => x.MatchId).Distinct().Count() != ticket.Selections.Count)

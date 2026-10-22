@@ -37,7 +37,38 @@ public sealed class FootballMatchTrainingRow
     public string WinDrawWinBtts { get; set; } = "";
     public string WinDrawWinGoals { get; set; } = "";
 
+    public string FeedincoResult { get; set; } = "";
+    public float FeedincoConfidence { get; set; }
+    public string FeedincoBtts { get; set; } = "";
+    public string FeedincoGoals { get; set; } = "";
+
+    public string SoccerVistaResult { get; set; } = "";
+    public float SoccerVistaConfidence { get; set; }
+    public string SoccerVistaBtts { get; set; } = "";
+    public string SoccerVistaGoals { get; set; } = "";
+
+    public string FootyStatsResult { get; set; } = "";
+    public float FootyStatsConfidence { get; set; }
+    public string FootyStatsBtts { get; set; } = "";
+    public string FootyStatsGoals { get; set; } = "";
+
+    public string OddslotResult { get; set; } = "";
+    public float OddslotConfidence { get; set; }
+    public string OddslotBtts { get; set; } = "";
+    public string OddslotGoals { get; set; } = "";
+
+    public string TheDatabeticsResult { get; set; } = "";
+    public float TheDatabeticsConfidence { get; set; }
+    public string TheDatabeticsBtts { get; set; } = "";
+    public string TheDatabeticsGoals { get; set; } = "";
+
     public float SourceCount { get; set; }
+    public float HomeVoteShare { get; set; }
+    public float DrawVoteShare { get; set; }
+    public float AwayVoteShare { get; set; }
+    public float AverageWinnerConfidence { get; set; }
+    public float BttsYesShare { get; set; }
+    public float Over25Share { get; set; }
 
     public string ActualResult { get; set; } = "";
     public string ActualBtts { get; set; } = "";
