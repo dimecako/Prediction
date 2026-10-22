@@ -347,6 +347,32 @@ public sealed class TicketSelectorTests
         Assert.False(TicketMarkets.IsCorrect(new("Goals", "U2.5", "", ""), result));
     }
 
+    [Theory]
+    [InlineData(1.25)]
+    [InlineData(1.75)]
+    [InlineData(2.35)]
+    public void DedicatedFirstHalf1To3And3PlusAllowsAnyBaseOddsWithReliableOverSignal(double baseOdds)
+    {
+        var match = Fixture();
+        var decision = TicketSelector.SelectFirstHalf1To3And3Plus(match, Calibrate(match),
+            c => c.Market == "1X2" ? baseOdds : c.Pick == "1-3 prvo & 3+" ? 1.85 : null);
+        Assert.NotNull(decision.Confirmed);
+        Assert.Equal("HalfGoals", decision.Confirmed.Candidate.Market);
+        Assert.Equal("1-3 prvo & 3+", decision.Confirmed.Candidate.Pick);
+        Assert.Equal(baseOdds, decision.BaseOdds);
+    }
+
+    [Fact]
+    public void DedicatedFirstHalf1To3And3PlusRejectsMissingOrWeakOverSignal()
+    {
+        var underMatch = Fixture(goals: "U2.5");
+        Assert.Null(TicketSelector.SelectFirstHalf1To3And3Plus(underMatch, Calibrate(underMatch), _ => 1.9).Confirmed);
+
+        var weakOverMatch = Fixture(goals: "O2.5");
+        var weakTally = Calibrate(weakOverMatch, signalCorrect: 59, signalTotal: 100);
+        Assert.Null(TicketSelector.SelectFirstHalf1To3And3Plus(weakOverMatch, weakTally, _ => 1.9).Confirmed);
+    }
+
     private static Match Fixture(string side = "1", string btts = "YES", string goals = "O2.5") => new()
     {
         PredictionSnapshots =

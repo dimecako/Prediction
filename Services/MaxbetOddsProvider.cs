@@ -7,7 +7,8 @@ public sealed record BookmakerMatch(
     string Home,
     string Away,
     DateTime KickoffUtc,
-    IReadOnlyDictionary<string, double> Odds);
+    IReadOnlyDictionary<string, double> Odds,
+    string? League = null);
 
 // Reads the public Maxbet MK football offer. Odds are keyed by Maxbet tip type code:
 // 1/2/3 = 1X2, 7/8/9 = 1X/12/X2, 272/273 = GG/NG, 22 = 0-2 goals, 24 = 3+ goals,
@@ -64,7 +65,8 @@ public static class MaxbetOddsProvider
                 home,
                 away,
                 DateTimeOffset.FromUnixTimeMilliseconds(kickoff.GetInt64()).UtcDateTime,
-                odds));
+                odds,
+                item.TryGetProperty("leagueName", out var league) ? league.GetString()?.Trim() : null));
         }
 
         return matches;

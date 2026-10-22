@@ -15,6 +15,8 @@ public sealed class FootballDbContext : DbContext
     public DbSet<PredictionSnapshot> PredictionSnapshots
     => Set<PredictionSnapshot>();
 
+    public DbSet<SimulatedTicket> SimulatedTickets => Set<SimulatedTicket>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Match>(entity =>
@@ -39,6 +41,27 @@ public sealed class FootballDbContext : DbContext
                 .IsUnique();
 
             entity.HasIndex(x => x.KickoffUtc);
+        });
+
+        modelBuilder.Entity<SimulatedTicket>(entity =>
+        {
+            entity.ToTable("simulated_tickets");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Fingerprint).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Mode).HasMaxLength(20).IsRequired();
+            entity.HasIndex(x => x.Fingerprint).IsUnique();
+            entity.HasIndex(x => x.MatchDate);
+        });
+
+        modelBuilder.Entity<SimulatedTicketSelection>(entity =>
+        {
+            entity.ToTable("simulated_ticket_selections");
+            entity.HasKey(x => x.Id);
+            entity.HasOne(x => x.Ticket).WithMany(x => x.Selections)
+                .HasForeignKey(x => x.TicketId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Match).WithMany()
+                .HasForeignKey(x => x.MatchId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.TicketId, x.MatchId }).IsUnique();
         });
 
         modelBuilder.Entity<PredictionSnapshot>(entity =>
@@ -102,4 +125,18 @@ public sealed class FootballDbContext : DbContext
         });
     }
     public DbSet<MatchResult> MatchResults => Set<MatchResult>();
+}
+
+public sealed class FootballDbContextFactory :
+    Microsoft.EntityFrameworkCore.Design.IDesignTimeDbContextFactory<FootballDbContext>
+{
+    public FootballDbContext CreateDbContext(string[] args)
+    {
+        string? connection = Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb");
+        if (string.IsNullOrWhiteSpace(connection))
+            throw new InvalidOperationException("ConnectionStrings__FootballDb is not configured.");
+
+        return new FootballDbContext(new DbContextOptionsBuilder<FootballDbContext>()
+            .UseNpgsql(connection).Options);
+    }
 }

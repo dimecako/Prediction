@@ -19,8 +19,10 @@ public static class TicketMarkets
     {
         "1-2 prvo & 1-2 vtoro",
         "1-3 prvo & 1-3 vtoro",
-        "1-3 prvo & 3+"
+        FirstHalf1To3And3PlusPick
     });
+
+    public const string FirstHalf1To3And3PlusPick = "1-3 prvo & 3+";
 
     public static IEnumerable<TicketCandidate> BuildCalibrationCandidates(Match match)
     {

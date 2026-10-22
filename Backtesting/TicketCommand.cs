@@ -10,12 +10,15 @@ public partial class Program
 
     private static async Task RunTicketAsync(string[] args)
     {
+        bool only1To3P3Plus = args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase);
         var flags = args.Skip(2)
             .Where(x => x.Equals("nodc", StringComparison.OrdinalIgnoreCase) ||
                         x.Equals("safe", StringComparison.OrdinalIgnoreCase) ||
-                        x.Equals("why", StringComparison.OrdinalIgnoreCase))
+                        x.Equals("why", StringComparison.OrdinalIgnoreCase) ||
+                        x.Equals("1-3p3+", StringComparison.OrdinalIgnoreCase))
             .Select(x => x.ToLowerInvariant())
             .ToHashSet();
+        only1To3P3Plus |= flags.Contains("1-3p3+");
         bool rankBySafety = flags.Contains("safe");
         string? countArg = args.Skip(2).FirstOrDefault(x => !flags.Contains(x.ToLowerInvariant()));
         int count = TicketDefaultCount;
@@ -29,7 +32,7 @@ public partial class Program
                 out var date) ||
             (countArg != null && (!int.TryParse(countArg, out count) || count < 1)))
         {
-            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket yyyy-MM-dd [count] [nodc] [safe] [why]");
+            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket[-1-3p3+] yyyy-MM-dd [count] [nodc] [safe] [why]");
             Environment.ExitCode = 1;
             return;
         }
@@ -65,7 +68,6 @@ public partial class Program
         }
 
         var today = await db.Matches
-            .AsNoTracking()
             .Where(x => x.MatchDate == date && x.Result == null)
             .Include(x => x.PredictionSnapshots)
             .ToListAsync();
@@ -111,6 +113,13 @@ public partial class Program
         int duplicates = paired.Count - unique.Count;
         var rejectedDetails = new List<string>();
 
+        foreach (var (match, offer) in paired)
+        {
+            if (!string.IsNullOrWhiteSpace(offer.League))
+                match.League = offer.League;
+        }
+        await db.SaveChangesAsync();
+
         foreach (var (match, offer) in unique)
         {
             matched++;
@@ -121,8 +130,11 @@ public partial class Program
                 continue;
             }
 
-            var decision = TicketSelector.Select(match, calibration,
-                c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), rankBySafety);
+            var decision = only1To3P3Plus
+                ? TicketSelector.SelectFirstHalf1To3And3Plus(match, calibration,
+                    c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick))
+                : TicketSelector.Select(match, calibration,
+                    c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), rankBySafety);
             string SignalText(TicketCandidate? c)
             {
                 if (c == null)
@@ -140,12 +152,22 @@ public partial class Program
                     $"{label}: {(double)stat.Correct / stat.Total:P1} (n={stat.Total})";
             }
             var fix = TicketMarkets.BuildCandidates(match).FirstOrDefault(x => x.Market == "1X2");
+            var bttsSignal = TicketMarkets.BinarySignal(match, "BTTS");
+            var goalsSignal = TicketMarkets.BinarySignal(match, "Goals");
+            var snapshots = CalibrationAnalyzer.LatestPerSource(match);
+            int overVotes = snapshots.Count(x => ProductionConsensusAggregator.NormalizeGoalsTo25(x.Goals) == "O2.5");
+            int bttsVotes = snapshots.Count(x => x.Btts == "YES");
+            var goalsStat = goalsSignal != null ? calibration.Get(goalsSignal.Key) : default;
+            double signalPriority = CalibrationAnalyzer.WilsonLower(goalsStat.Correct, goalsStat.Total) * 100.0
+                + overVotes * 0.1
+                + (bttsSignal is { Pick: "YES" } ? bttsVotes * 0.01 : 0.0);
             string evidence = $"Pobeda {SignalText(fix)}; " +
-                $"BTTS {SignalText(TicketMarkets.BinarySignal(match, "BTTS"))}; " +
-                $"Goals {SignalText(TicketMarkets.BinarySignal(match, "Goals"))}";
+                $"BTTS {SignalText(bttsSignal)}; " +
+                $"Goals {SignalText(goalsSignal)}";
             TicketPick ToPick(ScoredTicketCandidate c) => new(
+                match.Id, match.League, offer.KickoffUtc,
                 $"{match.HomeTeam} vs {match.AwayTeam}", c.Candidate, c.Accuracy,
-                c.Safe, c.Sample, c.Odds, decision.BaseOdds!.Value, evidence);
+                c.Safe, c.Sample, c.Odds, decision.BaseOdds!.Value, evidence, signalPriority);
             if (decision.Confirmed != null)
                 best.Add(ToPick(decision.Confirmed));
             else if (decision.Proposal != null)
@@ -205,10 +227,42 @@ public partial class Program
             .OrderByDescending(x => !rankBySafety && x.HasValue)
             .ThenByDescending(x => rankBySafety ? x.Safe : x.Safe * x.Odds!.Value)
             .ThenByDescending(x => x.Accuracy)
+            .ThenByDescending(x => x.SignalPriority)
             .Take(count)
             .ToList();
-        var suggested = proposals.OrderByDescending(x => x.Safe).ThenByDescending(x => x.Accuracy)
+        var suggested = proposals
+            .OrderByDescending(x => x.Safe)
+            .ThenByDescending(x => x.Accuracy)
+            .ThenByDescending(x => x.SignalPriority)
             .Take(count - picks.Count).ToList();
+
+        SimulatedTicket? simulation = null;
+        if (picks.Count > 0)
+        {
+            string ticketMode = only1To3P3Plus
+                ? (rankBySafety ? "1-3p3+-safe" : "1-3p3+")
+                : (rankBySafety ? "safe" : "value");
+            var snapshot = TicketLedger.Create(date, rankBySafety, picks.Select((p, i) =>
+                new SimulatedTicketSelection
+                {
+                    Position = i + 1, MatchId = p.MatchId, Fixture = p.Fixture, League = p.League,
+                    KickoffUtc = p.KickoffUtc, Market = p.Candidate.Market, Pick = p.Candidate.Pick,
+                    CalibrationKey = p.Candidate.Key, Odds = Convert.ToDecimal(p.Odds!.Value),
+                    Accuracy = p.Accuracy, Safe = p.Safe, Sample = p.Sample,
+                    BaseOdds = Convert.ToDecimal(p.BaseOdds), Evidence = p.Evidence
+                }), DateTime.UtcNow, ticketMode);
+            var saved = await TicketLedger.SaveAsync(db, snapshot);
+            simulation = saved.Ticket;
+            picks = simulation.Selections.OrderBy(x => x.Position).Select(p => new TicketPick(
+                p.MatchId, p.League, p.KickoffUtc, p.Fixture,
+                new(p.Market, p.Pick, p.CalibrationKey, ""), p.Accuracy, p.Safe, p.Sample,
+                (double)p.Odds, (double)p.BaseOdds, p.Evidence)).ToList();
+            Console.WriteLine($"[SIMULATION] #{simulation.Id} | {(saved.Created ? "Saved" : "Already saved; not duplicated")} | " +
+                $"Mode={simulation.Mode} | Stake={simulation.Stake:F2} units for the WHOLE ticket. Not an actual bet.");
+        }
+        else
+            Console.WriteLine("[SIMULATION] No confirmed selections; no empty simulation saved.");
+
         Console.WriteLine($"[PREDLOZI] Bez potvrdena kvota: {proposals.Count}; prikazani: {suggested.Count}. NE se del od tiketot.");
         foreach (var p in suggested)
         {
@@ -276,15 +330,17 @@ public partial class Program
         Console.WriteLine(
             "[TIKET] Ocekuvaniot povrat se bazira na minata tocnost; ne e garancija, a kvotite se menuvaat.");
 
+        string modePrefix = only1To3P3Plus ? "ticket-1-3p3+" : "ticket";
         string safeSuffix = rankBySafety ? "-safe" : "";
         string dcSuffix = flags.Contains("nodc") ? "-nodc" : "";
+        string simulationSuffix = simulation == null ? "" : $"-sim-{simulation.Id}";
         string exportPath = Path.Combine(
             Directory.GetCurrentDirectory(),
-            $"ticket-{date:yyyy-MM-dd}-{picks.Count}{dcSuffix}{safeSuffix}.xlsx");
+            $"{modePrefix}-{date:yyyy-MM-dd}-{picks.Count}{dcSuffix}{safeSuffix}{simulationSuffix}.xlsx");
 
         try
         {
-            ExportTicketToExcel(exportPath, date, picks, suggested, combined, combinedSafe, combinedOdds, allOdds);
+            ExportTicketToExcel(exportPath, date, picks, suggested, combined, combinedSafe, combinedOdds, allOdds, simulation);
             Console.WriteLine($"[TIKET] Excel snimen: {exportPath}");
         }
         catch (IOException ex)
@@ -302,7 +358,8 @@ public partial class Program
         double combined,
         double combinedSafe,
         double combinedOdds,
-        bool allOdds)
+        bool allOdds,
+        SimulatedTicket? simulation)
     {
         using var workbook = new ClosedXML.Excel.XLWorkbook();
         var sheet = workbook.Worksheets.Add("Tiket");
@@ -310,7 +367,7 @@ public partial class Program
         string[] headers =
         [
             "#", "Natprevar", "Pazar", "Izbor", "Kvota", "Istoriska tocnost %",
-            "Sigurna tocnost %", "Primerok (n)", "EV %", "Vrednost", "Osnovna kvota", "Signali"
+            "Sigurna tocnost %", "Primerok (n)", "EV %", "Vrednost", "Osnovna kvota", "Signali", "Liga"
         ];
 
         for (int c = 0; c < headers.Length; c++)
@@ -347,6 +404,7 @@ public partial class Program
             sheet.Cell(r, 10).Value = p.HasValue ? "VREDNOST" : "nema vrednost";
             sheet.Cell(r, 11).Value = p.BaseOdds;
             sheet.Cell(r, 12).Value = p.Evidence;
+            sheet.Cell(r, 13).Value = TicketPerformanceAnalyzer.LeagueName(p.League);
         }
 
         int s = picks.Count + 3;
@@ -396,10 +454,30 @@ public partial class Program
         suggestions.Columns().AdjustToContents();
         suggestions.Column(7).Width = 90;
         suggestions.Column(7).Style.Alignment.WrapText = true;
+        var tracking = workbook.Worksheets.Add("Simulation");
+        tracking.Cell(1, 1).Value = "SIMULATION ONLY - not an actual bet";
+        tracking.Cell(2, 1).Value = "Ticket ID";
+        tracking.Cell(3, 1).Value = "Created at UTC";
+        tracking.Cell(4, 1).Value = "Mode";
+        tracking.Cell(5, 1).Value = "Stake for whole ticket (units)";
+        if (simulation != null)
+        {
+            tracking.Cell(2, 2).Value = simulation.Id;
+            tracking.Cell(3, 2).Value = simulation.CreatedAtUtc.ToString("O");
+            tracking.Cell(4, 2).Value = simulation.Mode;
+            tracking.Cell(5, 2).Value = simulation.Stake;
+        }
+        else
+            tracking.Cell(2, 2).Value = "No confirmed selections; not saved";
+        tracking.Cell(7, 1).Value = $"Results and ROI: ticket-report {date:yyyy-MM-dd} {date:yyyy-MM-dd}";
+        tracking.Columns().AdjustToContents();
         workbook.SaveAs(path);
     }
 
     private sealed record TicketPick(
+        long MatchId,
+        string? League,
+        DateTime KickoffUtc,
         string Fixture,
         TicketCandidate Candidate,
         double Accuracy,
@@ -407,7 +485,8 @@ public partial class Program
         int Sample,
         double? Odds,
         double BaseOdds,
-        string Evidence)
+        string Evidence,
+        double SignalPriority = 0)
     {
         public bool HasValue => Odds.HasValue && Accuracy * Odds.Value > 1.0;
     }

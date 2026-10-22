@@ -51,6 +51,9 @@ namespace Prediction.Migrations
                     b.Property<DateTime?>("KickoffUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("League")
+                        .HasColumnType("text");
+
                     b.Property<DateOnly>("MatchDate")
                         .HasColumnType("date");
 
@@ -164,6 +167,111 @@ namespace Prediction.Migrations
                     b.ToTable("prediction_snapshots", (string)null);
                 });
 
+            modelBuilder.Entity("Prediction.Entities.SimulatedTicket", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateOnly>("MatchDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<decimal>("Stake")
+                        .HasColumnType("numeric");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Fingerprint")
+                        .IsUnique();
+
+                    b.HasIndex("MatchDate");
+
+                    b.ToTable("simulated_tickets", (string)null);
+                });
+
+            modelBuilder.Entity("Prediction.Entities.SimulatedTicketSelection", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<double>("Accuracy")
+                        .HasColumnType("double precision");
+
+                    b.Property<decimal>("BaseOdds")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("CalibrationKey")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Fixture")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("KickoffUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("League")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Market")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("MatchId")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("Odds")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("Pick")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("Safe")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("Sample")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("TicketId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MatchId");
+
+                    b.HasIndex("TicketId", "MatchId")
+                        .IsUnique();
+
+                    b.ToTable("simulated_ticket_selections", (string)null);
+                });
+
             modelBuilder.Entity("Prediction.Entities.MatchResult", b =>
                 {
                     b.HasOne("Prediction.Entities.Match", "Match")
@@ -186,11 +294,35 @@ namespace Prediction.Migrations
                     b.Navigation("Match");
                 });
 
+            modelBuilder.Entity("Prediction.Entities.SimulatedTicketSelection", b =>
+                {
+                    b.HasOne("Prediction.Entities.Match", "Match")
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Prediction.Entities.SimulatedTicket", "Ticket")
+                        .WithMany("Selections")
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Match");
+
+                    b.Navigation("Ticket");
+                });
+
             modelBuilder.Entity("Prediction.Entities.Match", b =>
                 {
                     b.Navigation("PredictionSnapshots");
 
                     b.Navigation("Result");
+                });
+
+            modelBuilder.Entity("Prediction.Entities.SimulatedTicket", b =>
+                {
+                    b.Navigation("Selections");
                 });
 #pragma warning restore 612, 618
         }

@@ -63,6 +63,8 @@ dotnet run --no-build -- ticket 2026-10-20 5
 dotnet run --no-build -- ticket 2026-10-20 15 nodc
 dotnet run --no-build -- ticket 2026-10-20 5 safe
 dotnet run --no-build -- ticket 2026-10-20 15 why
+dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15
+dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15 safe
 ```
 
 `calibration` (read-only) measures real accuracy of the 1X2 consensus grouped
@@ -184,8 +186,89 @@ are ranked first. `safe` ranks by safety only. The chance shown is measured
 history, not a guarantee; combined chance assumes independent matches, and EV is
 optimistic because accuracy is averaged per signal, not per league.
 
+### Phase 9: simulated ticket tracking, ROI and leagues
+
+```powershell
+dotnet build
+dotnet run --no-build -- ticket 2026-10-23 5 safe
+dotnet run --no-build -- collect-results 2026-10-23
+dotnet run --no-build -- ticket-report
+dotnet run --no-build -- ticket-report 2026-10-01 2026-10-31
+dotnet run --no-build -- league-stats 2026-10-01 2026-10-31
+```
+
+Every nonempty confirmed ticket is automatically saved as a **simulation**, not
+an actual wager, with a stake of **1 unit for the whole accumulator**. Selections,
+order, fixture identity, league, actual Maxbet kickoff, prices and calibration
+evidence are frozen in PostgreSQL. Unconfirmed proposals are never recorded as
+bets. Empty tickets are not saved.
+
+An identical date, mode, set of matches/selections, kickoff times and prices
+reuses its existing simulation ID, even if the requested count or calibration
+statistics changed. Frozen evidence is also reused in the console/Excel.
+Changed selections/prices or `safe` versus default `value` mode create separate
+simulations. These may overlap: they are not independent experiments.
+The Excel filename includes `-sim-ID`, and its `Simulation` sheet records the
+ID, creation time, mode and stake. A simulation is saved before Excel export;
+an export failure does not lose it.
+
+`ticket-report [from] [to]` accepts inclusive **match-date** limits. With no limits
+it reports all saved simulations; with only `from` it reports that date onward.
+It grades the frozen market/pick using current stored final/half-time results,
+so result corrections and half-time backfills are reflected on the next report.
+An accumulator wins only if every leg wins; any losing leg settles it as lost,
+even if other legs are still pending. Missing results or required half-time
+scores are ungraded, not inferred losses. Postponements/cancellations stay
+pending until a usable result exists; bookmaker void rules are not inferred.
+
+- Winning payout = stake x product of the frozen decimal odds; losing payout = 0.
+- Profit = payout - stake. ROI = total settled profit / total settled stake.
+- Pending stakes are shown separately and excluded from settled ROI.
+- No settled tickets means ROI `n/a`, not a claimed 0% return.
+- Units exclude tax, fees, bookmaker limits and real-money payouts.
+- The report shows totals and separate `safe`/`value` totals. Its league/market
+  breakdown deduplicates match+market+pick and uses the earliest frozen price
+  in the requested range. That breakdown's **flat 1-unit singles ROI is
+  hypothetical**, not accumulator ROI or an allocation of accumulator profit.
+
+During `ticket`, uniquely matched Maxbet offers also save their explicit
+`leagueName` on matches, even if the fixture does not qualify for a ticket.
+The league is frozen separately on saved selections. Older matches without
+verified labels remain `(unknown league)`; no team-name or country guesses
+are used. Existing Excel tickets are **not** imported retroactively: their
+pre-match prices/timestamps cannot be reliably reconstructed.
+
+`league-stats [from] [to]` measures equal-vote 1X2, BTTS and Goals O/U 2.5
+consensus accuracy by league, with sample sizes and 95% Wilson lower bounds.
+It uses the existing strict backtest eligibility rule: latest snapshot per
+source captured **before 00:00 UTC on the match date**; ties abstain and
+missing predictions do not count as losses. Same-day-only history can therefore
+have no eligible predictions. Groups under 30 are marked as small samples.
+This is observational analysis, not league-specific calibration of the ticket
+selector: existing ranking, thresholds and EV calculations are unchanged.
+
+The additive migration adds a nullable league and the simulation tables;
+`ticket`, `collect-results`, `ticket-report` and `league-stats` apply migrations
+automatically. `night.ps1` reports all tracked ticket ROI after collecting results
+and backtesting; `all.ps1` validates its date range and builds first, stopping if
+the build fails. It then runs results collection, database status, backtest,
+weighted consensus, calibration, all saved ticket ROI and league statistics
+from `BacktestFrom` through `Date`. It does not collect new predictions or
+generate a new ticket.
+This completes Phase 9's tracking/measurement functionality, **not proof of
+profitability**. That requires enough newly saved, subsequently graded tickets.
+
 ### Tests
 
 ```powershell
 dotnet test .\Tests\Prediction.Tests.csproj
+```
+
+The database integration test is opt-in. It requires the migrated local database
+configured by `ConnectionStrings__FootballDb`, and rolls back all test rows:
+
+```powershell
+$env:PREDICTION_RUN_DB_TESTS = "1"
+dotnet test .\Tests\Prediction.Tests.csproj --filter "FullyQualifiedName~TicketLedgerDatabaseTests"
+Remove-Item Env:\PREDICTION_RUN_DB_TESTS
 ```

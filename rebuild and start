@@ -7,7 +7,7 @@
 [x] Consensus Analytics
 [x] Weighted Consensus   (kodot e gotov, 22 testa pominaa; ne e pustena vrz bazata)
 [x] Confidence Engine    (calibration komanda gotova; merenite Prob. grupi go potvrdija pragot: 65-70 -> 69%, 70+ -> 78%, 55-65 -> ~58-60%, <50 -> 41%)
-[~] Value Detection      (potvrdeni Maxbet osnovni + kombinirani kvoti; opsezi: <1.40 PK/pobeda&golovi, 1.40-<1.70 pobeda&golovi, 1.70-2.00 samo fix, >2.00 BTTS/3+/poluvreme; EV = tocnost x kvota - 1; ostanuva: tocnost po liga, ROI/pratenje tiketi)
+[x] Value Detection      (Maxbet kvoti + EV; avtomatski zacuvani SIMULACII so 1 edinica po cel tiket; zamrznati izbori/kvoti, bez duplikati; ticket-report: profit/ROI i pending; league-stats: stroga tocnost po liga. Realna profitabilnost uste ne e dokazana; starite ligi se nepoznati.)
 [~] AI Ranking           (pravila: fix/BTTS/3+ >=55% (n>=100), kombinacii >=55% ili EV>=+5% (n>=50), signal BTTS >=55%, Goals >=60% (n>=100); 226 testovi pominaa; ML ranking/model validacija sleduva)
 
 # =====================================================================
@@ -28,12 +28,21 @@ dotnet run --no-build -- weighted-consensus 2026-10-16        // glasanje so tez
 
 dotnet run --no-build -- calibration                          // vistinska tocnost po Prob. grupa, confidence nivo i izvor (samo cita bazata)
 
+dotnet run --no-build -- ticket-report                        // site zacuvani SIMULACII: dobieni/izgubeni/pending, profit i ROI; NE se vistinski uplati
+dotnet run --no-build -- ticket-report 2026-10-01 2026-10-31  // inkluziven opseg po datum na natprevar; pending ulog ne vleguva vo ROI
+dotnet run --no-build -- league-stats 2026-10-01 2026-10-31   // tocnost po liga i pazar; samo snapshots pred 00:00 UTC; mala istorija e oznacena
+                                                              // ticket avtomatski cuva Maxbet liga i neprazen potvrden tiket so 1 edinica vkupen ulog
+                                                              // ista kombinacija/kvoti/rezim ne se duplira; drugi kvoti ili safe/value se posebni simulacii
+                                                              // Excel dobiva -sim-ID i Simulation list; starite Excel tiketi ne se uvezuvaat kako istorija
+
 dotnet run --no-build -- 2026-10-21                           // prvo soberi predictions i napravi mecuvanje; NE pravi tiket avtomatski
 dotnet run --no-build -- ticket 2026-10-21                    // podrazbirano baranje do 15 natprevari (isto kako ticket 2026-10-21 15)
 dotnet run --no-build -- ticket 2026-10-21 15                 // do 15 razlicni natprevari rangirani po vrednost (EV = Sigurnost x Kvota): potvrden tiket + odvoeni predlozi
 dotnet run --no-build -- ticket 2026-10-21 5                  // pomal i porealen tiket (do 5 natprevari) rangiran po vrednost
 dotnet run --no-build -- ticket 2026-10-21 15 safe            // do 15 natprevari rangirani ISKLUCIVO po najgolema sigurnost (Wilson dolna granica), bez brkanje visoka kvota
 dotnet run --no-build -- ticket 2026-10-21 5 safe             // 5 najsigurni natprevari za denot (najdobar izbor za realna proodnost na tiket)
+dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15          // do 15 natprevari SAMO so tip "1-3 prvo & 3+" (silen Over 2.5 signal + Maxbet kvota >= 1.70, bez razlika na 1/2 kvota)
+dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15 safe     // do 15 natprevari "1-3 prvo & 3+" rangirani po sigurnost i jacina na 3+ / BTTS signalot
 dotnet run --no-build -- ticket 2026-10-21 15 why             // dijagnostika: pecati [ISTORIJA] za poluvreme, [ODBIEN] so tocna pricina/kvota/signali i [BEZ-PAR] Maxbet ponudi
 dotnet run --no-build -- ticket 2026-10-21 15 safe why        // kombinacija od flagovi: rangiranje po sigurnost + celosen dijagnosticki izvestaj vo konzola
 dotnet run --no-build -- ticket 2026-10-21 15 nodc            // nodc e zadrzan za kompatibilnost; site tiketi se vekje bez dvojna sansa
@@ -65,8 +74,9 @@ dotnet run --no-build -- collect-results 2026-10-18           // dodava i poluvr
 dotnet run --no-build -- train-model                          // trenira ML modeli (rezultat, BTTS, goals) od istorijata vo bazata
 
 .\daily.ps1                                                   // sabajle: sobira dneshni prognozi (isto kako glavniot pipeline za deneshen datum)
-.\night.ps1                                                   // navecer, po natprevarite: collect-results + backtest za deneshen datum
-.\all.ps1 -Date 2026-10-17                                    // pusta site: collect-results, db-status, backtest, weighted-consensus, calibration (ako ne dozvoluva: powershell -ExecutionPolicy Bypass -File .\all.ps1 -Date 2026-10-17)
+.\night.ps1                                                   // navecer: collect-results + backtest + ROI na site zacuvani simulacii
+.\all.ps1                                                   // avtomatski build, pa rezultati/analizi za denes + ROI na site simulacii + tocnost po liga
+.\all.ps1 -Date 2026-10-17                                    // build, collect-results, db-status, backtest, weighted-consensus, calibration, ticket-report, league-stats; NE generira nov tiket
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\all.ps1 -Date 2026-10-18
 dotnet test .\Tests\Prediction.Tests.csproj                   // pusti testovi
 

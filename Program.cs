@@ -69,7 +69,22 @@ public partial class Program
     public static async Task Main(string[] args)
     {
         if (args.Length > 0 &&
-            args[0].Equals("ticket", StringComparison.OrdinalIgnoreCase))
+            args[0].Equals("ticket-report", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunTicketReportAsync(args);
+            return;
+        }
+
+        if (args.Length > 0 &&
+            args[0].Equals("league-stats", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunLeagueStatsAsync(args);
+            return;
+        }
+
+        if (args.Length > 0 &&
+            (args[0].Equals("ticket", StringComparison.OrdinalIgnoreCase) ||
+             args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase)))
         {
             await RunTicketAsync(args);
             return;

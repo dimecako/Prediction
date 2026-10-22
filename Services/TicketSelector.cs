@@ -106,4 +106,52 @@ public static class TicketSelector
             ? "Nema dozvolena alternativa so potrebna tocnost, signali i kvota."
             : "Predlog: nedostasuva potvrdena kvota; NE e del od potvrdeniot tiket.");
     }
+
+    public static TicketDecision SelectFirstHalf1To3And3Plus(
+        Match match, Tally calibration, Func<TicketCandidate, double?> getOdds)
+    {
+        var fix = TicketMarkets.BuildCandidates(match).FirstOrDefault(x => x.Market == "1X2");
+        double? baseOdds = (fix != null ? getOdds(fix) : null)
+            ?? getOdds(new("Goals", "O2.5", "", ""))
+            ?? getOdds(new("1X2", "1", "", ""))
+            ?? getOdds(new("1X2", "2", "", ""));
+        if (!baseOdds.HasValue || !double.IsFinite(baseOdds.Value) || baseOdds <= 1)
+            return new(null, null, baseOdds, "Nema validna potvrdena osnovna kvota.");
+
+        var goals = TicketMarkets.BinarySignal(match, "Goals");
+        var goalsStat = goals != null ? calibration.Get(goals.Key) : default;
+        if (goals is not { Pick: "O2.5" } ||
+            goalsStat.Total < MinHistory ||
+            (double)goalsStat.Correct / goalsStat.Total < MinSignalAccuracy)
+        {
+            return new(null, null, baseOdds, "Nema doverliv Goals Over 2.5 signal (>=60%, n>=100).");
+        }
+
+        string key = $"HALFGOALS|{TicketMarkets.FirstHalf1To3And3PlusPick}";
+        var stat = calibration.Get(key);
+        if (stat.Total < MinComboHistory)
+            return new(null, null, baseOdds, "Nedovolna istorija so poluvreme za 1-3 prvo & 3+ (n<50).");
+
+        var candidate = new TicketCandidate("HalfGoals", TicketMarkets.FirstHalf1To3And3PlusPick, key, "");
+        double? odds = getOdds(candidate);
+        if (odds.HasValue && (!double.IsFinite(odds.Value) || odds <= 1))
+            throw new InvalidOperationException($"Invalid odds for {candidate.DisplayPick}.");
+
+        var scored = new ScoredTicketCandidate(
+            candidate,
+            (double)stat.Correct / stat.Total,
+            CalibrationAnalyzer.WilsonLower(stat.Correct, stat.Total),
+            stat.Total,
+            odds);
+
+        if (odds.HasValue)
+        {
+            if (odds.Value < MinFinalOdds)
+                return new(null, null, baseOdds, "Kvotata za 1-3 prvo & 3+ e pod 1.70.");
+            return new(scored, null, baseOdds, "Potvrden izbor 1-3 prvo & 3+ so silen Over 2.5 signal.");
+        }
+
+        return new(null, scored, baseOdds,
+            "Predlog: nedostasuva potvrdena kvota za 1-3 prvo & 3+; NE e del od potvrdeniot tiket.");
+    }
 }
