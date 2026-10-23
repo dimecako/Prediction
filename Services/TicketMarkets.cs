@@ -92,8 +92,8 @@ public static class TicketMarkets
             yield return new("HalfGoals", pick, $"HALFGOALS|{pick}", "");
     }
 
-    // A missing half-time score is ungraded, not a lost bet or an inferred 0-0.
-    public static bool? IsCorrect(TicketCandidate candidate, MatchResult result)
+    // Calibration keeps complete half-time samples; settlement may resolve a proven final-total loss.
+    public static bool? IsCorrect(TicketCandidate candidate, MatchResult result, bool allowFinalOnlyLoss = false)
     {
         int total = result.HomeGoals + result.AwayGoals;
         string winner = result.HomeGoals > result.AwayGoals ? "1" :
@@ -109,7 +109,13 @@ public static class TicketMarkets
             if (!HalfGoalPicks.Contains(candidate.Pick))
                 throw new ArgumentException($"Unsupported ticket pick: {candidate.Pick}");
             if (result.HalfTimeHomeGoals is not int htHome || result.HalfTimeAwayGoals is not int htAway)
-                return null;
+                return !allowFinalOnlyLoss ? null : candidate.Pick switch
+                {
+                    "1-2 prvo & 1-2 vtoro" when total is < 2 or > 4 => false,
+                    "1-3 prvo & 1-3 vtoro" when total is < 2 or > 6 => false,
+                    FirstHalf1To3And3PlusPick when total < 3 => false,
+                    _ => null
+                };
             ValidateHalfTime(result, htHome, htAway);
             int first = htHome + htAway;
             int second = total - first;

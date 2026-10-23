@@ -535,48 +535,16 @@ public partial class Program
                 $"[RESULTS] Collecting results for {resultTargetDate}...");
 
             using var httpClient = new HttpClient();
-
-            // 1. Forebet FT results
-            var forebetAggregator =
-                new ProductionConsensusAggregator(resultTargetDate);
-
-            var externalResults =
-                await forebetAggregator.GetForebetResultsAsync(date);
-
-            Console.WriteLine(
-                $"[RESULTS] Forebet returned: {externalResults.Count}");
-
-            // 2. Fallback: FootballResultsOnline
-            if (externalResults.Count == 0)
-            {
-                Console.WriteLine(
-                    "[RESULTS] Forebet returned no results. Trying FootballResultsOnline...");
-
-                IMatchResultProvider provider =
-                    new FootballResultsOnlineProvider(httpClient);
-
-                externalResults =
-                    (await provider.GetResultsAsync(date)).ToList();
-
-                Console.WriteLine(
-                    $"[RESULTS] {provider.Name} returned: {externalResults.Count}");
-
-                // 3. Fallback: OpenFootball
-                if (externalResults.Count == 0)
+            var collected = await MatchResultCollector.CollectAsync(date,
+                new IMatchResultProvider[]
                 {
-                    Console.WriteLine(
-                        "[RESULTS] FootballResultsOnline returned no results. Trying OpenFootball...");
-
-                    provider =
-                        new OpenFootballResultProvider(httpClient);
-
-                    externalResults =
-                        (await provider.GetResultsAsync(date)).ToList();
-
-                    Console.WriteLine(
-                        $"[RESULTS] {provider.Name} returned: {externalResults.Count}");
-                }
-            }
+                    new ForebetResultProvider(),
+                    new FootballResultsOnlineProvider(httpClient),
+                    new OpenFootballResultProvider(httpClient)
+                }, Console.WriteLine);
+            var externalResults = collected.Results;
+            if (collected.FailedProviders > 0 || collected.RejectedRows > 0)
+                Environment.ExitCode = 1;
 
             var collectConnectionString =
                 Environment.GetEnvironmentVariable(
@@ -631,17 +599,28 @@ public partial class Program
 
                 if (match.Result != null)
                 {
+                    if (match.Result.HomeGoals != external.HomeGoals || match.Result.AwayGoals != external.AwayGoals)
+                    {
+                        Console.WriteLine($"[RESULTS] Conflicting stored final score for #{match.Id}: " +
+                            $"stored={match.Result.HomeGoals}-{match.Result.AwayGoals}, " +
+                            $"{external.Source}={external.HomeGoals}-{external.AwayGoals}; not overwritten.");
+                        Environment.ExitCode = 1;
+                        existing++;
+                        continue;
+                    }
                     if (external.HalfTimeHomeGoals.HasValue && external.HalfTimeAwayGoals.HasValue &&
                         (!match.Result.HalfTimeHomeGoals.HasValue || !match.Result.HalfTimeAwayGoals.HasValue))
                     {
-                        if (match.Result.HomeGoals == external.HomeGoals && match.Result.AwayGoals == external.AwayGoals)
-                        {
-                            match.Result.HalfTimeHomeGoals = external.HalfTimeHomeGoals;
-                            match.Result.HalfTimeAwayGoals = external.HalfTimeAwayGoals;
-                            halfTimeUpdated++;
-                        }
-                        else
-                            Console.WriteLine($"[RESULTS] Conflicting stored final score for #{match.Id}; half-time not updated.");
+                        match.Result.HalfTimeHomeGoals = external.HalfTimeHomeGoals;
+                        match.Result.HalfTimeAwayGoals = external.HalfTimeAwayGoals;
+                        halfTimeUpdated++;
+                    }
+                    else if (external.HalfTimeHomeGoals.HasValue && external.HalfTimeAwayGoals.HasValue &&
+                        (match.Result.HalfTimeHomeGoals != external.HalfTimeHomeGoals ||
+                         match.Result.HalfTimeAwayGoals != external.HalfTimeAwayGoals))
+                    {
+                        Console.WriteLine($"[RESULTS] Conflicting stored half-time score for #{match.Id}; not overwritten.");
+                        Environment.ExitCode = 1;
                     }
                     Console.WriteLine(
                         $"[EXISTS] #{match.Id} | " +
@@ -705,8 +684,17 @@ public partial class Program
             Console.WriteLine($"[RESULTS] Half-time backfilled: {halfTimeUpdated}");
             Console.WriteLine($"[RESULTS] Half-time supplied: {externalResults.Count(x => x.HalfTimeHomeGoals.HasValue && x.HalfTimeAwayGoals.HasValue)}");
             Console.WriteLine($"[RESULTS] Unmatched: {unmatched}");
+            Console.WriteLine($"[RESULTS] Failed providers: {collected.FailedProviders}; rejected rows/conflicts: {collected.RejectedRows}");
             Console.WriteLine($"[RESULTS] EF changes: {changes}");
-            Console.WriteLine("[RESULTS] Done.");
+            int dateMatches = await collectDb.Matches.CountAsync(x => x.MatchDate == date);
+            int finalResults = await collectDb.Matches.CountAsync(x => x.MatchDate == date && x.Result != null);
+            Console.WriteLine($"[RESULTS] Date coverage: FT={finalResults}/{dateMatches}; missing FT={dateMatches - finalResults}.");
+            var tracked = await collectDb.SimulatedTickets.AsNoTracking().Where(x => x.MatchDate == date)
+                .SelectMany(x => x.Selections).Select(x => x.MatchId).Distinct().ToListAsync();
+            int trackedResults = await collectDb.MatchResults.CountAsync(x => tracked.Contains(x.MatchId));
+            Console.WriteLine($"[RESULTS] Tracked ticket fixtures: FT={trackedResults}/{tracked.Count}; missing FT={tracked.Count - trackedResults}.");
+            Console.WriteLine("[RESULTS] Missing scores do not prove a fixture is unfinished; sources may be incomplete or names may not match.");
+            Console.WriteLine(Environment.ExitCode == 0 ? "[RESULTS] Done." : "[RESULTS] Completed with errors; see provider/conflict messages.");
 
             return;
         }

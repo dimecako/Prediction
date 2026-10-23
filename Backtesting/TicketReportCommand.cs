@@ -39,12 +39,31 @@ public partial class Program
 
         Console.WriteLine("[TICKET-REPORT] SIMULATION ONLY. Stakes and returns are units, not actual payments.");
         Console.WriteLine("[TICKET-REPORT] Frozen selections/prices; current stored results. Inclusive match-date range.");
+        Console.WriteLine($"[TICKET-REPORT] Unique fixtures={matchIds.Count}; with final results={results.Count}; " +
+            $"with half-time={results.Values.Count(x => x.HalfTimeHomeGoals.HasValue && x.HalfTimeAwayGoals.HasValue)}.");
         if (tickets.Count == 0)
             Console.WriteLine("[TICKET-REPORT] No saved simulations in this range. Existing Excel files are not imported or backfilled.");
         foreach (var row in settlements)
+        {
             Console.WriteLine($"[SIMULATION] #{row.Ticket.Id} | {row.Ticket.MatchDate:yyyy-MM-dd} | " +
                 $"{row.Ticket.Mode} | {row.Selections.Count} picks | {row.Status} | Odds={row.CombinedOdds:F4} | " +
-                $"Stake={row.Ticket.Stake:F2} | Payout={Money(row.Payout)} | Profit={Money(row.Profit)}");
+                $"Stake={row.Ticket.Stake:F2} | Payout={Money(row.Payout)} | Profit={Money(row.Profit)} | " +
+                $"Won={row.Selections.Count(x => x.Correct == true)} Lost={row.Selections.Count(x => x.Correct == false)} " +
+                $"Pending={row.Selections.Count(x => !x.Correct.HasValue)} | Created UTC={row.Ticket.CreatedAtUtc:O}");
+            foreach (var leg in row.Selections.OrderBy(x => x.Selection.Position))
+            {
+                results.TryGetValue(leg.Selection.MatchId, out var result);
+                string score = result == null ? "FT=n/a HT=n/a" :
+                    $"FT={result.HomeGoals}-{result.AwayGoals} HT=" +
+                    (result.HalfTimeHomeGoals.HasValue && result.HalfTimeAwayGoals.HasValue
+                        ? $"{result.HalfTimeHomeGoals}-{result.HalfTimeAwayGoals}" : "n/a");
+                string status = leg.Correct == true ? "Won" : leg.Correct == false ? "Lost" : "Pending";
+                string? reason = TicketPerformanceAnalyzer.PendingReason(leg, result);
+                Console.WriteLine($"[TICKET-LEG] #{row.Ticket.Id}/{leg.Selection.Position} | {leg.Selection.Fixture} | " +
+                    $"{leg.Selection.Market}/{leg.Selection.Pick} | Odds={leg.Selection.Odds:F2} | {score} | {status}" +
+                    (reason == null ? "" : $" | Reason={reason}"));
+            }
+        }
         PrintPerformance("ALL", settlements);
         foreach (var mode in settlements.GroupBy(x => x.Ticket.Mode))
             PrintPerformance(mode.Key, mode);
@@ -70,7 +89,7 @@ public partial class Program
                 (graded.Count < MinReliableSample ? " (small sample)" : ""));
         }
         Console.WriteLine("[TICKET-REPORT] Pending stakes are excluded from settled ROI. Any losing leg settles an accumulator as lost.");
-        Console.WriteLine("[TICKET-REPORT] Missing results/half-time remain ungraded; cancellations are not automatically treated as losses or voids.");
+        Console.WriteLine("[TICKET-REPORT] Missing results/half-time remain ungraded unless the final total rules out a half-goal pick; cancellations are not inferred losses or voids.");
         Console.WriteLine("[TICKET-REPORT] Overlapping simulations and safe/value variants are not independent evidence of profitability.");
 
         static string Money(decimal? value) => value.HasValue ? value.Value.ToString("F2") : "n/a";

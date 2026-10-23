@@ -28,6 +28,11 @@ public static class TicketPerformanceAnalyzer
     public static string LeagueName(string? league) =>
         string.IsNullOrWhiteSpace(league) ? UnknownLeague : league.Trim();
 
+    public static string? PendingReason(SettledSelection selection, MatchResult? result) =>
+        selection.Correct.HasValue ? null :
+        result == null ? "missing final result (unfinished, unavailable or unmatched; not inferred)" :
+        "missing required half-time score";
+
     public static TicketSettlement Settle(SimulatedTicket ticket, IReadOnlyDictionary<long, MatchResult> results)
     {
         if (ticket.Stake <= 0 || ticket.Selections.Count == 0)
@@ -40,7 +45,7 @@ public static class TicketPerformanceAnalyzer
                 throw new ArgumentException("A stored selection has invalid odds.");
             combinedOdds = checked(combinedOdds * pick.Odds);
             bool? correct = results.TryGetValue(pick.MatchId, out var result)
-                ? TicketMarkets.IsCorrect(new(pick.Market, pick.Pick, pick.CalibrationKey, ""), result)
+                ? TicketMarkets.IsCorrect(new(pick.Market, pick.Pick, pick.CalibrationKey, ""), result, allowFinalOnlyLoss: true)
                 : null;
             selections.Add(new(pick, correct));
         }

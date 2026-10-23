@@ -364,6 +364,9 @@ public partial class ProductionConsensusAggregator
         string json =
             await GetForebetJsonWithSession(url);
 
+        if (string.IsNullOrWhiteSpace(json))
+            throw new HttpRequestException("Forebet returned no usable response after retries.");
+
         return ParseForebetResults(json, date);
     }
 

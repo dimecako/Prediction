@@ -39,44 +39,37 @@ public sealed class OpenFootballResultProvider : IMatchResultProvider
             string url =
                 $"https://raw.githubusercontent.com/openfootball/football.json/master/{season}/{leagueFile}";
 
-            try
+            using var response = await _httpClient.GetAsync(
+                url,
+                cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                using var response = await _httpClient.GetAsync(
-                    url,
-                    cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
-                    continue;
-
-                await using var stream =
-                    await response.Content.ReadAsStreamAsync(cancellationToken);
-
-                using var document =
-                    await JsonDocument.ParseAsync(
-                        stream,
-                        cancellationToken: cancellationToken);
-
-                if (!document.RootElement.TryGetProperty(
-                        "matches",
-                        out var matches))
-                {
-                    continue;
-                }
-
-                foreach (var match in matches.EnumerateArray())
-                {
-                    if (!TryParseMatch(match, date, leagueFile, out var result))
-                        continue;
-
-                    results.Add(result);
-                }
+                Console.WriteLine($"[OPENFOOTBALL] No data for {season}/{leagueFile}: HTTP 404.");
+                continue;
             }
-            catch (Exception ex) when (
-                ex is HttpRequestException ||
-                ex is JsonException)
+            response.EnsureSuccessStatusCode();
+
+            await using var stream =
+                await response.Content.ReadAsStreamAsync(cancellationToken);
+
+            using var document =
+                await JsonDocument.ParseAsync(
+                    stream,
+                    cancellationToken: cancellationToken);
+
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty(
+                    "matches",
+                    out var matches) || matches.ValueKind != JsonValueKind.Array)
+                throw new JsonException($"OpenFootball {leagueFile} is missing the matches array.");
+
+            foreach (var match in matches.EnumerateArray())
             {
-                Console.WriteLine(
-                    $"[OPENFOOTBALL] Failed {leagueFile}: {ex.Message}");
+                if (!TryParseMatch(match, date, leagueFile, out var result))
+                    continue;
+
+                results.Add(result);
             }
         }
 

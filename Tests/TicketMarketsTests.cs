@@ -152,6 +152,33 @@ public sealed class TicketMarketsTests
         }
     }
 
+    [Theory]
+    [InlineData("1-3 prvo & 3+", 1, 1)]
+    [InlineData("1-3 prvo & 3+", 0, 0)]
+    [InlineData("1-2 prvo & 1-2 vtoro", 1, 0)]
+    [InlineData("1-2 prvo & 1-2 vtoro", 3, 2)]
+    [InlineData("1-3 prvo & 1-3 vtoro", 0, 0)]
+    [InlineData("1-3 prvo & 1-3 vtoro", 4, 3)]
+    public void ImpossibleFinalTotalLosesHalfGoalPickWithoutInferringHalfTime(string pick, int home, int away)
+    {
+        var candidate = new TicketCandidate("HalfGoals", pick, "", "");
+        Assert.False(TicketMarkets.IsCorrect(candidate, Result(home, away), allowFinalOnlyLoss: true));
+        Assert.False(TicketMarkets.IsCorrect(candidate, Result(home, away, 0), allowFinalOnlyLoss: true));
+        Assert.Null(TicketMarkets.IsCorrect(candidate, Result(home, away)));
+    }
+
+    [Theory]
+    [InlineData("1-2 prvo & 1-2 vtoro", 2)]
+    [InlineData("1-2 prvo & 1-2 vtoro", 4)]
+    [InlineData("1-3 prvo & 1-3 vtoro", 2)]
+    [InlineData("1-3 prvo & 1-3 vtoro", 6)]
+    [InlineData("1-3 prvo & 3+", 3)]
+    [InlineData("1-3 prvo & 3+", 7)]
+    public void FeasibleFinalTotalStillNeedsHalfTime(string pick, int total)
+    {
+        Assert.Null(TicketMarkets.IsCorrect(new("HalfGoals", pick, "", ""), Result(total, 0), allowFinalOnlyLoss: true));
+    }
+
     [Fact]
     public void StandaloneHalfGoalCalibrationDoesNotDependOnPredictedWinner()
     {

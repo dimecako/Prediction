@@ -102,6 +102,20 @@ public sealed class TicketPerformanceTests
     }
 
     [Fact]
+    public void FailedThreePlusLegSettlesTicketWithoutHalfTimeOrOtherLegResults()
+    {
+        var pick = Pick(1);
+        pick.Market = "HalfGoals";
+        pick.Pick = TicketMarkets.FirstHalf1To3And3PlusPick;
+        var row = TicketPerformanceAnalyzer.Settle(Create(pick, Pick(2)), Results((1, 1, 1)));
+        Assert.False(row.Selections[0].Correct);
+        Assert.Null(row.Selections[1].Correct);
+        Assert.Equal(SimulatedTicketStatus.Lost, row.Status);
+        Assert.Equal(-1m, row.Profit);
+        Assert.Equal(-1m, TicketPerformanceAnalyzer.Summarize(new[] { row }).Roi);
+    }
+
+    [Fact]
     public void HalfTimeBackfillAndCorrectedResultsAreReflectedWithoutChangingFrozenTicket()
     {
         var pick = Pick(1, 2.5m);
@@ -154,6 +168,25 @@ public sealed class TicketPerformanceTests
         pick.Market = "Unknown";
         Assert.Throws<ArgumentException>(() =>
             TicketPerformanceAnalyzer.Settle(Create(pick), Results((1, 2, 0))));
+    }
+
+    [Fact]
+    public void PendingDiagnosticsDistinguishMissingFinalAndRequiredHalfTime()
+    {
+        var pick = Pick(1);
+        pick.Market = "HalfGoals";
+        pick.Pick = TicketMarkets.FirstHalf1To3And3PlusPick;
+        var ticket = Create(pick);
+        var missingFinal = TicketPerformanceAnalyzer.Settle(ticket, Results()).Selections.Single();
+        Assert.Contains("missing final result", TicketPerformanceAnalyzer.PendingReason(missingFinal, null));
+        var results = Results((1, 2, 1));
+        var missingHalfTime = TicketPerformanceAnalyzer.Settle(ticket, results).Selections.Single();
+        Assert.Equal("missing required half-time score",
+            TicketPerformanceAnalyzer.PendingReason(missingHalfTime, results[1]));
+        results[1].HalfTimeHomeGoals = 1;
+        results[1].HalfTimeAwayGoals = 0;
+        var graded = TicketPerformanceAnalyzer.Settle(ticket, results).Selections.Single();
+        Assert.Null(TicketPerformanceAnalyzer.PendingReason(graded, results[1]));
     }
 
     private static SimulatedTicket Create(params SimulatedTicketSelection[] picks) =>

@@ -214,11 +214,25 @@ an export failure does not lose it.
 
 `ticket-report [from] [to]` accepts inclusive **match-date** limits. With no limits
 it reports all saved simulations; with only `from` it reports that date onward.
+It prints each frozen selection, final/half-time scores and Won/Lost/Pending,
+plus selection counts and UTC creation time for each ticket. Pending reasons
+distinguish missing final results from missing required half-time scores.
+Missing final scores are not evidence that a fixture is still playing: a source
+may be incomplete or team identities may not match. The report reads stored
+results only; it does not fetch live statuses or infer postponement/void rules.
 It grades the frozen market/pick using current stored final/half-time results,
 so result corrections and half-time backfills are reflected on the next report.
 An accumulator wins only if every leg wins; any losing leg settles it as lost,
 even if other legs are still pending. Missing results or required half-time
-scores are ungraded, not inferred losses. Postponements/cancellations stay
+scores are ungraded, not inferred losses, except when the final total alone
+already makes a half-goal selection impossible. For example, `1-3 prvo & 3+`
+loses at a final score of 1-1 even without half-time data. The two both-half
+goal ranges also lose when the final total is outside their possible sum.
+A feasible total still requires explicit half-time scores; it never implies a win.
+This final-only loss rule applies to ticket settlement, not historical selection
+calibration, which still requires complete half-time samples to avoid counting
+only the known losses among fixtures with missing half-time data.
+Postponements/cancellations stay
 pending until a usable result exists; bookmaker void rules are not inferred.
 
 - Winning payout = stake x product of the frozen decimal odds; losing payout = 0.
@@ -257,6 +271,20 @@ from `BacktestFrom` through `Date`. It does not collect new predictions or
 generate a new ticket.
 This completes Phase 9's tracking/measurement functionality, **not proof of
 profitability**. That requires enough newly saved, subsequently graded tickets.
+
+`collect-results <date>` queries all three existing providers in priority order
+(Forebet, FootballResultsOnline, OpenFootball), even when an earlier source
+returns some results. It merges by the existing date + normalized home/away
+identity, never fuzzy-matching aliases or reversing teams. Duplicate final scores
+are not inserted twice; matching final scores can supplement missing half-time
+data. Conflicting final/half-time scores are logged and never overwrite an
+earlier source or an existing stored score. Provider request/JSON failures,
+timeouts and rejected/conflicting rows are reported; usable results from other
+providers are still saved, and the command exits nonzero for these errors.
+It prints final-score coverage for the date and for unique saved-ticket fixtures.
+Provider counts of zero and incomplete coverage are explicit, not proof that
+all fixtures have been graded. No existing provider can guarantee complete
+coverage, and an empty response does not invent scores or settle pending picks.
 
 ### Phase 10: AI Ranking and out-of-time ML validation
 
