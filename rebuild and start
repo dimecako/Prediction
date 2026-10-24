@@ -41,10 +41,12 @@ dotnet run --no-build -- ticket 2026-10-21 15                 // do 15 razlicni 
 dotnet run --no-build -- ticket 2026-10-21 5                  // pomal i porealen tiket (do 5 natprevari) rangiran po vrednost
 dotnet run --no-build -- ticket 2026-10-21 15 safe            // do 15 natprevari rangirani ISKLUCIVO po najgolema sigurnost (Wilson dolna granica), bez brkanje visoka kvota
 dotnet run --no-build -- ticket 2026-10-21 5 safe             // 5 najsigurni natprevari za denot (najdobar izbor za realna proodnost na tiket)
+dotnet run --no-build -- ai-rank 2026-10-21 15 safe league    // AI-safe tiket: po redosled na prioritetnite ligi, prvo po eden, potoa do vtor izbor od liga; rangira po soglasuvanje na izvorite
 dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15          // do 15 natprevari SAMO so tip "1-3 prvo & 3+" (silen Over 2.5 signal + Maxbet kvota >= 1.70, bez razlika na 1/2 kvota)
 dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15 safe     // do 15 natprevari "1-3 prvo & 3+" rangirani po sigurnost i jacina na 3+ / BTTS signalot
 dotnet run --no-build -- ai-rank 2026-10-23 15                // do 15 natprevari rangirani so AI/ML verojatnost (site 11 izvori) + kalibracija i Maxbet kvota
 dotnet run --no-build -- ai-rank 2026-10-23 15 safe           // do 15 najsigurni natprevari rangirani po kombinirana Wilson sigurnost + AI/ML verojatnost
+dotnet run --no-build -- ai-rank 2026-10-23 15 safe league    // AI-safe tiket po prioritetni ligi i soglasuvanje na izvorite; najmnogu 2 izbora od ista liga
 dotnet run --no-build -- ai-rank 2026-10-23 5 safe            // 5 najsigurni natprevari rangirani po kombinirana Wilson sigurnost + ML verojatnost
 dotnet run --no-build -- ticket 2026-10-23 15 ml              // isto kako ai-rank (ml flag moze da se kombinira so safe i why)
 dotnet run --no-build -- ticket 2026-10-21 15 why             // dijagnostika: pecati [ISTORIJA] za poluvreme, [ODBIEN] so tocna pricina/kvota/signali i [BEZ-PAR] Maxbet ponudi

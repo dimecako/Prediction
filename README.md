@@ -292,6 +292,7 @@ coverage, and an empty response does not invent scores or settle pending picks.
 dotnet run --no-build -- train-model
 dotnet run --no-build -- ai-rank 2026-10-23 15
 dotnet run --no-build -- ai-rank 2026-10-23 5 safe
+dotnet run --no-build -- ai-rank 2026-10-23 15 safe league
 dotnet run --no-build -- ticket 2026-10-23 15 ml
 ```
 
@@ -310,6 +311,23 @@ dotnet run --no-build -- ticket 2026-10-23 15 ml
   for each match's candidate (`ML=...%` in `[SIGNALI]`), blends it with the empirical
   95% Wilson lower bound (`RankSafe = (Safe + MlProbability) / 2`), and saves the
   resulting simulated ticket under mode `ml` or `ml-safe`.
+- Add the `league` flag to `ai-rank` to select from these Maxbet league labels in
+  priority order: England Premier League, France Ligue 1, Germany Bundesliga,
+  Italy Serie A, Spain La Liga, Belgium Jupiler Pro League, Netherlands
+  Eredivisie, Portugal Liga Portugal, Turkey Super Lig, Scotland Premiership,
+  Switzerland Super League, Austria Bundesliga, Poland Ekstraklasa, Sweden
+  Allsvenskan, Slovakia Nike Liga, Slovenia Prva Liga, Russia Premier League,
+  Romania Superliga, Denmark 1st Division, Czech Chance Liga, France Ligue 2,
+  England Championship, Germany Bundesliga 2, Italy Serie B, Spain La Liga 2.
+  It picks the top eligible selection in each league before considering a second
+  selection from any league (maximum two per league) to fill the requested count.
+  Within a league, source agreement share ranks first, followed by supporting-vote
+  count and the AI-safe ranking. Unknown or unlisted league labels are excluded.
+  Existing odds and calibration thresholds still apply; if fewer than the
+  requested number qualify, the ticket stays shorter. This ranking is not a
+  guarantee of improved accuracy.
+  League simulations are saved as `ml-league` or `ml-league-safe`, separately
+  from standard AI simulations, and included in `ticket-report`.
 
 ### Tests
 

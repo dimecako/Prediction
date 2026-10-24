@@ -8,6 +8,36 @@ public sealed class TicketPerformanceTests
 {
     private static readonly DateTime Created = new(2030, 1, 1, 8, 0, 0, DateTimeKind.Utc);
 
+    [Theory]
+    [InlineData("ml-league", "ml")]
+    [InlineData("ml-league-safe", "ml-safe")]
+    public void LeagueModesCanBeValidatedAndSettledWithDistinctIdentity(string mode, string standardMode)
+    {
+        var selections = new[] { Pick(1) };
+        selections[0].Position = 1;
+        var ticket = TicketLedger.Create(DateOnly.FromDateTime(Created), false, selections, Created, mode);
+        var standard = TicketLedger.Create(ticket.MatchDate, false, selections, Created, standardMode);
+
+        TicketLedger.Validate(ticket);
+        Assert.Equal(mode, ticket.Mode);
+        Assert.NotEqual(standard.Fingerprint, ticket.Fingerprint);
+        Assert.Equal(ticket.Fingerprint,
+            TicketLedger.Create(ticket.MatchDate, false, selections, Created.AddMinutes(1), mode).Fingerprint);
+        Assert.Equal(SimulatedTicketStatus.Won,
+            TicketPerformanceAnalyzer.Settle(ticket, Results((1, 2, 0))).Status);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("unknown")]
+    public void UnknownSimulationModesStillFailExplicitly(string mode)
+    {
+        var selection = Pick(1);
+        selection.Position = 1;
+        Assert.Throws<ArgumentException>(() =>
+            TicketLedger.Create(DateOnly.FromDateTime(Created), false, [selection], Created, mode));
+    }
+
     [Fact]
     public void IdentityIgnoresEnumerationOrderAndCaptureTimeButIncludesModeAndPrices()
     {

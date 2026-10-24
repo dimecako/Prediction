@@ -18,11 +18,13 @@ public partial class Program
                         x.Equals("safe", StringComparison.OrdinalIgnoreCase) ||
                         x.Equals("why", StringComparison.OrdinalIgnoreCase) ||
                         x.Equals("1-3p3+", StringComparison.OrdinalIgnoreCase) ||
-                        x.Equals("ml", StringComparison.OrdinalIgnoreCase))
+                        x.Equals("ml", StringComparison.OrdinalIgnoreCase) ||
+                        x.Equals("league", StringComparison.OrdinalIgnoreCase))
             .Select(x => x.ToLowerInvariant())
             .ToHashSet();
         only1To3P3Plus |= flags.Contains("1-3p3+");
-        useMlRanking |= flags.Contains("ml");
+        bool prioritizeLeagues = flags.Contains("league");
+        useMlRanking |= flags.Contains("ml") || prioritizeLeagues;
         bool rankBySafety = flags.Contains("safe");
         string? countArg = args.Skip(2).FirstOrDefault(x => !flags.Contains(x.ToLowerInvariant()));
         int count = TicketDefaultCount;
@@ -36,7 +38,7 @@ public partial class Program
                 out var date) ||
             (countArg != null && (!int.TryParse(countArg, out count) || count < 1)))
         {
-            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket[-1-3p3+|ai-rank] yyyy-MM-dd [count] [nodc] [safe] [ml] [why]");
+            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket[-1-3p3+|ai-rank] yyyy-MM-dd [count] [nodc] [safe] [ml] [league] [why]");
             Environment.ExitCode = 1;
             return;
         }
@@ -173,14 +175,19 @@ public partial class Program
             TicketPick ToPick(ScoredTicketCandidate c)
             {
                 double? mlProb = mlProbs?.GetCandidateProbability(c.Candidate);
+                var agreement = TicketMarkets.SourceAgreement(match, c.Candidate);
                 string evidence = mlProb.HasValue
-                    ? $"{baseEvidence}; ML={mlProb.Value:P1}"
-                    : baseEvidence;
+                    ? $"{baseEvidence}; ML={mlProb.Value:P1}; Sovpagjanje={agreement.MatchingVotes}/{agreement.TotalVotes}"
+                    : $"{baseEvidence}; Sovpagjanje={agreement.MatchingVotes}/{agreement.TotalVotes}";
                 return new(
                     match.Id, match.League, offer.KickoffUtc,
                     $"{match.HomeTeam} vs {match.AwayTeam}", c.Candidate, c.Accuracy,
                     c.Safe, c.Sample, c.Odds, decision.BaseOdds!.Value, evidence,
-                    signalPriority, mlProb);
+                    signalPriority, mlProb)
+                {
+                    AgreementVotes = agreement.MatchingVotes,
+                    AgreementTotal = agreement.TotalVotes
+                };
             }
             if (decision.Confirmed != null)
                 best.Add(ToPick(decision.Confirmed));
@@ -234,17 +241,29 @@ public partial class Program
             "1.70-2.00: samo fix; >2.00: BTTS (>=1.65), 3+, BTTS & 3+ ili golovi po poluvreme. " +
             "Drugite alternativi baraat kvota >=1.70. Fix/BTTS/3+: tocnost >=55% (n>=100); " +
             "kombinacii: >=55% ili EV>=+5% (n>=50). Signal BTTS >=55%, Goals >=60% (n>=100).");
+        if (prioritizeLeagues)
+            Console.WriteLine("[TIKET] Liga-rezim: prvo po eden izbor od ligite po prioritet; ako se pod 15, " +
+                "dozvolen e vtor izbor po liga. Primarno se rangira soglasuvanjeto na izvorite, pa AI-safe.");
 
         foreach (var rejection in rejected.OrderByDescending(x => x.Value))
             Console.WriteLine($"[TIKET] Preskoknati {rejection.Value}: {rejection.Key}");
-        var picks = best
-            .OrderByDescending(x => !rankBySafety && x.HasValue)
-            .ThenByDescending(x => rankBySafety ? x.RankSafe : x.RankSafe * x.Odds!.Value)
-            .ThenByDescending(x => x.MlProbability ?? x.Accuracy)
-            .ThenByDescending(x => x.Accuracy)
-            .ThenByDescending(x => x.SignalPriority)
-            .Take(count)
-            .ToList();
+        var picks = prioritizeLeagues
+            ? LeagueTicketSelector.Select(best, count, x => x.League,
+                x => x.AgreementShare, x => x.AgreementVotes, x => x.RankSafe,
+                x => x.MlProbability ?? x.Accuracy, x => x.Accuracy, x => x.SignalPriority).ToList()
+            : best
+                .OrderByDescending(x => !rankBySafety && x.HasValue)
+                .ThenByDescending(x => rankBySafety ? x.RankSafe : x.RankSafe * x.Odds!.Value)
+                .ThenByDescending(x => x.MlProbability ?? x.Accuracy)
+                .ThenByDescending(x => x.Accuracy)
+                .ThenByDescending(x => x.SignalPriority)
+                .Take(count)
+                .ToList();
+        if (prioritizeLeagues)
+        {
+            int unsupportedLeagues = best.Count(x => LeagueTicketSelector.GetPriority(x.League) < 0);
+            Console.WriteLine($"[TIKET] Liga-rezim: izbori={picks.Count}; kvalifikuvani so nepoznata liga preskoknati={unsupportedLeagues}.");
+        }
         var suggested = proposals
             .OrderByDescending(x => x.RankSafe)
             .ThenByDescending(x => x.MlProbability ?? x.Accuracy)
@@ -257,6 +276,8 @@ public partial class Program
         {
             string ticketMode = only1To3P3Plus
                 ? (rankBySafety ? "1-3p3+-safe" : "1-3p3+")
+                : prioritizeLeagues
+                    ? (rankBySafety ? "ml-league-safe" : "ml-league")
                 : useMlRanking
                     ? (rankBySafety ? "ml-safe" : "ml")
                     : (rankBySafety ? "safe" : "value");
@@ -510,6 +531,9 @@ public partial class Program
     {
         public bool HasValue => Odds.HasValue && Accuracy * Odds.Value > 1.0;
         public double RankSafe => MlProbability.HasValue ? (Safe + MlProbability.Value) / 2.0 : Safe;
+        public int AgreementVotes { get; init; }
+        public int AgreementTotal { get; init; }
+        public double AgreementShare => AgreementTotal == 0 ? 0 : (double)AgreementVotes / AgreementTotal;
     }
 
 }

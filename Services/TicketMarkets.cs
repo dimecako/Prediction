@@ -13,6 +13,11 @@ public sealed record TicketCandidate(string Market, string Pick, string Key, str
     };
 }
 
+public sealed record TicketSourceAgreement(int MatchingVotes, int TotalVotes)
+{
+    public double Share => TotalVotes == 0 ? 0 : (double)MatchingVotes / TotalVotes;
+}
+
 public static class TicketMarkets
 {
     public static readonly IReadOnlyList<string> HalfGoalPicks = Array.AsReadOnly(new[]
@@ -52,6 +57,66 @@ public static class TicketMarkets
         return new(market, consensus.Value.Pick,
             $"SIGNAL|{market}|{consensus.Value.Pick}|{Math.Min(matching, 3)}", "");
     }
+
+    public static TicketSourceAgreement SourceAgreement(Match match, TicketCandidate candidate)
+    {
+        var snapshots = CalibrationAnalyzer.LatestPerSource(match);
+
+        TicketSourceAgreement ForResult(string pick)
+        {
+            var votes = snapshots.Where(x => x.PredictedResult is "1" or "X" or "2").ToList();
+            return new(votes.Count(x => x.PredictedResult == pick), votes.Count);
+        }
+
+        TicketSourceAgreement ForBinary(string market, string pick)
+        {
+            var votes = BinaryVotes(snapshots, market);
+            return new(votes.Count(x => x == pick), votes.Count);
+        }
+
+        TicketSourceAgreement Minimum(TicketSourceAgreement first, TicketSourceAgreement second) =>
+            first.Share <= second.Share ? first : second;
+
+        return candidate.Market switch
+        {
+            "1X2" => ForResult(candidate.Pick),
+            "BTTS" => ForBinary("BTTS", candidate.Pick),
+            "Goals" => ForBinary("Goals", candidate.Pick),
+            "HalfGoals" => ForBinary("Goals", "O2.5"),
+            "Combo" when candidate.Pick == "BTTS & 3+" =>
+                Minimum(ForBinary("BTTS", "YES"), ForBinary("Goals", "O2.5")),
+            "Combo" when candidate.Pick.StartsWith("1 & ", StringComparison.Ordinal) ||
+                         candidate.Pick.StartsWith("2 & ", StringComparison.Ordinal) =>
+                Minimum(ForResult(candidate.Pick[..1]), MajorityBinaryAgreement(snapshots, "Goals")),
+            "Combo" when candidate.Pick is "1-1" or "2-2" or "1-1 & 2+" or "2-2 & 2+" =>
+                ForResult(candidate.Pick[..1]),
+            _ => new(0, 0)
+        };
+    }
+
+    private static TicketSourceAgreement MajorityBinaryAgreement(
+        IReadOnlyList<PredictionSnapshot> snapshots, string market)
+    {
+        var votes = BinaryVotes(snapshots, market);
+        if (votes.Count == 0)
+            return new(0, 0);
+
+        var groups = votes.GroupBy(x => x).OrderByDescending(x => x.Count()).ToList();
+        if (groups.Count > 1 && groups[0].Count() == groups[1].Count())
+            return new(0, votes.Count);
+        return new(groups[0].Count(), votes.Count);
+    }
+
+    private static List<string?> BinaryVotes(
+        IReadOnlyList<PredictionSnapshot> snapshots, string market) =>
+        market switch
+        {
+            "BTTS" => snapshots.Select(x => x.Btts is "YES" or "NO" ? x.Btts : null)
+                .Where(x => x != null).ToList(),
+            "Goals" => snapshots.Select(x => ProductionConsensusAggregator.NormalizeGoalsTo25(x.Goals))
+                .Where(x => x is "O2.5" or "U2.5").ToList(),
+            _ => throw new ArgumentException($"Unsupported signal market: {market}", nameof(market))
+        };
 
     public static IEnumerable<TicketCandidate> BuildCandidates(Match match)
     {
