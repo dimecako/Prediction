@@ -52,7 +52,8 @@ public static class LeagueTicketSelector
         Func<T, double> getSafety,
         Func<T, double> getMlProbability,
         Func<T, double> getAccuracy,
-        Func<T, double> getSignalPriority)
+        Func<T, double> getSignalPriority,
+        bool safetyFirst = false)
     {
         if (count <= 0)
             return [];
@@ -64,7 +65,9 @@ public static class LeagueTicketSelector
             .OrderBy(x => x.Key)
             .Select(group => group
                 .Select(x => x.Candidate)
-                .OrderByDescending(getAgreementShare)
+                .OrderByDescending(x => safetyFirst ? getSafety(x) : getAgreementShare(x))
+                .ThenByDescending(x => safetyFirst ? getMlProbability(x) : 0)
+                .ThenByDescending(getAgreementShare)
                 .ThenByDescending(getAgreementVotes)
                 .ThenByDescending(getSafety)
                 .ThenByDescending(getMlProbability)

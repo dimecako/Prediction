@@ -7,6 +7,18 @@ namespace Prediction.Tests;
 
 public sealed class MlRankingTests
 {
+    [Theory]
+    [InlineData("1 & T1 2+")]
+    [InlineData("2 & T2 2+")]
+    public void TeamGoalsDoNotReuseUnrelatedTotalGoalsProbability(string pick)
+    {
+        var probabilities = new MlMatchProbabilities(
+            new Dictionary<string, double> { ["1"] = .8, ["2"] = .7 },
+            new Dictionary<string, double>(),
+            new Dictionary<string, double> { ["O2.5"] = .9 });
+        Assert.Null(probabilities.GetCandidateProbability(new("Combo", pick, "", "")));
+    }
+
     private static readonly string[] AllSources =
     [
         "Forebet", "Statarea", "Vitibet", "PredictZ", "ZuluBet", "WinDrawWin",

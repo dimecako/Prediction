@@ -26,9 +26,10 @@ public static class TicketSelector
     public const double MinBttsOdds = 1.65;
 
     public static TicketDecision Select(
-        Match match, Tally calibration, Func<TicketCandidate, double?> getOdds, bool safe)
+        Match match, Tally calibration, Func<TicketCandidate, double?> getOdds, bool safe,
+        bool includeTeamGoals = false)
     {
-        var candidates = TicketMarkets.BuildCandidates(match).ToList();
+        var candidates = TicketMarkets.BuildCandidates(match, includeTeamGoals).ToList();
         var fix = candidates.FirstOrDefault(x => x.Market == "1X2");
         if (fix == null)
             return new(null, null, null, "Nema nedvosmislen 1/2 signal so Prob.");
@@ -76,6 +77,8 @@ public static class TicketSelector
             }
             if (c.Market != "Combo" || !c.Pick.StartsWith($"{fix.Pick} & ", StringComparison.Ordinal))
                 return false;
+            if (c.Pick == $"{fix.Pick} & T{fix.Pick} 2+")
+                return true;
             return goalsReliable;
         }
         bool CandidatePassesThreshold(ScoredTicketCandidate x)

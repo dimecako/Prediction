@@ -11,6 +11,7 @@ public sealed class TicketPerformanceTests
     [Theory]
     [InlineData("ml-league", "ml")]
     [InlineData("ml-league-safe", "ml-safe")]
+    [InlineData("daily-league-safe", "ml-league-safe")]
     public void LeagueModesCanBeValidatedAndSettledWithDistinctIdentity(string mode, string standardMode)
     {
         var selections = new[] { Pick(1) };

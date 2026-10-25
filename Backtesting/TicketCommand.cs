@@ -11,6 +11,12 @@ public partial class Program
 
     private static async Task RunTicketAsync(string[] args)
     {
+        if (args[0].Equals("daily-ticket", StringComparison.OrdinalIgnoreCase) ||
+            args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunDailyTicketAsync(args);
+            return;
+        }
         bool only1To3P3Plus = args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase);
         bool useMlRanking = args[0].Equals("ai-rank", StringComparison.OrdinalIgnoreCase);
         var flags = args.Skip(2)
@@ -38,7 +44,7 @@ public partial class Program
                 out var date) ||
             (countArg != null && (!int.TryParse(countArg, out count) || count < 1)))
         {
-            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket[-1-3p3+|ai-rank] yyyy-MM-dd [count] [nodc] [safe] [ml] [league] [why]");
+            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket|ticket-1-3p3+|ai-rank yyyy-MM-dd [count] [nodc] [safe] [ml] [league] [why]");
             Environment.ExitCode = 1;
             return;
         }
@@ -73,6 +79,8 @@ public partial class Program
             }
         }
         var mlRanker = useMlRanking ? MlMatchRanker.TrainFromHistory(history) : null;
+        if (useMlRanking && mlRanker == null)
+            Console.WriteLine("[TIKET] Nema dovolno istorija za ML; rangiranjeto koristi samo istoriska kalibracija.");
 
         var today = await db.Matches
             .Where(x => x.MatchDate == date && x.Result == null)
@@ -178,6 +186,8 @@ public partial class Program
                 var agreement = TicketMarkets.SourceAgreement(match, c.Candidate);
                 string evidence = mlProb.HasValue
                     ? $"{baseEvidence}; ML={mlProb.Value:P1}; Sovpagjanje={agreement.MatchingVotes}/{agreement.TotalVotes}"
+                    : c.Candidate.Pick is "1 & T1 2+" or "2 & T2 2+"
+                    ? $"{baseEvidence}; ML=n/a (nema model za timski golovi); Sovpagjanje={agreement.MatchingVotes}/{agreement.TotalVotes}"
                     : $"{baseEvidence}; Sovpagjanje={agreement.MatchingVotes}/{agreement.TotalVotes}";
                 return new(
                     match.Id, match.League, offer.KickoffUtc,

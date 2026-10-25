@@ -96,6 +96,8 @@ public static class MaxbetOddsProvider
             ("Combo", "2 & 2-5 golovi") => "50727",
             ("Combo", "1 & 2-6 golovi") => "51784",
             ("Combo", "2 & 2-6 golovi") => "51785",
+            ("Combo", "1 & T1 2+") => "419",
+            ("Combo", "2 & T2 2+") => "420",
             ("Combo", "1-1") => "10",
             ("Combo", "2-2") => "18",
             ("Combo", "1-1 & 2+") => "862",

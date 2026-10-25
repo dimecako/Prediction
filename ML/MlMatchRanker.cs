@@ -15,6 +15,7 @@ public sealed record MlMatchProbabilities(
         ("1X2", var side) when ResultProbabilities.TryGetValue(side, out double p) => p,
         ("BTTS", var pick) when BttsProbabilities.TryGetValue(pick, out double p) => p,
         ("Goals", var pick) when GoalsProbabilities.TryGetValue(pick, out double p) => p,
+        ("Combo", "1 & T1 2+" or "2 & T2 2+") => null,
         ("Combo", "BTTS & 3+") when BttsProbabilities.TryGetValue("YES", out double btts) &&
                                     GoalsProbabilities.TryGetValue("O2.5", out double over) => (btts + over) / 2.0,
         ("Combo", var pick) when pick.Length > 0 && ResultProbabilities.TryGetValue(pick[..1], out double win) =>

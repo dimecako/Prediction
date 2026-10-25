@@ -329,6 +329,56 @@ dotnet run --no-build -- ticket 2026-10-23 15 ml
   League simulations are saved as `ml-league` or `ml-league-safe`, separately
   from standard AI simulations, and included in `ticket-report`.
 
+### Daily tickets without historical filters
+
+```powershell
+dotnet run --no-build -- 2026-10-26
+dotnet run --no-build -- daily-ticket-league 2026-10-26 15
+dotnet run --no-build -- daily-ticket 2026-10-26 15
+```
+
+Both commands read only matches dated on the requested day and their saved
+prediction snapshots (latest per source). They do not scrape prediction sites,
+read historical results, train/load ML models, or apply historical accuracy,
+sample-size or EV filters. They fetch current Maxbet prices, require unique
+fixture/date matching, merge duplicate stored fixtures, and exclude started
+matches. No database rows are modified by these commands.
+
+- `daily-ticket-league` accepts only the supported leagues listed above. It
+  takes one candidate per league in priority order, then second choices, then
+  further rounds if needed to reach the requested count. Unlike `ai-rank ...
+  league`, it has no two-per-league cap.
+- `daily-ticket` has no league filter, league priority or per-league cap. It
+  ranks all eligible daily fixtures together.
+
+Ranking uses known average source probability for the majority 1/2 prediction
+first, then that probability descending, source agreement, supporting-source
+count and lower confirmed odds. Fixtures without source probabilities remain
+eligible but rank after those with known probabilities. Thus Inter at 70.7%
+ranks ahead of Milan at 56.7% when both have 10/10 agreement. These are
+**source forecasts**, not calibrated ML or whole-bet probabilities.
+
+Price bands are retained: 1.70-2.00 selects the consensus straight win.
+Below 1.70, confirmed winner combinations are considered, including `1 & T1 2+`
+and `2 & T2 2+` (winner scores at least two goals). Total-goal combinations need
+a daily Over 2.5 majority; the team-goal variant uses winner consensus only and
+does not pretend total goals predict team goals. Below 1.40, half-time/full-time
+is also allowed. Above 2.00, daily majority signals may allow BTTS, 3+, BTTS & 3+
+or half-goal combinations. BTTS requires odds >=1.65; other alternatives >=1.70.
+Among allowed alternatives the lowest confirmed qualifying price is selected.
+No composite price is manufactured from component prices.
+
+The count defaults to 15. If there are insufficient unstarted fixtures with
+valid daily signals, confirmed prices and (for the league variant) supported
+leagues, the output explicitly reports the shortfall. Add `why` to see
+rejections, for example `daily-ticket-league 2026-10-26 15 why`.
+Excel files are `daily-ticket-league-DATE-COUNT.xlsx` and
+`daily-ticket-DATE-COUNT.xlsx`, with daily source evidence and an Info sheet.
+They intentionally have no historical Accuracy, EV or whole-ticket win
+probability, and do not enter the historical-calibration simulation ledger.
+Older `daily-league-safe` simulations remain readable by `ticket-report`.
+`ai-rank` and other existing historical ticket commands retain their behavior.
+
 ### Tests
 
 ```powershell

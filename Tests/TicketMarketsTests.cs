@@ -87,6 +87,13 @@ public sealed class TicketMarketsTests
     [InlineData("BTTS & 3+", 1, 1, false)]
     [InlineData("BTTS & 3+", 2, 1, true)]
     [InlineData("BTTS & 3+", 3, 0, false)]
+    [InlineData("1 & T1 2+", 2, 0, true)]
+    [InlineData("1 & T1 2+", 1, 0, false)]
+    [InlineData("1 & T1 2+", 2, 2, false)]
+    [InlineData("1 & T1 2+", 2, 3, false)]
+    [InlineData("2 & T2 2+", 0, 2, true)]
+    [InlineData("2 & T2 2+", 0, 1, false)]
+    [InlineData("2 & T2 2+", 2, 2, false)]
     public void FullTimeCombinationsGradeInclusiveBoundaries(string pick, int home, int away, bool expected)
     {
         Assert.Equal(expected, TicketMarkets.IsCorrect(Combo(pick), Result(home, away)));
@@ -114,6 +121,23 @@ public sealed class TicketMarketsTests
         Assert.Null(MaxbetOddsProvider.GetOdds(offer, "Combo", "1 & 2-5 golovi"));
         Assert.Null(MaxbetOddsProvider.GetOdds(offer, "Combo", "BTTS & 3+"));
         Assert.Equal(2, MaxbetOddsProvider.GetOdds(offer, "1X2", "1"));
+        Assert.Null(MaxbetOddsProvider.GetOdds(offer, "Combo", "1 & T1 2+"));
+    }
+
+    [Theory]
+    [InlineData("1", "419")]
+    [InlineData("2", "420")]
+    public void TeamGoalCandidatesAreOptInAndUseVerifiedOdds(string side, string code)
+    {
+        var match = Fixture(side, "NO", "U2.5");
+        string pick = $"{side} & T{side} 2+";
+        Assert.DoesNotContain(TicketMarkets.BuildCandidates(match), c => c.Pick == pick);
+        var candidate = Assert.Single(TicketMarkets.BuildCandidates(match, true), c => c.Pick == pick);
+        Assert.Contains(TicketMarkets.BuildCalibrationCandidates(match, true), c => c.Key == candidate.Key);
+        Assert.Equal(1, TicketMarkets.SourceAgreement(match, candidate).Share);
+        var offer = new BookmakerMatch("Home", "Away", DateTime.UtcNow,
+            new Dictionary<string, double> { [code] = 1.8 });
+        Assert.Equal(1.8, MaxbetOddsProvider.GetOdds(offer, candidate.Market, candidate.Pick));
     }
 
     [Theory]

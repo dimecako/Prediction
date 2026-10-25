@@ -29,9 +29,9 @@ public static class TicketMarkets
 
     public const string FirstHalf1To3And3PlusPick = "1-3 prvo & 3+";
 
-    public static IEnumerable<TicketCandidate> BuildCalibrationCandidates(Match match)
+    public static IEnumerable<TicketCandidate> BuildCalibrationCandidates(Match match, bool includeTeamGoals = false)
     {
-        foreach (var candidate in BuildCandidates(match))
+        foreach (var candidate in BuildCandidates(match, includeTeamGoals))
             yield return candidate;
         var snapshots = CalibrationAnalyzer.LatestPerSource(match);
         foreach (var group in snapshots.Where(x => x.Btts is "YES" or "NO").GroupBy(x => x.Btts!))
@@ -85,6 +85,8 @@ public static class TicketMarkets
             "HalfGoals" => ForBinary("Goals", "O2.5"),
             "Combo" when candidate.Pick == "BTTS & 3+" =>
                 Minimum(ForBinary("BTTS", "YES"), ForBinary("Goals", "O2.5")),
+            "Combo" when candidate.Pick is "1 & T1 2+" or "2 & T2 2+" =>
+                ForResult(candidate.Pick[..1]),
             "Combo" when candidate.Pick.StartsWith("1 & ", StringComparison.Ordinal) ||
                          candidate.Pick.StartsWith("2 & ", StringComparison.Ordinal) =>
                 Minimum(ForResult(candidate.Pick[..1]), MajorityBinaryAgreement(snapshots, "Goals")),
@@ -118,15 +120,19 @@ public static class TicketMarkets
             _ => throw new ArgumentException($"Unsupported signal market: {market}", nameof(market))
         };
 
-    public static IEnumerable<TicketCandidate> BuildCandidates(Match match)
+    public static IEnumerable<TicketCandidate> BuildCandidates(
+        Match match, bool includeTeamGoals = false, bool requireProbability = true)
     {
         var snapshots = CalibrationAnalyzer.LatestPerSource(match);
         var consensus = CalibrationAnalyzer.BuildResultConsensus(snapshots);
-        if (consensus is { Pick: "1" or "2", AverageProbability: double probability })
+        if (consensus is { Pick: "1" or "2" } &&
+            (!requireProbability || consensus.AverageProbability.HasValue))
         {
             string side = consensus.Pick;
-            string bucket = CalibrationAnalyzer.ProbBucket(probability);
-            string detail = $"Prob={probability:F1}% {consensus.MatchingVotes}/{consensus.TotalVotes}";
+            string bucket = consensus.AverageProbability is double probability
+                ? CalibrationAnalyzer.ProbBucket(probability) : "unknown";
+            string probabilityText = consensus.AverageProbability is double p ? $"{p:F1}%" : "n/a";
+            string detail = $"Prob={probabilityText} {consensus.MatchingVotes}/{consensus.TotalVotes}";
             yield return new("1X2", side, $"1X2|{side}|{bucket}", detail);
             foreach (string pick in new[]
             {
@@ -138,6 +144,11 @@ public static class TicketMarkets
                 $"{side}-{side} & 2+"
             })
                 yield return new("Combo", pick, $"COMBO|{pick}|{bucket}", detail);
+            if (includeTeamGoals)
+            {
+                string pick = $"{side} & T{side} 2+";
+                yield return new("Combo", pick, $"COMBO|{pick}|{bucket}", detail);
+            }
         }
 
         int bttsVotes = snapshots.Count(x => x.Btts == "YES");
@@ -201,6 +212,8 @@ public static class TicketMarkets
         if (side is not ("1" or "2"))
             throw new ArgumentException($"Unsupported ticket pick: {candidate.Pick}");
         string condition = candidate.Pick[1..];
+        if (condition == $" & T{side} 2+")
+            return winner == side && (side == "1" ? result.HomeGoals : result.AwayGoals) >= 2;
         if (condition == " & 2-5 golovi")
             return winner == side && total is >= 2 and <= 5;
         if (condition == " & 2-6 golovi")

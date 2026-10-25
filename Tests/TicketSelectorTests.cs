@@ -373,6 +373,51 @@ public sealed class TicketSelectorTests
         Assert.Null(TicketSelector.SelectFirstHalf1To3And3Plus(weakOverMatch, weakTally, _ => 1.9).Confirmed);
     }
 
+    [Theory]
+    [InlineData("1", 1.3)]
+    [InlineData("2", 1.5)]
+    public void DailyTeamGoalsUseWholeBetHistoryWithoutUnrelatedOverSignal(string side, double baseOdds)
+    {
+        var match = Fixture(side, goals: "U2.5");
+        var tally = Calibrate(match, signalCorrect: 10);
+        string pick = $"{side} & T{side} 2+";
+        var candidate = TicketMarkets.BuildCandidates(match, true).Single(c => c.Pick == pick);
+        for (int i = 0; i < 100; i++)
+            tally.Add(candidate.Key, i < 70);
+        double? Odds(TicketCandidate c) => c.Market == "1X2" ? baseOdds : c.Pick == pick ? 1.7 : 1.1;
+        Assert.Null(TicketSelector.Select(match, tally, Odds, true).Confirmed);
+        var decision = TicketSelector.Select(match, tally, Odds, true, includeTeamGoals: true);
+        Assert.Equal(pick, decision.Confirmed!.Candidate.Pick);
+        Assert.Equal(0.7, decision.Confirmed.Accuracy);
+        Assert.Equal(100, decision.Confirmed.Sample);
+    }
+
+    [Theory]
+    [InlineData(49, 1.8, false)]
+    [InlineData(100, 1.69, false)]
+    [InlineData(100, 1.7, true)]
+    public void DailyTeamGoalsKeepSampleAndOddsThresholds(int sample, double odds, bool accepted)
+    {
+        var match = Fixture();
+        var tally = Calibrate(match);
+        var team = TicketMarkets.BuildCandidates(match, true).Single(c => c.Pick == "1 & T1 2+");
+        for (int i = 0; i < sample; i++)
+            tally.Add(team.Key, true);
+        var decision = TicketSelector.Select(match, tally,
+            c => c.Market == "1X2" ? 1.4 : c.Pick == team.Pick ? odds : 1.1, true, true);
+        Assert.Equal(accepted, decision.Confirmed != null);
+    }
+
+    [Fact]
+    public void DailyModeKeepsMilanStyleFixAtMinimumOdds()
+    {
+        var match = Fixture("2");
+        var decision = TicketSelector.Select(match, Calibrate(match),
+            c => c.Market == "1X2" ? 1.7 : 2.5, true, true);
+        Assert.Equal("1X2", decision.Confirmed!.Candidate.Market);
+        Assert.Equal("2", decision.Confirmed.Candidate.Pick);
+    }
+
     private static Match Fixture(string side = "1", string btts = "YES", string goals = "O2.5") => new()
     {
         PredictionSnapshots =
