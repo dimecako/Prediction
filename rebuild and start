@@ -14,6 +14,12 @@
 # KOMANDI (dotnet run --no-build -- ...)  prvo: dotnet build
 # =====================================================================
 
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\tickets.ps1  // SITE 9 ticket varijanti + ocenuvanje; 18:00-23:59 za utre, 00:00-17:59 za denes
+.\tickets.ps1 -Date 2026-10-27 -SkipCleanup                   // racen datum; zadrzi gi site Excel fajlovi
+.\tickets.ps1 -PlanOnly                                      // prikazi go planot, bez izvrsuvanje ili brisenje
+                                                              // pred brisenje: uvoz/proverka vo baza; samo XLSX za datumot pred izbraniot, vklucuvajki predictions
+dotnet run --no-build -- ticket-import 2026-10-26             // zacuvaj stari daily Excel tiketi i proveri gi drugite, bez brisenje
+
 dotnet build                                                  // kompajlirj posle sekoja promena na kodot
 
 dotnet run --no-build -- 2026-10-17                           // glaven pipeline: sobira prognozi od site izvori, snima vo baza, pravi predictions-DATUM.xlsx
@@ -36,13 +42,11 @@ dotnet run --no-build -- league-stats 2026-10-01 2026-10-31   // tocnost po liga
                                                               // Excel dobiva -sim-ID i Simulation list; starite Excel tiketi ne se uvezuvaat kako istorija
 
 dotnet run --no-build -- 2026-10-21                           // prvo soberi predictions i napravi mecuvanje; NE pravi tiket avtomatski
-dotnet run --no-build -- ticket 2026-10-21                    // podrazbirano baranje do 15 natprevari (isto kako ticket 2026-10-21 15)
 dotnet run --no-build -- ticket 2026-10-21 15                 // do 15 razlicni natprevari rangirani po vrednost (EV = Sigurnost x Kvota): potvrden tiket + odvoeni predlozi
 dotnet run --no-build -- ticket 2026-10-21 5                  // pomal i porealen tiket (do 5 natprevari) rangiran po vrednost
 dotnet run --no-build -- ticket 2026-10-21 15 safe            // do 15 natprevari rangirani ISKLUCIVO po najgolema sigurnost (Wilson dolna granica), bez brkanje visoka kvota
 dotnet run --no-build -- ticket 2026-10-21 5 safe             // 5 najsigurni natprevari za denot (najdobar izbor za realna proodnost na tiket)
 
-dotnet run --no-build -- ai-rank 2026-10-21 15 safe league    // AI-safe tiket: po redosled na prioritetnite ligi, prvo po eden, potoa do vtor izbor od liga; rangira po soglasuvanje na izvorite
 dotnet run --no-build -- daily-ticket-league 2026-10-26 15   // SAMO dnevni sobrani prognozi + Maxbet, bez istorija/ML-treniranje; po prioritetni ligi vo krugovi do 15
 dotnet run --no-build -- daily-ticket 2026-10-26 15          // SAMO dnevni sobrani prognozi + Maxbet, bez istorija/ML-treniranje; 15 od SITE ligi, rang po Source Prob. i soglasnost
 
@@ -52,10 +56,12 @@ dotnet run --no-build -- ai-rank 2026-10-23 15                // do 15 natprevar
 dotnet run --no-build -- ai-rank 2026-10-23 15 safe           // do 15 najsigurni natprevari rangirani po kombinirana Wilson sigurnost + AI/ML verojatnost
 dotnet run --no-build -- ai-rank 2026-10-23 15 safe league    // AI-safe tiket po prioritetni ligi i soglasuvanje na izvorite; najmnogu 2 izbora od ista liga
 dotnet run --no-build -- ai-rank 2026-10-23 5 safe            // 5 najsigurni natprevari rangirani po kombinirana Wilson sigurnost + ML verojatnost
-dotnet run --no-build -- ticket 2026-10-23 15 ml              // isto kako ai-rank (ml flag moze da se kombinira so safe i why)
-dotnet run --no-build -- ticket 2026-10-21 15 why             // dijagnostika: pecati [ISTORIJA] za poluvreme, [ODBIEN] so tocna pricina/kvota/signali i [BEZ-PAR] Maxbet ponudi
-dotnet run --no-build -- ticket 2026-10-21 15 safe why        // kombinacija od flagovi: rangiranje po sigurnost + celosen dijagnosticki izvestaj vo konzola
-dotnet run --no-build -- ticket 2026-10-21 15 nodc            // nodc e zadrzan za kompatibilnost; site tiketi se vekje bez dvojna sansa
+                                                              // DUPLIKATI / ALIJASI (ne se posebni ticket rezimi):
+                                                              // - bez broj: isto kako 15; ticket so ml: isto kako ai-rank za ist datum/broj/flagovi
+                                                              // - why: samo dopolnitelna dijagnostika [ISTORIJA], [ODBIEN], [BEZ-PAR]; ne go menuva izborot
+                                                              // - nodc: ne go menuva izborot (site tiketi se bez dvojna sansa), samo dodava -nodc vo Excel imeto
+                                                              // 5 i 15 se razlicni golemini; safe, ML, league i dnevniot rezim ne se alijasi.
+                                                              // Razlicni rezimi moze slucajno da izberat isti mecevi; toa ne gi pravi isti algoritmi.
                                                               // DOZVOLENI PAZARI (site so provereni Maxbet kodovi za kvoti):
                                                               // - fix 1, fix 2
                                                               // - 1 & 1+ prvo; 2 & 1+ prvo

@@ -10,6 +10,19 @@ namespace Prediction.Services;
 
 public static class TicketLedger
 {
+    public static bool IsDailyMode(string mode) => mode is "daily" or "daily-league";
+
+    public static SimulatedTicket CreateDaily(
+        DateOnly date, IEnumerable<DailyTicketPick> picks, DateTime createdAtUtc, bool leagueOnly) =>
+        Create(date, false, picks.Select((p, i) => new SimulatedTicketSelection
+        {
+            Position = i + 1, MatchId = p.MatchId, Fixture = p.Fixture, League = p.League,
+            KickoffUtc = p.KickoffUtc, Market = p.Candidate.Market, Pick = p.Candidate.Pick,
+            CalibrationKey = $"DAILY|{p.Candidate.Market}|{p.Candidate.Pick}",
+            Odds = Convert.ToDecimal(p.Odds), BaseOdds = Convert.ToDecimal(p.BaseOdds),
+            Evidence = p.Evidence
+        }), createdAtUtc, leagueOnly ? "daily-league" : "daily");
+
     public static SimulatedTicket Create(
         DateOnly date, bool safe, IEnumerable<SimulatedTicketSelection> selections, DateTime createdAtUtc,
         string? mode = null)
@@ -42,7 +55,7 @@ public static class TicketLedger
     {
         if (ticket.Stake <= 0 || ticket.Selections.Count == 0 ||
             ticket.Mode is not ("safe" or "value" or "1-3p3+" or "1-3p3+-safe" or "ml" or "ml-safe" or
-                "ml-league" or "ml-league-safe" or "daily-league-safe") ||
+                "ml-league" or "ml-league-safe" or "daily-league-safe" or "daily" or "daily-league") ||
             ticket.CreatedAtUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("A simulation needs a positive stake, selections, a valid mode and a UTC timestamp.");
         if (ticket.Selections.Select(x => x.MatchId).Distinct().Count() != ticket.Selections.Count)
@@ -54,7 +67,10 @@ public static class TicketLedger
                 string.IsNullOrWhiteSpace(pick.Fixture) || string.IsNullOrWhiteSpace(pick.Market) ||
                 string.IsNullOrWhiteSpace(pick.Pick) || string.IsNullOrWhiteSpace(pick.CalibrationKey) ||
                 !double.IsFinite(pick.Accuracy) || pick.Accuracy is < 0 or > 1 ||
-                !double.IsFinite(pick.Safe) || pick.Safe < 0 || pick.Safe > pick.Accuracy || pick.Sample <= 0 ||
+                !double.IsFinite(pick.Safe) || pick.Safe < 0 || pick.Safe > pick.Accuracy ||
+                (IsDailyMode(ticket.Mode)
+                    ? pick.Sample != 0 || pick.Accuracy != 0 || pick.Safe != 0
+                    : pick.Sample <= 0) ||
                 pick.Position < 1)
                 throw new ArgumentException("Invalid simulated selection or kickoff is no longer in the future.");
         }

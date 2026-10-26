@@ -342,7 +342,8 @@ prediction snapshots (latest per source). They do not scrape prediction sites,
 read historical results, train/load ML models, or apply historical accuracy,
 sample-size or EV filters. They fetch current Maxbet prices, require unique
 fixture/date matching, merge duplicate stored fixtures, and exclude started
-matches. No database rows are modified by these commands.
+matches. Nonempty tickets are now saved to the simulation ledger for subsequent
+grading, without using history to select or rank their picks.
 
 - `daily-ticket-league` accepts only the supported leagues listed above. It
   takes one candidate per league in priority order, then second choices, then
@@ -375,9 +376,73 @@ rejections, for example `daily-ticket-league 2026-10-26 15 why`.
 Excel files are `daily-ticket-league-DATE-COUNT.xlsx` and
 `daily-ticket-DATE-COUNT.xlsx`, with daily source evidence and an Info sheet.
 They intentionally have no historical Accuracy, EV or whole-ticket win
-probability, and do not enter the historical-calibration simulation ledger.
+probability. Their separate ledger modes are `daily` and `daily-league`, with
+1 simulated unit for the whole ticket and frozen selections/prices. The existing
+non-null calibration fields use zero with sample size zero to mark **unavailable**
+calibration for these modes, never measured 0% accuracy; reports grade actual
+results instead. Excel includes a Simulation sheet and database match IDs.
 Older `daily-league-safe` simulations remain readable by `ticket-report`.
 `ai-rank` and other existing historical ticket commands retain their behavior.
+
+### Running all tickets and grading automatically
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\tickets.ps1
+.\tickets.ps1 -Date 2026-10-27
+.\tickets.ps1 -PlanOnly
+.\tickets.ps1 -Count 5 -SkipCollection -SkipCleanup
+```
+
+`tickets.ps1` freezes the target date once using the **local system clock**:
+00:00 through 17:59 selects today; 18:00 through 23:59 selects tomorrow.
+`-Date yyyy-MM-dd` overrides this rule. The previous day always means target
+date minus one, including when an explicit date is supplied.
+
+The script builds, archives/verifies existing previous-day and target-day ticket
+workbooks, collects previous-day results, prints their grading, and collects
+target-day predictions. It then runs all nine distinct variants (up to 15 picks
+each by default): `ticket`, `ticket safe`, `ai-rank`, `ai-rank safe`,
+`ai-rank safe league`, `daily-ticket`, `daily-ticket-league`, `ticket-1-3p3+`,
+and `ticket-1-3p3+ safe`. Each command independently fetches current odds; these
+are not guaranteed identical across variants. ML ticket commands perform their
+existing historical training. A final target-date report prints the available
+results, per-mode pick accuracy, ticket status and simulated ROI.
+
+Only after **every step succeeds**, the script rechecks the previous-day archive
+and deletes generated XLSX files for that exact previous date, including
+`predictions-DATE.xlsx`. Only generated `predictions`, `ticket` and `daily-ticket`
+filename families in the project root are eligible, not arbitrary spreadsheets,
+other dates or subdirectories. Database history is never deleted. Pending
+results can still be graded after Excel deletion. A build/archive failure stops
+immediately; other command failures are reported and suppress all cleanup.
+Locked files cause an explicit error. `-SkipCleanup` retains all Excel files;
+`-SkipCollection` skips prediction collection only. `-PlanOnly` changes nothing.
+
+Older daily workbooks can also be imported without generating tickets or
+deleting files:
+
+```powershell
+dotnet run --no-build -- ticket-import 2026-10-26
+dotnet run --no-build -- collect-results 2026-10-26
+dotnet run --no-build -- ticket-report 2026-10-26 2026-10-26
+```
+
+Import uses the original creation time, kickoff, selections and prices, not
+today's odds or a reconstructed strategy. It requires unique stored fixture
+identity (new workbooks include match IDs), valid pre-kickoff capture and supported
+markets. Ambiguous/missing matches or a historical ticket whose confirmed picks
+do not match its saved simulation cause an explicit failure, preserving files.
+Identical imports reuse the existing simulation; all workbook imports in one
+command are transactional. Result/half-time gaps remain pending, and later
+backfills or corrections are reflected by rerunning `ticket-report`. Overlapping
+tickets are not independent evidence; one day's ROI does not prove profitability.
+
+`all.ps1` retains its existing analytics/training behavior and does not generate
+tickets. PowerShell orchestration tests (mock commands and isolated temp files):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Tests\TicketsScript.Tests.ps1
+```
 
 ### Tests
 

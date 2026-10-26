@@ -2,6 +2,7 @@ using System.Globalization;
 using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
+using Prediction.Entities;
 using Prediction.Services;
 
 public partial class Program
@@ -84,11 +85,17 @@ public partial class Program
         }
         string path = Path.Combine(Directory.GetCurrentDirectory(),
             $"{command}-{date:yyyy-MM-dd}-{selection.Picks.Count}.xlsx");
+        await db.Database.MigrateAsync();
+        var saved = await TicketLedger.SaveAsync(db,
+            TicketLedger.CreateDaily(date, selection.Picks, now, leagueOnly));
+        Console.WriteLine($"[SIMULATION] #{saved.Ticket.Id} | " +
+            $"{(saved.Created ? "Saved" : "Already saved; not duplicated")} | Mode={saved.Ticket.Mode} | " +
+            "1 unit for the WHOLE ticket; not an actual bet. No historical Accuracy or EV.");
         try
         {
-            ExportDailyTicket(path, command, date, now, count, selection.Picks);
+            ExportDailyTicket(path, command, date, saved.Ticket.CreatedAtUtc, count, selection.Picks, saved.Ticket);
             Console.WriteLine($"[DAILY] Excel snimen: {path}");
-            Console.WriteLine("[DAILY] Ne e istoriska simulacija; nema izmisleni Accuracy, EV ili sansa za cel tiket.");
+            Console.WriteLine($"[DAILY] Ocenuvanje: ticket-report {date:yyyy-MM-dd} {date:yyyy-MM-dd}");
         }
         catch (IOException ex)
         {
@@ -99,12 +106,12 @@ public partial class Program
 
     private static void ExportDailyTicket(
         string path, string command, DateOnly date, DateTime createdAtUtc,
-        int requested, IReadOnlyList<DailyTicketPick> picks)
+        int requested, IReadOnlyList<DailyTicketPick> picks, SimulatedTicket simulation)
     {
         using var workbook = new XLWorkbook();
         var sheet = workbook.Worksheets.Add("Tiket");
         string[] headers = ["#", "Natprevar", "Liga", "Pazar", "Izbor", "Kvota",
-            "Source Prob. % (1X2)", "1X2 soglasnost", "Osnovna kvota", "Signali", "Kickoff UTC"];
+            "Source Prob. % (1X2)", "1X2 soglasnost", "Osnovna kvota", "Signali", "Kickoff UTC", "Match ID"];
         for (int c = 0; c < headers.Length; c++)
             sheet.Cell(1, c + 1).Value = headers[c];
         sheet.Range(1, 1, 1, headers.Length).Style.Font.Bold = true;
@@ -127,6 +134,7 @@ public partial class Program
             sheet.Cell(row, 9).Value = p.BaseOdds;
             sheet.Cell(row, 10).Value = p.Evidence;
             sheet.Cell(row, 11).Value = p.KickoffUtc.ToString("O");
+            sheet.Cell(row, 12).Value = p.MatchId;
         }
         sheet.SheetView.FreezeRows(1);
         sheet.Columns().AdjustToContents();
@@ -147,6 +155,17 @@ public partial class Program
         info.Cell(8, 1).Value = "Rang: poznata Source Prob., povisoka Prob., soglasnost, broj izvori; ne garancija.";
         info.Cell(9, 1).Value = "Alternativa: najniska potvrdena kvota nad minimumot megju dozvolenite tipovi.";
         info.Columns().AdjustToContents();
+        var tracking = workbook.Worksheets.Add("Simulation");
+        tracking.Cell(1, 1).Value = "SIMULATION ONLY - not an actual bet";
+        tracking.Cell(2, 1).Value = "Ticket ID";
+        tracking.Cell(2, 2).Value = simulation.Id;
+        tracking.Cell(3, 1).Value = "Created at UTC";
+        tracking.Cell(3, 2).Value = simulation.CreatedAtUtc.ToString("O");
+        tracking.Cell(4, 1).Value = "Mode";
+        tracking.Cell(4, 2).Value = simulation.Mode;
+        tracking.Cell(5, 1).Value = "Stake for whole ticket (units)";
+        tracking.Cell(5, 2).Value = simulation.Stake;
+        tracking.Columns().AdjustToContents();
         workbook.SaveAs(path);
     }
 }

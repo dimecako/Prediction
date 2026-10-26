@@ -95,11 +95,18 @@ public partial class Program
         static string Money(decimal? value) => value.HasValue ? value.Value.ToString("F2") : "n/a";
         static void PrintPerformance(string label, IEnumerable<TicketSettlement> rows)
         {
-            var total = TicketPerformanceAnalyzer.Summarize(rows);
+            var tickets = rows.ToList();
+            var total = TicketPerformanceAnalyzer.Summarize(tickets);
+            var picks = tickets.SelectMany(t => t.Selections).ToList();
+            int won = picks.Count(p => p.Correct == true);
+            int lost = picks.Count(p => p.Correct == false);
+            string accuracy = won + lost == 0 ? "n/a" : $"{(double)won / (won + lost):P1}";
             string roi = total.Roi.HasValue ? total.Roi.Value.ToString("P1") : "n/a";
             Console.WriteLine($"[ROI {label}] Tickets={total.Total} | Won={total.Won} Lost={total.Lost} Pending={total.Pending} | " +
                 $"Settled stake={total.SettledStake:F2} | Pending stake={total.PendingStake:F2} | " +
                 $"Payout={total.Payout:F2} | Profit={total.Profit:F2} | ROI={roi}");
+            Console.WriteLine($"[PICKS {label}] Won={won} Lost={lost} Pending={picks.Count - won - lost} | " +
+                $"Graded accuracy={accuracy} (includes repeated picks across simulations; not independent)");
         }
     }
 

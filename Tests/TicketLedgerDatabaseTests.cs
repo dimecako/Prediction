@@ -66,6 +66,22 @@ public sealed class TicketLedgerDatabaseTests
         Assert.Equal(0.85m, settlement.Profit);
         Assert.Equal("Test League", loaded.Selections.Single().League);
         Assert.Equal(now.AddDays(1), loaded.Selections.Single().KickoffUtc);
+        foreach (bool leagueOnly in new[] { false, true })
+        {
+            var dailyPick = new DailyTicketPick(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}",
+                match.League, now.AddDays(1), new("1X2", "1", "DAILY|1X2|1", ""),
+                1.85, 1.85, 70, 2, 3, "Daily source evidence; no calibrated probability");
+            var daily = await TicketLedger.SaveAsync(db,
+                TicketLedger.CreateDaily(match.MatchDate, [dailyPick], now, leagueOnly));
+            var again = await TicketLedger.SaveAsync(db,
+                TicketLedger.CreateDaily(match.MatchDate, [dailyPick], now.AddMinutes(1), leagueOnly));
+            Assert.True(daily.Created);
+            Assert.False(again.Created);
+            Assert.Equal(daily.Ticket.Id, again.Ticket.Id);
+            Assert.Equal(0, again.Ticket.Selections.Single().Sample);
+            Assert.Equal(0, again.Ticket.Selections.Single().Accuracy);
+            Assert.Equal(SimulatedTicketStatus.Won, TicketPerformanceAnalyzer.Settle(again.Ticket, results).Status);
+        }
         await transaction.RollbackAsync();
     }
 }
