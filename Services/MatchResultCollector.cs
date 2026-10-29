@@ -21,6 +21,15 @@ public static class MatchResultCollector
             {
                 rows = await provider.GetResultsAsync(date, cancellationToken);
             }
+            catch (PartialMatchResultException ex)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                log($"[RESULTS] {provider.Name} failed: {ex.Message}");
+                foreach (string error in ex.Errors)
+                    log($"[RESULTS] {provider.Name} fixture failed: {error}");
+                failed++;
+                rows = ex.Results;
+            }
             catch (Exception ex) when (ex is HttpRequestException or
                 System.Text.Json.JsonException or Newtonsoft.Json.JsonException ||
                 ex is OperationCanceledException && !cancellationToken.IsCancellationRequested)

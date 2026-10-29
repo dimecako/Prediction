@@ -26,6 +26,10 @@ dotnet run --no-build -- 2026-10-17                           // glaven pipeline
 
 dotnet run --no-build -- collect-results 2026-10-17           // sobira vistinski rezultati za toj den i gi snima vo baza (pusti navecer)
 
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\collect-results-range.ps1 -From 2026-10-21 -To 2026-10-28
+# Inkluziven opseg + ticket-report; prodolzuva po greski i gi sumira na kraj.
+# Ne generira tiketi i ne brise Excel; nedostapnite rezultati ostanuvaat Pending.
+
 dotnet run --no-build -- db-status 2026-10-17                 // brza proverka sto ima vo bazata za toj den
 
 dotnet run --no-build -- backtest 2026-09-22                  // tocnost po izvor + sporedba Equal vs Weighted consensus od toj datum
@@ -36,6 +40,8 @@ dotnet run --no-build -- calibration                          // vistinska tocno
 
 dotnet run --no-build -- ticket-report                        // site zacuvani SIMULACII: dobieni/izgubeni/pending, profit i ROI; NE se vistinski uplati
 dotnet run --no-build -- ticket-report 2026-10-01 2026-10-31  // inkluziven opseg po datum na natprevar; pending ulog ne vleguva vo ROI
+dotnet run --no-build -- ticket-diagnostics 2026-10-26 2026-10-28  // pending pricini, izvori, Forebet ID i NEPOTVRDENI kandidati +/-1 den; bez spojuvanje
+dotnet run --no-build -- ticket-source-check 2026-10-28 2026-10-28  // originalni Forebet statusi za pending; cita izvor, ne menuva rezultati
 dotnet run --no-build -- league-stats 2026-10-01 2026-10-31   // tocnost po liga i pazar; samo snapshots pred 00:00 UTC; mala istorija e oznacena
                                                               // ticket avtomatski cuva Maxbet liga i neprazen potvrden tiket so 1 edinica vkupen ulog
                                                               // ista kombinacija/kvoti/rezim ne se duplira; drugi kvoti ili safe/value se posebni simulacii

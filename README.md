@@ -194,6 +194,8 @@ dotnet run --no-build -- ticket 2026-10-23 5 safe
 dotnet run --no-build -- collect-results 2026-10-23
 dotnet run --no-build -- ticket-report
 dotnet run --no-build -- ticket-report 2026-10-01 2026-10-31
+dotnet run --no-build -- ticket-diagnostics 2026-10-26 2026-10-28
+dotnet run --no-build -- ticket-source-check 2026-10-28 2026-10-28
 dotnet run --no-build -- league-stats 2026-10-01 2026-10-31
 ```
 
@@ -220,7 +222,67 @@ distinguish missing final results from missing required half-time scores.
 Missing final scores are not evidence that a fixture is still playing: a source
 may be incomplete or team identities may not match. The report reads stored
 results only; it does not fetch live statuses or infer postponement/void rules.
-It grades the frozen market/pick using current stored final/half-time results,
+
+`ticket-diagnostics [from] [to]` explains pending selections using stored data:
+missing final versus required half-time scores, prediction sources, Forebet
+capture times and stored provider fixture IDs. It lists up to five unverified
+same-order team-name candidates within one day, including their dates, sources
+and available final scores. A candidate is NOT a confirmed alias or a safe result
+link (for example, CD Ourense and UD Ourense must not be assumed identical).
+The same diagnostics run after `collect-results` and `ticket-report`.
+
+`ticket-source-check [from] [to]` additionally fetches the original Forebet feed
+for dates with pending ticket fixtures. It prints exact stored-ID/name matches
+with their source date, raw score and status (including non-FT statuses), or says
+that no exact match was returned. It never writes scores or changes tickets.
+An absent row is not proof of postponement or of a matching failure; it still
+requires verification. Provider/schema failures are explicit nonzero errors.
+Postponed (`Postp.`), extra-time and penalty (`Pen.`) rows are diagnostic only.
+They are not converted into a loss, a void, or an assumed 90-minute score.
+Half-time, extra-time and penalty fields are printed separately for verification.
+
+New Forebet predictions retain the original `forebet:ID` through aggregation and
+snapshot persistence. Result collection resolves that ID within the same source
+and match date before falling back to exact normalized names/date. Conflicting
+or ambiguous ID/name links are logged and rejected, never fuzzy-matched.
+The nullable source-ID migration is additive. Existing snapshots remain valid
+but have no recoverable source ID unless a new prediction capture provides it;
+old frozen ticket selections, prices and results are not rewritten.
+Sources that return no final scores cannot be repaired by identity matching:
+rerun collection later or verify against another reliable result source.
+
+`collect-results` also queries SoccerVista as a supplementary FT-only source,
+after Forebet. It reads actual `score`, never `predictionScore`, and verifies
+the fixture ID, teams, date, final score and regulation-time `FIN` status against
+the event's detail feed. Live, postponed, cancelled, extra-time and penalty
+outcomes are not used. HT stays unknown; goal-event minutes are not used to
+infer it, so half-time-dependent selections can remain Pending.
+New SoccerVista prediction snapshots retain `soccervista:ID`; older snapshots
+still use exact normalized teams and date. Existing scores are not overwritten
+on disagreement, and HTTP/schema failures remain explicit collection errors.
+Detail verification requires an extra request per finished SoccerVista fixture.
+If the detail API returns an HTTP error or times out, the collector reads the
+embedded fixture object from the match page and applies the same ID, team,
+date, score and `FIN` checks. It never substitutes a prediction or an unchecked
+daily score. If a fixture's details remain unavailable, that fixture is logged
+and left unresolved, while other verified SoccerVista results are retained.
+Unresolved detail failures still count as a failed provider and give a nonzero
+collection exit code; a successfully verified page fallback is not a failure.
+
+For inclusive multi-day collection, followed by a report:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\collect-results-range.ps1 -From 2026-10-21 -To 2026-10-28
+```
+
+The script uses the existing build (`dotnet build` after code changes), continues
+after per-day nonzero exit codes and reports all failed dates at the end.
+It does not generate tickets or delete Excel files. A nonzero collection exit
+may mean partial provider failure or rejected score/identity conflicts, not that
+all collected results were lost. Unavailable scores remain pending.
+
+`ticket-report` grades the frozen market/pick using current stored final/half-time results,
 so result corrections and half-time backfills are reflected on the next report.
 An accumulator wins only if every leg wins; any losing leg settles it as lost,
 even if other legs are still pending. Missing results or required half-time

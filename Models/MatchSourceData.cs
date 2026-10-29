@@ -1,5 +1,6 @@
 public class MatchSourceData
 {
+    public string? SourceMatchId { get; set; }
     public string Tip { get; set; }
     public int? Prob { get; set; }
 

@@ -484,6 +484,7 @@ public partial class ProductionConsensusAggregator
         {
             match.Sources[siteMatch.SiteName] = new MatchSourceData
             {
+                SourceMatchId = siteMatch.SourceMatchId,
                 Tip = siteMatch.Tip,
                 Prob = siteMatch.Prob,
                 Score = siteMatch.Score,

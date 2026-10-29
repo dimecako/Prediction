@@ -158,9 +158,15 @@ namespace Prediction.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("SourceMatchId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("MatchId");
+
+                    b.HasIndex("Source", "SourceMatchId");
 
                     b.HasIndex("MatchId", "Source", "CapturedAtUtc");
 

@@ -294,6 +294,8 @@ public partial class ProductionConsensusAggregator
                         new SiteMatch
                         {
                             SiteName = "Forebet",
+                            SourceMatchId = string.IsNullOrWhiteSpace(item["id"]?.ToString())
+                                ? null : $"forebet:{item["id"]}",
                             HomeTeam = home,
                             AwayTeam = away,
 
@@ -350,6 +352,35 @@ public partial class ProductionConsensusAggregator
     public async Task<List<Prediction.Models.ExternalMatchResult>>
     GetForebetResultsAsync(DateOnly date)
     {
+        return ParseForebetResults(await GetForebetResultJsonAsync(date), date);
+    }
+
+    public async Task<List<Prediction.Models.SourceFixtureStatus>> GetForebetFixtureStatusesAsync(DateOnly date)
+    {
+        return ParseForebetFixtureStatuses(await GetForebetResultJsonAsync(date));
+    }
+
+    public static List<Prediction.Models.SourceFixtureStatus> ParseForebetFixtureStatuses(string json)
+    {
+        var root = JArray.Parse(json);
+        if (root.Count == 0 || root[0] is not JArray items)
+            throw new Newtonsoft.Json.JsonException("Forebet fixture status response is missing its rows array.");
+        return items.Select(item => new Prediction.Models.SourceFixtureStatus(
+            string.IsNullOrWhiteSpace(item["id"]?.ToString()) ? "" : $"forebet:{item["id"]}",
+            HtmlEntity.DeEntitize(item["HOST_NAME"]?.ToString() ?? "").Trim(),
+            HtmlEntity.DeEntitize(item["GUEST_NAME"]?.ToString() ?? "").Trim(),
+            item["DATE_BAH"]?.ToString() ?? "",
+            item["comment"]?.ToString() ?? "",
+            item["Host_SC"]?.ToString() ?? "",
+            item["Guest_SC"]?.ToString() ?? "",
+            item["Host_SC_HT"]?.ToString() ?? "",
+            item["Guest_SC_HT"]?.ToString() ?? "",
+            item["extra_time_score"]?.ToString() ?? "",
+            item["penalty_score"]?.ToString() ?? "")).ToList();
+    }
+
+    private async Task<string> GetForebetResultJsonAsync(DateOnly date)
+    {
         string dateText =
             date.ToString("yyyy-MM-dd");
 
@@ -367,7 +398,7 @@ public partial class ProductionConsensusAggregator
         if (string.IsNullOrWhiteSpace(json))
             throw new HttpRequestException("Forebet returned no usable response after retries.");
 
-        return ParseForebetResults(json, date);
+        return json;
     }
 
     public static List<Prediction.Models.ExternalMatchResult> ParseForebetResults(string json, DateOnly date)

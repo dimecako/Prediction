@@ -1,5 +1,6 @@
 public class SiteMatch
 {
+    public string? SourceMatchId { get; set; }
     public string SiteName { get; set; }
     public string HomeTeam { get; set; }
     public string AwayTeam { get; set; }

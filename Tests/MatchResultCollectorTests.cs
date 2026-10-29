@@ -98,6 +98,33 @@ public sealed class MatchResultCollectorTests
     }
 
     [Fact]
+    public async Task PartialProviderFailureStillValidatesAndMergesVerifiedResults()
+    {
+        var supplement = Row("Home", "Away", 1, 0);
+        supplement.Source = "partial";
+        var invalid = Row("Invalid", "Away");
+        invalid.HomeGoals = -1;
+        var conflict = Row("Home", "Away");
+        conflict.HomeGoals = 9;
+        var messages = new List<string>();
+        var result = await MatchResultCollector.CollectAsync(Date,
+            [new Provider("primary", Row("Home", "Away")),
+             new Provider("partial")
+             {
+                 Failure = new PartialMatchResultException(
+                     [supplement, invalid, conflict, Row("Unique", "Away")], ["fixture unavailable"])
+             },
+             new Provider("last", Row("Last", "Away"))], messages.Add);
+        Assert.Equal(1, result.FailedProviders);
+        Assert.Equal(2, result.RejectedRows);
+        Assert.Equal(3, result.Results.Count);
+        var primary = Assert.Single(result.Results.Where(x => x.HomeTeam == "Home"));
+        Assert.Equal(2, primary.HomeGoals);
+        Assert.Equal(1, primary.HalfTimeHomeGoals);
+        Assert.Contains(messages, x => x.Contains("fixture failed: fixture unavailable"));
+    }
+
+    [Fact]
     public async Task TimeoutContinuesToNextProviderButCallerCancellationPropagates()
     {
         var timeout = await Collect(new Provider("timeout") { Failure = new TaskCanceledException("timeout") },

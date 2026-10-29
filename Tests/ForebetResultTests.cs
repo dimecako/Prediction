@@ -8,6 +8,37 @@ public sealed class ForebetResultTests
     private static readonly DateOnly Date = new(2026, 10, 18);
 
     [Theory]
+    [InlineData("FT")]
+    [InlineData("HT")]
+    [InlineData("Postp.")]
+    public void DiagnosticFeedPreservesIdDateAndUnfinishedStatuses(string status)
+    {
+        var row = Row();
+        row["comment"] = status;
+        row["Host_SC_HT"] = "1";
+        row["Guest_SC_HT"] = "0";
+        row["extra_time_score"] = "0-0";
+        row["penalty_score"] = "4-3";
+        var found = Assert.Single(ProductionConsensusAggregator.ParseForebetFixtureStatuses(
+            new JArray { new JArray { row } }.ToString()));
+        Assert.Equal("forebet:123", found.SourceMatchId);
+        Assert.Equal("2026-10-18 15:00:00", found.DateText);
+        Assert.Equal(status, found.Status);
+        Assert.Equal("2", found.HomeScore);
+        Assert.Equal("1", found.HalfTimeHomeScore);
+        Assert.Equal("0", found.HalfTimeAwayScore);
+        Assert.Equal("0-0", found.ExtraTimeScore);
+        Assert.Equal("4-3", found.PenaltyScore);
+    }
+
+    [Fact]
+    public void InvalidDiagnosticFeedIsNotReportedAsMissingFixtures()
+    {
+        Assert.Throws<Newtonsoft.Json.JsonException>(() =>
+            ProductionConsensusAggregator.ParseForebetFixtureStatuses("[{}]"));
+    }
+
+    [Theory]
     [InlineData(0, 0)]
     [InlineData(1, 0)]
     [InlineData(2, 1)]

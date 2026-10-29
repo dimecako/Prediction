@@ -91,6 +91,7 @@ public partial class Program
         Console.WriteLine("[TICKET-REPORT] Pending stakes are excluded from settled ROI. Any losing leg settles an accumulator as lost.");
         Console.WriteLine("[TICKET-REPORT] Missing results/half-time remain ungraded unless the final total rules out a half-goal pick; cancellations are not inferred losses or voids.");
         Console.WriteLine("[TICKET-REPORT] Overlapping simulations and safe/value variants are not independent evidence of profitability.");
+        await TicketResultDiagnostics.WriteAsync(db, tickets, Console.WriteLine);
 
         static string Money(decimal? value) => value.HasValue ? value.Value.ToString("F2") : "n/a";
         static void PrintPerformance(string label, IEnumerable<TicketSettlement> rows)

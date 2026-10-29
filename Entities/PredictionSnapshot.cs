@@ -8,6 +8,8 @@ public sealed class PredictionSnapshot
 
     public string Source { get; set; } = string.Empty;
 
+    public string? SourceMatchId { get; set; }
+
     public string? PredictedResult { get; set; }
 
     public string? PredictedScore { get; set; }

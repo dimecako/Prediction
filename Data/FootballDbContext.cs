@@ -74,6 +74,9 @@ public sealed class FootballDbContext : DbContext
                 .HasMaxLength(100)
                 .IsRequired();
 
+            entity.Property(x => x.SourceMatchId).HasMaxLength(150);
+            entity.HasIndex(x => new { x.Source, x.SourceMatchId });
+
             entity.Property(x => x.PredictedResult)
                 .HasMaxLength(20);
 

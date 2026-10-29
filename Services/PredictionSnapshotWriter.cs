@@ -145,6 +145,7 @@ public sealed class PredictionSnapshotWriter
 
                 bool unchanged =
                     lastSnapshot != null &&
+                    lastSnapshot.SourceMatchId == sourceData.SourceMatchId &&
                     lastSnapshot.PredictedResult == predictedResult &&
                     lastSnapshot.PredictedScore == predictedScore &&
                     lastSnapshot.Btts == btts &&
@@ -158,6 +159,7 @@ public sealed class PredictionSnapshotWriter
                     new PredictionSnapshot
                     {
                         Source = source,
+                        SourceMatchId = sourceData.SourceMatchId,
                         PredictedResult = predictedResult,
                         PredictedScore = predictedScore,
                         Btts = btts,

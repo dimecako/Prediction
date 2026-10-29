@@ -75,6 +75,20 @@ public partial class Program
         }
 
         if (args.Length > 0 &&
+            args[0].Equals("ticket-source-check", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunTicketSourceCheckAsync(args);
+            return;
+        }
+
+        if (args.Length > 0 &&
+            args[0].Equals("ticket-diagnostics", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunTicketDiagnosticsAsync(args);
+            return;
+        }
+
+        if (args.Length > 0 &&
             args[0].Equals("ticket-report", StringComparison.OrdinalIgnoreCase))
         {
             await RunTicketReportAsync(args);
@@ -547,6 +561,7 @@ public partial class Program
                 new IMatchResultProvider[]
                 {
                     new ForebetResultProvider(),
+                    new SoccerVistaResultProvider(httpClient),
                     new FootballResultsOnlineProvider(httpClient),
                     new OpenFootballResultProvider(httpClient)
                 }, Console.WriteLine);
@@ -578,19 +593,23 @@ public partial class Program
             int existing = 0;
             int unmatched = 0;
             int halfTimeUpdated = 0;
+            var resultMatches = await collectDb.Matches.Include(x => x.Result)
+                .Where(x => x.MatchDate == date).ToListAsync();
+            var sourceSnapshots = await collectDb.PredictionSnapshots.AsNoTracking()
+                .Where(x => x.Match.MatchDate == date && x.SourceMatchId != null).ToListAsync();
 
             foreach (var external in externalResults)
             {
-                string externalMatchId =
-                    MatchIdentity.BuildExternalMatchId(
-                        resultTargetDate,
-                        external.HomeTeam,
-                        external.AwayTeam);
-
-                var match = await collectDb.Matches
-                    .Include(x => x.Result)
-                    .SingleOrDefaultAsync(
-                        x => x.ExternalMatchId == externalMatchId);
+                var resolution = ResultMatchResolver.Resolve(date, external, resultMatches, sourceSnapshots);
+                var match = resolution.Match;
+                if (resolution.Conflict)
+                {
+                    Console.WriteLine($"[RESULTS] Identity conflict: {external.Source} {external.ExternalId} | " +
+                        $"{external.HomeTeam} vs {external.AwayTeam}; {resolution.Method}.");
+                    Environment.ExitCode = 1;
+                }
+                else if (match != null && resolution.Method == "stored source ID")
+                    Console.WriteLine($"[RESULTS] Linked by source ID: {external.Source} {external.ExternalId} -> #{match.Id}.");
 
                 if (match == null)
                 {
@@ -702,6 +721,9 @@ public partial class Program
             int trackedResults = await collectDb.MatchResults.CountAsync(x => tracked.Contains(x.MatchId));
             Console.WriteLine($"[RESULTS] Tracked ticket fixtures: FT={trackedResults}/{tracked.Count}; missing FT={tracked.Count - trackedResults}.");
             Console.WriteLine("[RESULTS] Missing scores do not prove a fixture is unfinished; sources may be incomplete or names may not match.");
+            var trackedTickets = await collectDb.SimulatedTickets.AsNoTracking().Include(x => x.Selections)
+                .Where(x => x.MatchDate == date).ToListAsync();
+            await TicketResultDiagnostics.WriteAsync(collectDb, trackedTickets, Console.WriteLine);
             Console.WriteLine(Environment.ExitCode == 0 ? "[RESULTS] Done." : "[RESULTS] Completed with errors; see provider/conflict messages.");
 
             return;
@@ -809,6 +831,7 @@ public partial class Program
                     await using (var db =
                         new FootballDbContext(dbOptions))
                     {
+                        await db.Database.MigrateAsync();
                         var snapshotWriter =
                             new PredictionSnapshotWriter(db);
 

@@ -94,6 +94,8 @@ public partial class ProductionConsensusAggregator
                         var match = new SiteMatch
                         {
                             SiteName = "SoccerVista",
+                            SourceMatchId = string.IsNullOrWhiteSpace(item["id"]?.ToString())
+                                ? null : $"soccervista:{item["id"]!.ToString().Trim()}",
                             HomeTeam = home,
                             AwayTeam = away,
                             Tip = tip,
