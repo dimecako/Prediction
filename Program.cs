@@ -598,20 +598,20 @@ public partial class Program
             var sourceSnapshots = await collectDb.PredictionSnapshots.AsNoTracking()
                 .Where(x => x.Match.MatchDate == date && x.SourceMatchId != null).ToListAsync();
 
-            foreach (var external in externalResults)
+            foreach (var external in collected.SourceResults)
             {
                 var resolution = ResultMatchResolver.Resolve(date, external, resultMatches, sourceSnapshots);
-                var match = resolution.Match;
                 if (resolution.Conflict)
                 {
                     Console.WriteLine($"[RESULTS] Identity conflict: {external.Source} {external.ExternalId} | " +
                         $"{external.HomeTeam} vs {external.AwayTeam}; {resolution.Method}.");
                     Environment.ExitCode = 1;
                 }
-                else if (match != null && resolution.Method == "stored source ID")
-                    Console.WriteLine($"[RESULTS] Linked by source ID: {external.Source} {external.ExternalId} -> #{match.Id}.");
+                else if (resolution.Matches.Count > 0 && resolution.Method.Contains("source ID"))
+                    Console.WriteLine($"[RESULTS] Linked by {resolution.Method}: {external.Source} {external.ExternalId} -> " +
+                        string.Join(", ", resolution.Matches.Select(x => $"#{x.Id}")) + ".");
 
-                if (match == null)
+                if (resolution.Matches.Count == 0)
                 {
                     Console.WriteLine(
                         $"[UNMATCHED] {external.HomeTeam} | " +
@@ -622,6 +622,8 @@ public partial class Program
                     continue;
                 }
 
+                foreach (var match in resolution.Matches)
+                {
                 matched++;
 
                 if (match.Result != null)
@@ -699,6 +701,7 @@ public partial class Program
                     $"Result={result} | " +
                     $"BTTS={(external.HomeGoals > 0 && external.AwayGoals > 0 ? "YES" : "NO")} | " +
                     $"Goals={external.HomeGoals + external.AwayGoals}");
+                }
             }
 
             int changes =

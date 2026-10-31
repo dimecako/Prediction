@@ -3,7 +3,10 @@ using Prediction.Models;
 namespace Prediction.Services;
 
 public sealed record CollectedMatchResults(
-    IReadOnlyList<ExternalMatchResult> Results, int FailedProviders, int RejectedRows);
+    IReadOnlyList<ExternalMatchResult> Results, int FailedProviders, int RejectedRows)
+{
+    public IReadOnlyList<ExternalMatchResult> SourceResults { get; init; } = Results;
+}
 
 public static class MatchResultCollector
 {
@@ -12,6 +15,7 @@ public static class MatchResultCollector
         CancellationToken cancellationToken = default)
     {
         var results = new Dictionary<string, ExternalMatchResult>(StringComparer.Ordinal);
+        var sourceResults = new List<ExternalMatchResult>();
         int failed = 0, rejected = 0;
         foreach (var provider in providers)
         {
@@ -59,6 +63,7 @@ public static class MatchResultCollector
                 if (!results.TryGetValue(id, out var existing))
                 {
                     results.Add(id, row);
+                    sourceResults.Add(row);
                     continue;
                 }
                 bool sameFinal = existing.HomeGoals == row.HomeGoals && existing.AwayGoals == row.AwayGoals;
@@ -81,8 +86,9 @@ public static class MatchResultCollector
                     existing.HalfTimeAwayGoals = row.HalfTimeAwayGoals;
                     log($"[RESULTS] Half-time supplemented by {row.Source}: {row.HomeTeam} vs {row.AwayTeam}.");
                 }
+                sourceResults.Add(row);
             }
         }
-        return new(results.Values.ToList(), failed, rejected);
+        return new(results.Values.ToList(), failed, rejected) { SourceResults = sourceResults };
     }
 }

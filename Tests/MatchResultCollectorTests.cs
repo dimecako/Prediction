@@ -19,6 +19,7 @@ public sealed class MatchResultCollectorTests
         Assert.All(new[] { first, second, third }, x => Assert.Equal(1, x.Calls));
         Assert.Equal(0, result.FailedProviders);
         Assert.Equal(0, result.RejectedRows);
+        Assert.Equal(3, result.SourceResults.Count);
     }
 
     [Fact]
@@ -33,6 +34,8 @@ public sealed class MatchResultCollectorTests
         Assert.Equal(1, row.HalfTimeHomeGoals);
         Assert.Equal(0, row.HalfTimeAwayGoals);
         Assert.Equal(0, result.RejectedRows);
+        Assert.Equal(2, result.SourceResults.Count);
+        Assert.Contains(fallback, result.SourceResults);
     }
 
     [Fact]
@@ -45,6 +48,7 @@ public sealed class MatchResultCollectorTests
         Assert.Equal(2, row.HomeGoals);
         Assert.Null(row.HalfTimeHomeGoals);
         Assert.Equal(1, result.RejectedRows);
+        Assert.DoesNotContain(conflict, result.SourceResults);
     }
 
     [Fact]

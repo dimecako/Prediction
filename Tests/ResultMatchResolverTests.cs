@@ -77,6 +77,80 @@ public sealed class ResultMatchResolverTests
     }
 
     [Fact]
+    public void SharedSourceIdResolvesBothVerifiedAliases()
+    {
+        var first = Fixture(1, "JK Tabasalu", "Levadia U19");
+        var second = Fixture(2, "Tabasalu", "Levadia U19");
+        var resolution = ResultMatchResolver.Resolve(Date, Result("Tabasalu", "Levadia U19"),
+            [first, second], [Snapshot(1), Snapshot(2)]);
+        Assert.False(resolution.Conflict);
+        Assert.Equal(new[] { first, second }, resolution.Matches);
+    }
+
+    [Fact]
+    public void SharedSourceIdWithDifferentOtherProviderIdsIsRejected()
+    {
+        var other1 = Snapshot(1);
+        other1.Source = "SoccerVista";
+        other1.SourceMatchId = "soccervista:a";
+        var other2 = Snapshot(2);
+        other2.Source = "SoccerVista";
+        other2.SourceMatchId = "soccervista:b";
+        var resolution = ResultMatchResolver.Resolve(Date, Result("Tabasalu", "Levadia"),
+            [Fixture(1, "JK Tabasalu", "Levadia"), Fixture(2, "Tabasalu", "Levadia")],
+            [Snapshot(1), Snapshot(2), other1, other2]);
+        Assert.True(resolution.Conflict);
+        Assert.Empty(resolution.Matches);
+    }
+
+    [Fact]
+    public void SharedSourceIdCannotOverwriteConflictingStoredScore()
+    {
+        var first = Fixture(1, "JK Tabasalu", "Levadia");
+        first.Result = new() { HomeGoals = 3, AwayGoals = 1 };
+        var resolution = ResultMatchResolver.Resolve(Date, Result("Tabasalu", "Levadia"),
+            [first, Fixture(2, "Tabasalu", "Levadia")], [Snapshot(1), Snapshot(2)]);
+        Assert.True(resolution.Conflict);
+        Assert.Empty(resolution.Matches);
+    }
+
+    [Fact]
+    public void SharedSourceIdRejectsStoredHalfTimeDisagreementEvenForFtOnlyProvider()
+    {
+        var first = Fixture(1, "JK Tabasalu", "Levadia");
+        var second = Fixture(2, "Tabasalu", "Levadia");
+        first.Result = new() { HalfTimeHomeGoals = 0, HalfTimeAwayGoals = 0 };
+        second.Result = new() { HalfTimeHomeGoals = 1, HalfTimeAwayGoals = 0 };
+        var resolution = ResultMatchResolver.Resolve(Date, Result("Tabasalu", "Levadia"),
+            [first, second], [Snapshot(1), Snapshot(2)]);
+        Assert.True(resolution.Conflict);
+        Assert.Empty(resolution.Matches);
+    }
+
+    [Fact]
+    public void SharedSourceIdCannotIgnoreUnlinkedExactNameRecord()
+    {
+        var resolution = ResultMatchResolver.Resolve(Date, Result("Tabasalu", "Levadia"),
+            [Fixture(1, "JK Tabasalu", "Levadia"), Fixture(2, "FC Tabasalu", "Levadia"),
+             Fixture(3, "Tabasalu", "Levadia")], [Snapshot(1), Snapshot(2)]);
+        Assert.True(resolution.Conflict);
+        Assert.Empty(resolution.Matches);
+    }
+
+    [Theory]
+    [InlineData("Tabasalu U19", "Tabasalu U21")]
+    [InlineData("Tabasalu W", "Tabasalu")]
+    [InlineData("Levadia", "Tabasalu")]
+    [InlineData("Manchester United", "Manchester City")]
+    public void SharedSourceIdDoesNotOverrideDifferentTeams(string firstHome, string secondHome)
+    {
+        var resolution = ResultMatchResolver.Resolve(Date, Result(secondHome, "Away"),
+            [Fixture(1, firstHome, "Away"), Fixture(2, secondHome, "Away")],
+            [Snapshot(1), Snapshot(2)]);
+        Assert.True(resolution.Conflict);
+    }
+
+    [Fact]
     public void DiagnosticCandidatesRequireBothSidesAndAdjacentDatesButNeverMerge()
     {
         var target = Fixture(1, "Gimnastica Torrelavega", "UD Ourense");

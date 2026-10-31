@@ -1,5 +1,20 @@
 # Prediction
 
+### Duplicate fixture results
+
+Result collection retains agreeing providers' source IDs even when their scores
+are deduplicated. A confirmed result can be saved to multiple existing records
+with the same provider ID and match date, without merging records or changing
+ticket/snapshot links. Both teams must pass conservative same-order alias checks;
+age/number/women qualifiers must agree. Conflicting IDs from any stored provider,
+an exact-name record outside the linked group, or conflicting stored FT/HT scores
+block the whole duplicate group. Similar names alone never authorize propagation.
+Existing results are never overwritten. Ambiguous groups remain explicit errors,
+so the ticket script still preserves Excel files on collection failure.
+Prediction saving reuses a unique existing source-ID link while preserving its
+canonical names; ambiguous links without an exact record fail instead of creating
+another duplicate. This does not repair or merge historical database records.
+
 ## Weighted consensus (local)
 
 Build after pulling changes, then run:
@@ -243,8 +258,9 @@ Half-time, extra-time and penalty fields are printed separately for verification
 
 New Forebet predictions retain the original `forebet:ID` through aggregation and
 snapshot persistence. Result collection resolves that ID within the same source
-and match date before falling back to exact normalized names/date. Conflicting
-or ambiguous ID/name links are logged and rejected, never fuzzy-matched.
+and match date before falling back to exact normalized names/date. Verified
+shared-ID duplicates use the safeguards described above; other conflicting
+or ambiguous ID/name links are logged and rejected.
 The nullable source-ID migration is additive. Existing snapshots remain valid
 but have no recoverable source ID unless a new prediction capture provides it;
 old frozen ticket selections, prices and results are not rewritten.
@@ -334,10 +350,11 @@ generate a new ticket.
 This completes Phase 9's tracking/measurement functionality, **not proof of
 profitability**. That requires enough newly saved, subsequently graded tickets.
 
-`collect-results <date>` queries all three existing providers in priority order
-(Forebet, FootballResultsOnline, OpenFootball), even when an earlier source
+`collect-results <date>` queries all four existing providers in priority order
+(Forebet, SoccerVista, FootballResultsOnline, OpenFootball), even when an earlier source
 returns some results. It merges by the existing date + normalized home/away
-identity, never fuzzy-matching aliases or reversing teams. Duplicate final scores
+identity, never merging by fuzzy names alone or reversing teams. Agreeing source
+IDs are retained to resolve verified duplicate database records. Duplicate final scores
 are not inserted twice; matching final scores can supplement missing half-time
 data. Conflicting final/half-time scores are logged and never overwrite an
 earlier source or an existing stored score. Provider request/JSON failures,

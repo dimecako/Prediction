@@ -73,6 +73,58 @@ public sealed class PredictionSnapshotWriter
                     .SingleOrDefaultAsync(
                         x => x.ExternalMatchId == externalMatchId);
 
+            var sourceLinks = unified.Sources.Where(x => x.Value != null &&
+                !string.IsNullOrWhiteSpace(x.Value.SourceMatchId)).ToList();
+            var linkedMatchIds = new HashSet<long>();
+            var localLinks = db.Matches.Local.Where(x => x.MatchDate == matchDate &&
+                sourceLinks.Any(link => x.PredictionSnapshots.Any(s =>
+                    s.Source == link.Key && s.SourceMatchId == link.Value!.SourceMatchId))).ToList();
+            foreach (var link in sourceLinks)
+            {
+                string source = link.Key;
+                string sourceId = link.Value!.SourceMatchId!;
+                var linked = await db.PredictionSnapshots
+                    .Where(x => x.Match.MatchDate == matchDate &&
+                        x.Source == source && x.SourceMatchId == sourceId)
+                    .Select(x => x.MatchId).Distinct().ToListAsync();
+                linkedMatchIds.UnionWith(linked);
+                linkedMatchIds.UnionWith(db.Matches.Local.Where(x => x.MatchDate == matchDate &&
+                    x.Id != 0 && x.PredictionSnapshots.Any(s => s.Source == source &&
+                        s.SourceMatchId == sourceId)).Select(x => x.Id));
+            }
+            if (localLinks.Any(x => x.Id == 0))
+            {
+                if (localLinks.Count != 1 || linkedMatchIds.Count > 0 ||
+                    match != null && !ReferenceEquals(match, localLinks[0]))
+                    throw new InvalidOperationException(
+                        $"Conflicting source-ID links in this capture for {unified.HomeOrig} vs {unified.AwayOrig}.");
+                match = localLinks[0];
+                Console.WriteLine("[DB] Reusing unsaved fixture by source ID; canonical names preserved.");
+            }
+            if (match == null && linkedMatchIds.Count == 1)
+            {
+                long linkedId = linkedMatchIds.Single();
+                match = await db.Matches.SingleAsync(x => x.Id == linkedId);
+                Console.WriteLine($"[DB] Reusing #{linkedId} by stored source ID; canonical names preserved.");
+            }
+            else if (match == null && linkedMatchIds.Count > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Conflicting stored source IDs for {unified.HomeOrig} vs {unified.AwayOrig}; no new duplicate created.");
+            }
+            if (match != null && linkedMatchIds.Any(x => x != match.Id))
+            {
+                var group = await db.Matches.Include(x => x.PredictionSnapshots)
+                    .Where(x => linkedMatchIds.Contains(x.Id) || x.Id == match.Id).ToListAsync();
+                var groupSnapshots = group.SelectMany(x => x.PredictionSnapshots).ToList();
+                bool verified = sourceLinks.Any(link =>
+                    ResultMatchResolver.AreVerifiedDuplicates(group, groupSnapshots,
+                        link.Key, link.Value!.SourceMatchId!));
+                if (!verified)
+                    throw new InvalidOperationException(
+                        $"Conflicting source-ID links for {unified.HomeOrig} vs {unified.AwayOrig}; predictions not saved.");
+            }
+
             if (match == null)
             {
                 match = new Prediction.Entities.Match
@@ -92,8 +144,6 @@ public sealed class PredictionSnapshotWriter
             }
             else
             {
-                match.HomeTeam = unified.HomeOrig;
-                match.AwayTeam = unified.AwayOrig;
                 match.MatchDate = matchDate;
 
                 if (!match.KickoffUtc.HasValue)
