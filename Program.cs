@@ -21,6 +21,7 @@ using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
 using Prediction.Services;
 using Prediction.ML;
+using Prediction.Infrastructure;
 
 public partial class ProductionConsensusAggregator
 {
@@ -66,8 +67,17 @@ public partial class Program
         }
     }
 
-    public static async Task Main(string[] args)
+    public static Task<int> Main(string[] args) =>
+        CommandExecution.RunAsync(() => ExecuteCommandAsync(args));
+
+    private static async Task ExecuteCommandAsync(string[] args)
     {
+        if (args.Length > 0 && args[0].Equals("daily-run", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunDailyAutomationAsync(args);
+            return;
+        }
+
         if (args.Length > 0 && args[0].Equals("ticket-import", StringComparison.OrdinalIgnoreCase))
         {
             await RunTicketImportAsync(args);
@@ -547,6 +557,7 @@ public partial class Program
             {
                 Console.WriteLine(
                     "[RESULTS] Invalid date. Use yyyy-MM-dd.");
+                CommandExecution.Fail();
                 return;
             }
 
@@ -567,7 +578,7 @@ public partial class Program
                 }, Console.WriteLine);
             var externalResults = collected.Results;
             if (collected.FailedProviders > 0 || collected.RejectedRows > 0)
-                Environment.ExitCode = 1;
+                CommandExecution.Fail();
 
             var collectConnectionString =
                 Environment.GetEnvironmentVariable(
@@ -587,7 +598,8 @@ public partial class Program
             await using var collectDb =
                 new FootballDbContext(collectDbOptions);
 
-            await collectDb.Database.MigrateAsync();
+            if (!CommandExecution.IsAutomation)
+                await collectDb.Database.MigrateAsync();
             int matched = 0;
             int inserted = 0;
             int existing = 0;
@@ -605,7 +617,7 @@ public partial class Program
                 {
                     Console.WriteLine($"[RESULTS] Identity conflict: {external.Source} {external.ExternalId} | " +
                         $"{external.HomeTeam} vs {external.AwayTeam}; {resolution.Method}.");
-                    Environment.ExitCode = 1;
+                    CommandExecution.Fail();
                 }
                 else if (resolution.Matches.Count > 0 && resolution.Method.Contains("source ID"))
                     Console.WriteLine($"[RESULTS] Linked by {resolution.Method}: {external.Source} {external.ExternalId} -> " +
@@ -633,7 +645,7 @@ public partial class Program
                         Console.WriteLine($"[RESULTS] Conflicting stored final score for #{match.Id}: " +
                             $"stored={match.Result.HomeGoals}-{match.Result.AwayGoals}, " +
                             $"{external.Source}={external.HomeGoals}-{external.AwayGoals}; not overwritten.");
-                        Environment.ExitCode = 1;
+                        CommandExecution.Fail();
                         existing++;
                         continue;
                     }
@@ -649,7 +661,7 @@ public partial class Program
                          match.Result.HalfTimeAwayGoals != external.HalfTimeAwayGoals))
                     {
                         Console.WriteLine($"[RESULTS] Conflicting stored half-time score for #{match.Id}; not overwritten.");
-                        Environment.ExitCode = 1;
+                        CommandExecution.Fail();
                     }
                     Console.WriteLine(
                         $"[EXISTS] #{match.Id} | " +
@@ -727,7 +739,7 @@ public partial class Program
             var trackedTickets = await collectDb.SimulatedTickets.AsNoTracking().Include(x => x.Selections)
                 .Where(x => x.MatchDate == date).ToListAsync();
             await TicketResultDiagnostics.WriteAsync(collectDb, trackedTickets, Console.WriteLine);
-            Console.WriteLine(Environment.ExitCode == 0 ? "[RESULTS] Done." : "[RESULTS] Completed with errors; see provider/conflict messages.");
+            Console.WriteLine(CommandExecution.ExitCode == 0 ? "[RESULTS] Done." : "[RESULTS] Completed with errors; see provider/conflict messages.");
 
             return;
         }
@@ -804,6 +816,22 @@ public partial class Program
                         oddslotTask,
                         theDatabeticsTask);
 
+                    if (CommandExecution.IsAutomation && !DailyRunPlan.CheckSourceCoverage(
+                        [
+                            ("Forebet", (await forebetTask).Count),
+                            ("Statarea", (await statareaTask).Count),
+                            ("PredictZ", (await predictzTask).Count),
+                            ("WinDrawWin", (await wdwTask).Count),
+                            ("ZuluBet", (await zulubetTask).Count),
+                            ("Vitibet", (await vitibetTask).Count),
+                            ("Feedinco", (await feedincoTask).Count),
+                            ("SoccerVista", (await soccerVistaTask).Count),
+                            ("FootyStats", (await footyStatsTask).Count),
+                            ("Oddslot", (await oddslotTask).Count),
+                            ("TheDatabetics", (await theDatabeticsTask).Count)
+                        ], Console.WriteLine))
+                        CommandExecution.Fail();
+
                     aggregator.ExecutePipeline(
                         await forebetTask,
                         await statareaTask,
@@ -834,7 +862,8 @@ public partial class Program
                     await using (var db =
                         new FootballDbContext(dbOptions))
                     {
-                        await db.Database.MigrateAsync();
+                        if (!CommandExecution.IsAutomation)
+                            await db.Database.MigrateAsync();
                         var snapshotWriter =
                             new PredictionSnapshotWriter(db);
 
@@ -865,10 +894,14 @@ public partial class Program
 
         builder.Services.AddDbContext<FootballDbContext>(options =>
             options.UseNpgsql(connectionString));
+        builder.Services.AddScoped<Prediction.Services.IDatabaseReportService, Prediction.Services.DatabaseReportService>();
+        builder.Services.AddProblemDetails();
 
         var app = builder.Build();
 
         ConfigureWebAccess(app);
+        app.UseExceptionHandler();
+        Prediction.Web.DatabaseReportEndpoints.MapDatabaseReports(app);
 
         if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
         {

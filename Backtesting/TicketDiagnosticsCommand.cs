@@ -43,7 +43,7 @@ public partial class Program
             catch (Exception ex) when (ex is HttpRequestException or Newtonsoft.Json.JsonException or OperationCanceledException)
             {
                 Console.Error.WriteLine($"[SOURCE-CHECK] Forebet {day.Key:yyyy-MM-dd} failed: {ex.Message}");
-                Environment.ExitCode = 1;
+                Prediction.Infrastructure.CommandExecution.Fail();
                 continue;
             }
             Console.WriteLine($"[SOURCE-CHECK] Requested {day.Key:yyyy-MM-dd}; feed rows={rows.Count}.");

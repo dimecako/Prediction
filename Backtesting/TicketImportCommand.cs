@@ -12,7 +12,7 @@ public partial class Program
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
         {
             Console.Error.WriteLine("[TICKET-IMPORT] Use: ticket-import yyyy-MM-dd");
-            Environment.ExitCode = 1;
+            Prediction.Infrastructure.CommandExecution.Fail();
             return;
         }
         await using var db = new FootballDbContextFactory().CreateDbContext([]);

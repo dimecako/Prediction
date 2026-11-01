@@ -27,6 +27,57 @@ Keep those locally; Render Free's writable filesystem is ephemeral. Web model
 inference is not currently connected to predictions. FlareSolverr remains a
 separate service as described in the environment example.
 
+### Neon agent tooling
+
+Project-local `neon` and `neon-postgres` skills are installed under
+`.agents/skills`, with versions recorded in `skills-lock.json`.
+Use `neon skills status` to check freshness. VS Code's local
+`.vscode/mcp.json` connects to Neon over OAuth and is scoped to the linked
+project; enable the server and sign in through VS Code before first use.
+The workspace link (`.neon`) and connection variables (`.env.local`) are
+git-ignored. ASP.NET Core does not automatically load `.env.local`; the
+application still uses `ConnectionStrings__FootballDb`. Do not switch that
+connection until the database restore has been verified.
+
+### Daily cloud execution and database pages
+
+Render runs the web application; Neon stores the shared history. GitHub Actions
+runs the daily work even when the local computer is off. Configure the encrypted
+repository secret `FOOTBALL_DB_CONNECTION` with a direct Neon Npgsql connection
+string. Keep credentials out of workflow YAML, logs and commits.
+
+The daily workflow runs the `daily-run` command, not the Windows-only
+`tickets.ps1`. It collects predictions for the current Europe/Skopje date,
+rechecks every past date with unresolved ticket selections, and runs the same
+nine ticket variants. Confirmed results are not overwritten. ML-ranked variants
+already train their ranking models from history; a separate `train` command is
+not needed. Build happens before execution, and Excel imports are not needed
+because selections are stored in PostgreSQL.
+
+Scheduling uses both possible UTC hours for 08:00 Europe/Skopje, selecting the
+appropriate occurrence for winter/summer time. GitHub scheduling is best-effort
+and can be delayed. Scheduled workflows must exist on the repository's default
+branch; the workflow checks out the deployed `prediction-api` branch. Use the
+Actions tab for manual runs, failure details and reruns. Check the first real
+run before relying on unattended operation.
+
+Set `Exports__Excel=false` for hosted execution; local Excel exports remain
+enabled by default. Existing workbooks and model ZIPs are not deleted.
+Authenticated read-only web pages:
+
+- `/predictions?date=yyyy-MM-dd`: latest stored source snapshots, scores and
+  capture times, paginated by fixture.
+- `/tickets`: date and mode filters for all saved variants.
+- `/tickets/ID`: frozen selections, evidence, current FT/HT scores and pending
+  reasons.
+- `/performance`: simulated stake, profit and ROI by mode.
+- `/leagues`: strict pre-date consensus accuracy by league and market.
+
+Opening these pages does not scrape sources or generate new tickets. The
+existing manual collection button remains available separately. All historical
+analyses continue to use their existing rules; sparse strict league statistics
+are not evidence that migration lost predictions.
+
 ### Duplicate fixture results
 
 Result collection retains agreeing providers' source IDs even when their scores

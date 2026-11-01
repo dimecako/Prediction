@@ -18,7 +18,7 @@ public partial class Program
         {
             Console.Error.WriteLine(
                 "[WEIGHTED] Invalid arguments. Use: weighted-consensus yyyy-MM-dd");
-            Environment.ExitCode = 1;
+            Prediction.Infrastructure.CommandExecution.Fail();
             return;
         }
 

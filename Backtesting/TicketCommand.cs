@@ -4,6 +4,8 @@ using Prediction.Data;
 using Prediction.Entities;
 using Prediction.ML;
 using Prediction.Services;
+using Prediction.Infrastructure;
+using Prediction.Reporting;
 
 public partial class Program
 {
@@ -45,7 +47,7 @@ public partial class Program
             (countArg != null && (!int.TryParse(countArg, out count) || count < 1)))
         {
             Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket|ticket-1-3p3+|ai-rank yyyy-MM-dd [count] [nodc] [safe] [ml] [league] [why]");
-            Environment.ExitCode = 1;
+            CommandExecution.Fail();
             return;
         }
 
@@ -59,7 +61,8 @@ public partial class Program
             .Options;
 
         await using var db = new FootballDbContext(dbOptions);
-        await db.Database.MigrateAsync();
+        if (!CommandExecution.IsAutomation)
+            await db.Database.MigrateAsync();
 
         // Only results known before the target date, so the history is never contaminated by it.
         var history = await db.Matches
@@ -96,6 +99,7 @@ public partial class Program
         {
             Console.WriteLine($"[TIKET] Kvotite od Maxbet ne se dostapni ({ex.Message}). " +
                 "Bez potvrdena osnovna kvota nema izbori.");
+            CommandExecution.Fail();
         }
 
         int matched = 0;
@@ -310,7 +314,10 @@ public partial class Program
                 $"Mode={simulation.Mode} | Stake={simulation.Stake:F2} units for the WHOLE ticket. Not an actual bet.");
         }
         else
+        {
             Console.WriteLine("[SIMULATION] No confirmed selections; no empty simulation saved.");
+            CommandExecution.Fail();
+        }
 
         Console.WriteLine($"[PREDLOZI] Bez potvrdena kvota: {proposals.Count}; prikazani: {suggested.Count}. NE se del od tiketot.");
         foreach (var p in suggested)
@@ -388,6 +395,12 @@ public partial class Program
             Directory.GetCurrentDirectory(),
             $"{modePrefix}{aiPrefix}-{date:yyyy-MM-dd}-{picks.Count}{dcSuffix}{safeSuffix}{simulationSuffix}.xlsx");
 
+        if (!ExportSettings.ExcelEnabled)
+        {
+            Console.WriteLine("[TIKET] Excel export disabled; simulation remains saved in the database.");
+            return;
+        }
+
         try
         {
             ExportTicketToExcel(exportPath, date, picks, suggested, combined, combinedSafe, combinedOdds, allOdds, simulation);
@@ -396,7 +409,7 @@ public partial class Program
         catch (IOException ex)
         {
             Console.Error.WriteLine($"[TIKET] Excel ne mozese da se snimi (dali e otvoren?): {ex.Message}");
-            Environment.ExitCode = 1;
+            CommandExecution.Fail();
         }
     }
 

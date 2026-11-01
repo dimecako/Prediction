@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ClosedXML.Excel;
+using Prediction.Reporting;
 
 public partial class ProductionConsensusAggregator
 {
@@ -392,6 +393,12 @@ public partial class ProductionConsensusAggregator
 
         Console.WriteLine(
             $"TOTAL MATCHES: {orderedMatches.Count}");
+
+        if (!ExportSettings.ExcelEnabled)
+        {
+            Console.WriteLine("[EXCEL] Prediction report export disabled.");
+            return;
+        }
 
         string exportPath =
             Path.GetFullPath($"predictions-{targetDate}.xlsx");

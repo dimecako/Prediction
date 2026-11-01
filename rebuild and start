@@ -14,6 +14,12 @@
 # KOMANDI (dotnet run --no-build -- ...)  prvo: dotnet build
 # =====================================================================
 
+# CLOUD: GitHub Actions daily-run vo 08:00 Europe/Skopje; zapisuvanje vo Neon.
+# Render prikazuva /predictions, /tickets, /tickets/ID, /performance, /leagues.
+# daily-run gi proveruva site stari Pending datumi + gi pravi site 9 varijanti.
+# Exports__Excel=false za cloud; tickets.ps1 ostanuva lokalna komanda so Excel.
+# backtest/calibration/league-stats se analizi, ne se potrebni za dnevno snimanje.
+
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\tickets.ps1  // SITE 9 ticket varijanti + ocenuvanje; 18:00-23:59 za utre, 00:00-17:59 za denes
 .\tickets.ps1 -Date 2026-10-27                                // racen datum; site Excel fajlovi sekogas se zadrzuvaat
 .\tickets.ps1 -PlanOnly                                      // prikazi go planot, bez izvrsuvanje ili brisenje

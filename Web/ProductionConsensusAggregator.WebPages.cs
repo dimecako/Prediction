@@ -5,7 +5,7 @@ public partial class Program
     private static string GetHomePage()
     {
         string today =
-            DateTime.Today.ToString("yyyy-MM-dd");
+            Prediction.Web.DatabaseReportEndpoints.Today().ToString("yyyy-MM-dd");
 
         return $@"
             <!DOCTYPE html>
@@ -102,8 +102,19 @@ public partial class Program
 
             <button
                 type='button'
+                onclick=""window.location.href='/predictions?date=' + document.getElementById('analysisDate').value"">
+                STORED PREDICTIONS
+            </button>
+            <p><a style='color:#38bdf8' href='/tickets'>ALL TICKET VARIANTS</a> |
+            <a style='color:#38bdf8' href='/performance'>RESULTS / ROI</a> |
+            <a style='color:#38bdf8' href='/leagues'>LEAGUE STATISTICS</a></p>
+            <p class='small'>Daily automation: 08:00 Europe/Skopje (GitHub scheduling may be delayed).
+            No Excel files are needed to view saved predictions and tickets.
+            <a style='color:#38bdf8' href='https://github.com/dimecako/Prediction/actions'>Run history / errors</a></p>
+            <button
+                type='button'
                 onclick=""window.location.href='/analyse?date=' + document.getElementById('analysisDate').value"">
-                ANALYSE
+                COLLECT NEW PREDICTIONS (MANUAL)
             </button>
 
             <div class='small'>

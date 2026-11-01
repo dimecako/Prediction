@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
 using Prediction.Entities;
 using Prediction.Services;
+using Prediction.Infrastructure;
+using Prediction.Reporting;
 
 public partial class Program
 {
@@ -21,7 +23,7 @@ public partial class Program
             (countArgs.Count == 1 && (!int.TryParse(countArgs[0], out count) || count < 1)))
         {
             Console.Error.WriteLine($"[DAILY] Invalid arguments. Use: {command} yyyy-MM-dd [count] [why]");
-            Environment.ExitCode = 1;
+            CommandExecution.Fail();
             return;
         }
 
@@ -38,7 +40,7 @@ public partial class Program
         {
             Console.Error.WriteLine($"[DAILY] Nema sobrani prognozi za {date:yyyy-MM-dd}. " +
                 $"Prvo pusti: dotnet run --no-build -- {date:yyyy-MM-dd}");
-            Environment.ExitCode = 1;
+            CommandExecution.Fail();
             return;
         }
 
@@ -50,7 +52,7 @@ public partial class Program
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
         {
             Console.Error.WriteLine($"[DAILY] Maxbet ponudata ne e dostapna: {ex.Message}. Tiket ne e generiran.");
-            Environment.ExitCode = 1;
+            CommandExecution.Fail();
             return;
         }
         var now = DateTime.UtcNow;
@@ -80,17 +82,24 @@ public partial class Program
         if (selection.Picks.Count == 0)
         {
             Console.Error.WriteLine("[DAILY] Nema potvrdeni izbori; prazen tiket ne e izvezen.");
-            Environment.ExitCode = 1;
+            CommandExecution.Fail();
             return;
         }
         string path = Path.Combine(Directory.GetCurrentDirectory(),
             $"{command}-{date:yyyy-MM-dd}-{selection.Picks.Count}.xlsx");
-        await db.Database.MigrateAsync();
+        if (!CommandExecution.IsAutomation)
+            await db.Database.MigrateAsync();
         var saved = await TicketLedger.SaveAsync(db,
             TicketLedger.CreateDaily(date, selection.Picks, now, leagueOnly));
         Console.WriteLine($"[SIMULATION] #{saved.Ticket.Id} | " +
             $"{(saved.Created ? "Saved" : "Already saved; not duplicated")} | Mode={saved.Ticket.Mode} | " +
             "1 unit for the WHOLE ticket; not an actual bet. No historical Accuracy or EV.");
+        if (!ExportSettings.ExcelEnabled)
+        {
+            Console.WriteLine("[DAILY] Excel export disabled; simulation remains saved in the database.");
+            return;
+        }
+
         try
         {
             ExportDailyTicket(path, command, date, saved.Ticket.CreatedAtUtc, count, selection.Picks, saved.Ticket);
@@ -100,7 +109,7 @@ public partial class Program
         catch (IOException ex)
         {
             Console.Error.WriteLine($"[DAILY] Excel ne mozese da se snimi (dali e otvoren?): {ex.Message}");
-            Environment.ExitCode = 1;
+            CommandExecution.Fail();
         }
     }
 

@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
 using Prediction.Services;
+using Prediction.Infrastructure;
 
 public partial class Program
 {
@@ -16,7 +17,7 @@ public partial class Program
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out to)) || from > to)
         {
             Console.Error.WriteLine($"[{args[0].ToUpperInvariant()}] Use: {args[0]} [from yyyy-MM-dd] [to yyyy-MM-dd]; from must not exceed to.");
-            Environment.ExitCode = 1;
+            CommandExecution.Fail();
             return false;
         }
         return true;
@@ -27,7 +28,8 @@ public partial class Program
         if (!TryReportDates(args, out var from, out var to))
             return;
         await using var db = new FootballDbContextFactory().CreateDbContext([]);
-        await db.Database.MigrateAsync();
+        if (!CommandExecution.IsAutomation)
+            await db.Database.MigrateAsync();
         var tickets = await db.SimulatedTickets.AsNoTracking()
             .Where(x => x.MatchDate >= from && x.MatchDate <= to)
             .Include(x => x.Selections)
@@ -116,7 +118,8 @@ public partial class Program
         if (!TryReportDates(args, out var from, out var to))
             return;
         await using var db = new FootballDbContextFactory().CreateDbContext([]);
-        await db.Database.MigrateAsync();
+        if (!CommandExecution.IsAutomation)
+            await db.Database.MigrateAsync();
         var matches = await db.Matches.AsNoTracking()
             .Where(x => x.MatchDate >= from && x.MatchDate <= to && x.Result != null)
             .Include(x => x.Result).Include(x => x.PredictionSnapshots).ToListAsync();
