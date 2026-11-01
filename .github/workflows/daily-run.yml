@@ -1,0 +1,103 @@
+name: Daily football automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Optional target date (yyyy-MM-dd); default Europe/Skopje today"
+        required: false
+        type: string
+      count:
+        description: "Requested selections per ticket (1-100)"
+        default: "15"
+        required: true
+        type: string
+  schedule:
+    - cron: "0 6 * * *"
+    - cron: "0 7 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: football-daily-run
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      TZ: Europe/Skopje
+      Exports__Excel: "false"
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.automation/browsers
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The workflow must also be on main for schedules; the deployed app stays on this branch.
+          ref: prediction-api
+          persist-credentials: false
+
+      - name: Select the 08:00 Skopje occurrence
+        id: schedule
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+        run: python3 Deployment/daily_schedule.py
+
+      - uses: actions/setup-dotnet@v4
+        if: steps.schedule.outputs.run == 'true'
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish Linux CLI
+        if: steps.schedule.outputs.run == 'true'
+        run: |
+          dotnet restore Prediction.csproj -r linux-x64 --verbosity quiet
+          dotnet publish Prediction.csproj -c Release -r linux-x64 --no-restore --self-contained false -o .automation/publish --verbosity quiet
+
+      - name: Install Chromium
+        if: steps.schedule.outputs.run == 'true'
+        timeout-minutes: 10
+        run: |
+          .automation/publish/.playwright/node/linux-x64/node .automation/publish/.playwright/package/cli.js install --with-deps chromium
+
+      - name: Start authenticated local FlareSolverr
+        if: steps.schedule.outputs.run == 'true'
+        timeout-minutes: 10
+        run: |
+          key="$(openssl rand -hex 32)"
+          echo "::add-mask::$key"
+          echo "FLARESOLVERR_API_KEY=$key" >> "$GITHUB_ENV"
+          export FLARESOLVERR_API_KEY="$key"
+          docker build --quiet -f Deployment/FlareSolverr.Dockerfile -t daily-flaresolverr .
+          docker run --detach --name daily-flaresolverr --publish 127.0.0.1:8191:10000 \
+            --env FLARESOLVERR_API_KEY --env LOG_LEVEL=warn daily-flaresolverr
+          for _ in $(seq 1 60); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:8191/health; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::FlareSolverr did not become healthy."
+          exit 1
+
+      - name: Collect, recheck pending history, save all nine ticket variants and report
+        if: steps.schedule.outputs.run == 'true'
+        timeout-minutes: 150
+        env:
+          ConnectionStrings__FootballDb: ${{ secrets.FOOTBALL_DB_CONNECTION }}
+          FLARESOLVERR_URL: http://127.0.0.1:8191/v1
+          TARGET_DATE: ${{ inputs.target_date }}
+          TICKET_COUNT: ${{ inputs.count || '15' }}
+        run: |
+          if [ -z "$ConnectionStrings__FootballDb" ]; then
+            echo "::error::FOOTBALL_DB_CONNECTION secret is missing."
+            exit 1
+          fi
+          target="${TARGET_DATE:-$(TZ=Europe/Skopje date +%F)}"
+          dotnet .automation/publish/Prediction.dll daily-run "$target" "$TICKET_COUNT"
+
+      - name: Stop local FlareSolverr
+        if: always() && steps.schedule.outputs.run == 'true'
+        run: docker rm --force daily-flaresolverr >/dev/null 2>&1 || true
