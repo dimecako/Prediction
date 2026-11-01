@@ -1,5 +1,32 @@
 # Prediction
 
+## Render with Neon PostgreSQL
+
+Use the existing Dockerfile for the Render web service and Neon for persistent
+PostgreSQL storage. Render's Free PostgreSQL database expires after 30 days;
+Neon's Free plan is not a time-limited trial, but storage and compute quotas apply.
+
+Before switching connections:
+
+1. Pause collection, ticket generation and other database writers.
+2. Back up the local database with `pg_dump` in custom format. Keep the backup
+   outside the repository and never commit database dumps or credentials.
+3. Create an empty Neon database with a compatible PostgreSQL version. Restore
+   using its direct (non-pooled) endpoint, with `pg_restore --no-owner --no-acl --exit-on-error`.
+   Do not restore over an existing populated database.
+4. Verify all table row counts, EF migration history and identity sequences.
+   Test historical reports before resuming writes. Keep the local database.
+5. Set Render environment variables using
+   [Deployment/render.env.example](Deployment/render.env.example), including
+   web authentication and the Neon Npgsql connection string. After a full
+   restore, keep `Database__ApplyMigrations=false`.
+6. Deploy and check `/health` and authenticated access to the web app.
+
+Database migration does not transfer Excel workbooks or local ML model ZIPs.
+Keep those locally; Render Free's writable filesystem is ephemeral. Web model
+inference is not currently connected to predictions. FlareSolverr remains a
+separate service as described in the environment example.
+
 ### Duplicate fixture results
 
 Result collection retains agreeing providers' source IDs even when their scores
@@ -469,7 +496,7 @@ Older `daily-league-safe` simulations remain readable by `ticket-report`.
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\tickets.ps1
 .\tickets.ps1 -Date 2026-10-27
 .\tickets.ps1 -PlanOnly
-.\tickets.ps1 -Count 5 -SkipCollection -SkipCleanup
+.\tickets.ps1 -Count 5 -SkipCollection
 ```
 
 `tickets.ps1` freezes the target date once using the **local system clock**:
@@ -487,14 +514,11 @@ are not guaranteed identical across variants. ML ticket commands perform their
 existing historical training. A final target-date report prints the available
 results, per-mode pick accuracy, ticket status and simulated ROI.
 
-Only after **every step succeeds**, the script rechecks the previous-day archive
-and deletes generated XLSX files for that exact previous date, including
-`predictions-DATE.xlsx`. Only generated `predictions`, `ticket` and `daily-ticket`
-filename families in the project root are eligible, not arbitrary spreadsheets,
-other dates or subdirectories. Database history is never deleted. Pending
-results can still be graded after Excel deletion. A build/archive failure stops
-immediately; other command failures are reported and suppress all cleanup.
-Locked files cause an explicit error. `-SkipCleanup` retains all Excel files;
+The script never deletes XLSX files; remove unwanted workbooks manually.
+Database history is never deleted. Pending results can still be graded after
+manual Excel deletion. A build/archive failure stops immediately; other command
+failures are reported. `-SkipCleanup` remains accepted for compatibility but has
+no effect because automatic cleanup has been removed.
 `-SkipCollection` skips prediction collection only. `-PlanOnly` changes nothing.
 
 Older daily workbooks can also be imported without generating tickets or

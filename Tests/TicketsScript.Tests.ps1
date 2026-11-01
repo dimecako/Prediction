@@ -47,6 +47,7 @@ try {
         $variants = [regex]::Matches($text,
             "(?m)^dotnet run --no-build -- (?:ticket |ai-rank |daily-ticket |daily-ticket-league |ticket-1-3p3\+ )").Count
         Assert-True ($variants -eq 9) "Expected exactly nine ticket variants."
+        Assert-True ($text -notmatch "delete|cleanup") "PlanOnly still advertises automatic deletion."
     }
     Assert-True ($global:TicketScriptTest.Calls.Count -eq 0) "PlanOnly invoked dotnet."
     $text = (& $runner -PlanOnly -Date 2030-01-02 -Count 5 -SkipCollection -SkipCleanup 6>&1 | Out-String)
@@ -61,16 +62,14 @@ try {
         New-Item -ItemType File -Path (Join-Path $sandbox $name) | Out-Null
     }
     & $runner -Date 2026-10-27 6>&1 | Out-Null
-    foreach ($name in $names[1..3]) {
-        Assert-True (-not (Test-Path -LiteralPath (Join-Path $sandbox $name))) "Old generated file was not deleted: $name"
-    }
-    foreach ($name in $names[4..7]) {
-        Assert-True (Test-Path -LiteralPath (Join-Path $sandbox $name)) "Unrelated file was deleted: $name"
+    foreach ($name in $names | Select-Object -Skip 1) {
+        Assert-True (Test-Path -LiteralPath (Join-Path $sandbox $name)) "Excel file was deleted: $name"
     }
     $calls = $global:TicketScriptTest.Calls
     Assert-True ($calls[0] -eq "build") "Build must run first."
     Assert-True ($calls[1] -eq "run --no-build -- ticket-import 2026-10-26") "Archive must precede generation."
-    Assert-True ($calls[$calls.Count - 1] -eq "run --no-build -- ticket-import 2026-10-26") "Reverify before cleanup. Last call: $($calls[$calls.Count - 1])"
+    Assert-True ($calls[$calls.Count - 1] -eq "run --no-build -- ticket-report 2026-10-27 2026-10-27") "Target report must run last."
+    Assert-True (($calls | Where-Object { $_ -eq "run --no-build -- ticket-import 2026-10-26" }).Count -eq 1) "Previous tickets must be archived once, without cleanup verification."
     Assert-True (($calls | Where-Object { $_ -eq "run --no-build -- ticket-report 2026-10-26 2026-10-26" }).Count -eq 1) "Previous tickets were not graded."
 
     foreach ($failure in @("*ai-rank 2026-10-27 15 safe", "*ticket-import 2026-10-26", "build")) {
@@ -85,7 +84,7 @@ try {
     $global:TicketScriptTest.Fail = ""
     & $runner -Date 2026-10-27 -SkipCleanup 6>&1 | Out-Null
     Assert-True (Test-Path -LiteralPath (Join-Path $sandbox $names[1])) "SkipCleanup was ignored."
-    Write-Output "PASS: date boundaries, nine variants, explicit date/count, plan-only, grading order, exact-date cleanup, failure preservation and skip switches."
+    Write-Output "PASS: date boundaries, nine variants, explicit date/count, plan-only, grading order, Excel preservation, failure preservation and skip switches."
 }
 finally {
     Set-Location $originalLocation

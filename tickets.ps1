@@ -1,12 +1,12 @@
 # .\tickets.ps1                    # 00:00-17:59 today; 18:00-23:59 tomorrow (local time)
 # .\tickets.ps1 -Date 2026-10-27    # explicit target date
-# .\tickets.ps1 -PlanOnly          # show commands without build, collection or deletion
+# .\tickets.ps1 -PlanOnly          # show commands without build or collection
 param(
     [string]$Date = "",
     [ValidateRange(1, 100)]
     [int]$Count = 15,
     [switch]$SkipCollection,
-    [switch]$SkipCleanup,
+    [switch]$SkipCleanup, # Retained for compatibility; Excel files are never deleted.
     [switch]$PlanOnly
 )
 
@@ -51,13 +51,10 @@ Write-Host "SIMULATIONS ONLY. Each ticket uses 1 unit total; not actual payments
 if ($PlanOnly) {
     Write-Host "dotnet build"
     foreach ($step in $steps) { Write-Host ("dotnet run --no-build -- " + ($step.Args -join " ")) }
-    if (-not $SkipCleanup) {
-        Write-Host "After ALL steps succeed: verify archive again, then delete generated XLSX for $previous only (including predictions)."
-    }
     return
 }
 dotnet build
-if ($LASTEXITCODE -ne 0) { throw "Build failed. No commands or cleanup executed." }
+if ($LASTEXITCODE -ne 0) { throw "Build failed. No commands executed." }
 $failed = @()
 foreach ($step in $steps) {
     Write-Host "`n=== $($step.Name) ===" -ForegroundColor Yellow
@@ -65,27 +62,13 @@ foreach ($step in $steps) {
     & dotnet @commandArgs
     if ($LASTEXITCODE -ne 0) {
         $failed += $step.Name
-        Write-Host "FAILED: $($step.Name). Cleanup disabled." -ForegroundColor Red
+        Write-Host "FAILED: $($step.Name)." -ForegroundColor Red
         if ($step.Args[0] -eq "ticket-import") {
-            throw "Archive failed. Existing Excel files have been preserved; no ticket generation or cleanup."
+            throw "Archive failed. Existing Excel files have been preserved; no ticket generation."
         }
     }
 }
 if ($failed.Count -gt 0) {
     throw "Failed steps: $($failed -join ', '). Excel files have NOT been deleted."
-}
-if (-not $SkipCleanup) {
-    # Recheck immediately before deletion; old daily selections must survive in the database.
-    $verifyArgs = @("run", "--no-build", "--", "ticket-import", $previous)
-    & dotnet @verifyArgs
-    if ($LASTEXITCODE -ne 0) { throw "Final archive verification failed. No Excel files deleted." }
-    $dateToken = [regex]::Escape($previous)
-    $pattern = "^(predictions|daily-ticket(?:-league)?|ticket(?:-[A-Za-z0-9+]+)*)-$dateToken(?:-.*)?\.xlsx$"
-    $files = @(Get-ChildItem -LiteralPath $PSScriptRoot -File |
-        Where-Object { $_.Name -cmatch $pattern })
-    foreach ($file in $files) {
-        Remove-Item -LiteralPath $file.FullName -ErrorAction Stop
-        Write-Host "[CLEANUP] Deleted $($file.Name); database history preserved."
-    }
 }
 Write-Host "`n=== TICKETS COMPLETE: $Date ===" -ForegroundColor Green
