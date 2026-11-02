@@ -32,6 +32,18 @@ public sealed class ResultMatchResolverTests
     }
 
     [Fact]
+    public void NeitherExactNamesNorSourceIdCanAuthorizeAnUnverifiedScorePeriod()
+    {
+        var result = Result("Home", "Away");
+        result.IsRegulationTimeVerified = false;
+        var resolution = ResultMatchResolver.Resolve(Date, result,
+            [Fixture(1, "Home", "Away")], [Snapshot(1)]);
+        Assert.True(resolution.Conflict);
+        Assert.Empty(resolution.Matches);
+        Assert.Contains("regulation-time FT not verified", resolution.Method);
+    }
+
+    [Fact]
     public void ConflictingOrDuplicateSourceLinksAreNeverApplied()
     {
         var exact = Fixture(1, "Home", "Away");
@@ -174,7 +186,8 @@ public sealed class ResultMatchResolverTests
 
     private static ExternalMatchResult Result(string home, string away) => new()
     {
-        HomeTeam = home, AwayTeam = away, Source = "Forebet", ExternalId = "forebet:123"
+        HomeTeam = home, AwayTeam = away, Source = "Forebet", ExternalId = "forebet:123",
+        IsRegulationTimeVerified = true
     };
 
     private static PredictionSnapshot Snapshot(long matchId) => new()

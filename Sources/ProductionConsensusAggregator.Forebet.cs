@@ -439,6 +439,18 @@ public partial class ProductionConsensusAggregator
                     "FT",
                     StringComparison.OrdinalIgnoreCase))
             {
+                if (status.Equals("AET", StringComparison.OrdinalIgnoreCase) ||
+                    status.Equals("AfP", StringComparison.OrdinalIgnoreCase) ||
+                    status.Equals("PEN", StringComparison.OrdinalIgnoreCase))
+                    Console.WriteLine("[Forebet RESULTS] Extra-time/penalty fixture has no verified regulation-time FT; left unresolved.");
+                continue;
+            }
+
+            if (new[] { "extra_time_score", "penalty_score" }.Any(field =>
+                    !string.IsNullOrWhiteSpace(item[field]?.ToString()) &&
+                    item[field]!.ToString().Trim() != "-"))
+            {
+                Console.WriteLine("[Forebet RESULTS] FT label conflicts with extra-time/penalty evidence; regulation score unverified, left unresolved.");
                 continue;
             }
 
@@ -499,6 +511,7 @@ public partial class ProductionConsensusAggregator
 
                     HomeGoals = homeGoals,
                     AwayGoals = awayGoals,
+                    IsRegulationTimeVerified = true,
                     HalfTimeHomeGoals = halfTimeHome,
                     HalfTimeAwayGoals = halfTimeAway,
 

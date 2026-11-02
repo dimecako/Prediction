@@ -50,6 +50,7 @@ public sealed class ForebetResultTests
         var result = Assert.Single(Parse(row));
         Assert.Equal(2, result.HomeGoals);
         Assert.Equal(1, result.AwayGoals);
+        Assert.True(result.IsRegulationTimeVerified);
         Assert.Equal(home, result.HalfTimeHomeGoals);
         Assert.Equal(away, result.HalfTimeAwayGoals);
     }
@@ -80,6 +81,23 @@ public sealed class ForebetResultTests
         var row = Row();
         row["DATE_BAH"] = date;
         row["comment"] = status;
+        Assert.Empty(Parse(row));
+    }
+
+    [Theory]
+    [InlineData("AET", "", "")]
+    [InlineData("AfP", "", "")]
+    [InlineData("PEN", "", "")]
+    [InlineData("FT", "3-2", "")]
+    [InlineData("FT", "0-0", "")]
+    [InlineData("FT", "", "5-4")]
+    public void ExtraTimeAndPenaltyEvidenceNeverBecomesRegulationFt(
+        string status, string extraTime, string penalties)
+    {
+        var row = Row();
+        row["comment"] = status;
+        row["extra_time_score"] = extraTime;
+        row["penalty_score"] = penalties;
         Assert.Empty(Parse(row));
     }
 

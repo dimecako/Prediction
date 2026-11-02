@@ -119,12 +119,9 @@ public sealed class OpenFootballResultProvider : IMatchResultProvider
             if (!scoreElement.TryGetProperty("ft", out ftElement))
                 return false;
         }
-        else if (scoreElement.ValueKind == JsonValueKind.Array)
-        {
-            ftElement = scoreElement;
-        }
         else
         {
+            Console.WriteLine("[OPENFOOTBALL] Score has no explicit regulation-time ft field; left unresolved.");
             return false;
         }
 
@@ -173,6 +170,7 @@ public sealed class OpenFootballResultProvider : IMatchResultProvider
 
             HomeGoals = homeGoals,
             AwayGoals = awayGoals,
+            IsRegulationTimeVerified = true,
 
             Source = "OpenFootball"
         };

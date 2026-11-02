@@ -569,13 +569,7 @@ public partial class Program
 
             using var httpClient = new HttpClient();
             var collected = await MatchResultCollector.CollectAsync(date,
-                new IMatchResultProvider[]
-                {
-                    new ForebetResultProvider(),
-                    new SoccerVistaResultProvider(httpClient),
-                    new FootballResultsOnlineProvider(httpClient),
-                    new OpenFootballResultProvider(httpClient)
-                }, Console.WriteLine);
+                MatchResultCollector.CreateDefaultProviders(httpClient, Console.WriteLine), Console.WriteLine);
             var externalResults = collected.Results;
             if (collected.FailedProviders > 0 || collected.RejectedRows > 0)
                 CommandExecution.Fail();
@@ -643,8 +637,11 @@ public partial class Program
                     if (match.Result.HomeGoals != external.HomeGoals || match.Result.AwayGoals != external.AwayGoals)
                     {
                         Console.WriteLine($"[RESULTS] Conflicting stored final score for #{match.Id}: " +
-                            $"stored={match.Result.HomeGoals}-{match.Result.AwayGoals}, " +
-                            $"{external.Source}={external.HomeGoals}-{external.AwayGoals}; not overwritten.");
+                            $"stored={match.Result.HomeGoals}-{match.Result.AwayGoals} " +
+                            $"(source={match.Result.Source}, captured UTC={match.Result.CollectedAtUtc:O}), " +
+                            $"{external.Source} {external.ExternalId} regulation FT={external.HomeGoals}-{external.AwayGoals}; " +
+                            "not overwritten. Verify source fixture identity and regulation-time evidence; " +
+                            "score differences alone do not prove extra time or penalties.");
                         CommandExecution.Fail();
                         existing++;
                         continue;

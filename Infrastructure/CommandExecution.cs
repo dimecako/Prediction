@@ -28,7 +28,13 @@ public static class CommandExecution
         catch (Exception ex)
         {
             // Exception messages can contain credentials supplied by drivers or upstream services.
-            Console.Error.WriteLine($"[COMMAND] Failed ({ex.GetType().Name}). Check configuration and provider availability.");
+            var origin = new System.Diagnostics.StackTrace(ex, false).GetFrames()?
+                .Select(frame => frame.GetMethod())
+                .FirstOrDefault(method => method?.DeclaringType?.Assembly == typeof(CommandExecution).Assembly);
+            Console.Error.WriteLine($"[COMMAND] Failed ({ex.GetType().Name}) at " +
+                $"{origin?.DeclaringType?.FullName}.{origin?.Name}. Check configuration and provider availability.");
+            if (ex is Prediction.Services.PredictionIdentityConflictException conflict)
+                Console.Error.WriteLine($"[COMMAND] {conflict.Diagnostic}; conflicting fixtures were not changed.");
             return 1;
         }
         finally

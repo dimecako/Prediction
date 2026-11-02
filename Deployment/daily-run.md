@@ -63,6 +63,34 @@ explicitly reported as a failure rather than fabricated success. Inspect job
 logs before retrying; reruns preserve ledger fingerprint deduplication, but
 changed odds/selections intentionally create another simulation.
 
+Only verified regulation-time FT (90 minutes plus stoppage time) is eligible
+for persistence and grading. Forebet requires `FT` without extra-time or
+shootout evidence; SoccerVista requires its verified regulation-finished detail;
+OpenFootball uses only the explicit `score.ft`, never `et`, `p` or an unlabelled
+score array. FootballResultsOnline's unlabelled scores cannot establish the
+period, so this provider is explicitly disabled in the default collection.
+If supplied directly to the collector, its unverified rows are still rejected.
+AET/penalty fixtures without verified
+regulation scores stay unresolved with a diagnostic; half-time is not a
+substitute for regulation FT. Providers must explicitly set
+`IsRegulationTimeVerified` after checking their source evidence.
+
+Disagreeing provider scores quarantine that fixture for the capture rather than
+choosing the first, latest or larger score. Stored-score discrepancies are not
+automatically corrected: diagnostics identify the stored source, capture time
+and incoming source fixture ID for verification. A score difference alone does
+not establish extra time, penalties or a wrong historical score. Existing
+historical data must be verified separately; these guards do not certify or
+rewrite it.
+
+Prediction persistence verifies shared-source aliases even when the new display
+name has no exact stored match. Verification includes stored FT/HT results, not
+just names and source IDs. Ambiguous identities are diagnosed and the capture
+fails without saving any of its pending changes, including earlier snapshots
+implicated by a later collision. Safe diagnostics report capture
+row, conflict reason and numeric stored match IDs; unexpected exceptions report
+their code origin, never raw exception messages or connection strings.
+
 `Exports__Excel=false` disables Excel in prediction reporting and both ticket
 commands while retaining database persistence and console reports. Unset (or
 `true`) preserves local script behavior. Invalid values fail rather than
