@@ -569,13 +569,7 @@ public partial class Program
 
             using var httpClient = new HttpClient();
             var collected = await MatchResultCollector.CollectAsync(date,
-                new IMatchResultProvider[]
-                {
-                    new ForebetResultProvider(),
-                    new SoccerVistaResultProvider(httpClient),
-                    new FootballResultsOnlineProvider(httpClient),
-                    new OpenFootballResultProvider(httpClient)
-                }, Console.WriteLine);
+                MatchResultCollector.CreateDefaultProviders(httpClient, Console.WriteLine), Console.WriteLine);
             var externalResults = collected.Results;
             if (collected.FailedProviders > 0 || collected.RejectedRows > 0)
                 CommandExecution.Fail();

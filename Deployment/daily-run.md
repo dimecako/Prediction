@@ -68,7 +68,9 @@ for persistence and grading. Forebet requires `FT` without extra-time or
 shootout evidence; SoccerVista requires its verified regulation-finished detail;
 OpenFootball uses only the explicit `score.ft`, never `et`, `p` or an unlabelled
 score array. FootballResultsOnline's unlabelled scores cannot establish the
-period and are rejected by collection. AET/penalty fixtures without verified
+period, so this provider is explicitly disabled in the default collection.
+If supplied directly to the collector, its unverified rows are still rejected.
+AET/penalty fixtures without verified
 regulation scores stay unresolved with a diagnostic; half-time is not a
 substitute for regulation FT. Providers must explicitly set
 `IsRegulationTimeVerified` after checking their source evidence.

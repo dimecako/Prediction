@@ -9,6 +9,18 @@ public sealed class MatchResultCollectorTests
     private static readonly DateOnly Date = new(2026, 10, 23);
 
     [Fact]
+    public void DefaultCollectionExplicitlyDisablesSourcesWithoutVerifiedRegulationScores()
+    {
+        using var http = new HttpClient();
+        var messages = new List<string>();
+        var providers = MatchResultCollector.CreateDefaultProviders(http, messages.Add);
+        Assert.Equal(["Forebet", "SoccerVista", "OpenFootball"], providers.Select(x => x.Name));
+        Assert.DoesNotContain(providers, x => x is FootballResultsOnlineProvider);
+        Assert.Contains(messages, x => x.Contains("FootballResultsOnline disabled") &&
+            x.Contains("cannot verify regulation-time FT"));
+    }
+
+    [Fact]
     public async Task PartialPrimaryResultsStillQueryEveryProviderAndMergeUniqueFixtures()
     {
         var first = new Provider("primary", Row("Home", "Away"));

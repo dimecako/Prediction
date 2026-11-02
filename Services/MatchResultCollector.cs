@@ -10,6 +10,14 @@ public sealed record CollectedMatchResults(
 
 public static class MatchResultCollector
 {
+    public static IReadOnlyList<IMatchResultProvider> CreateDefaultProviders(
+        HttpClient httpClient, Action<string> log)
+    {
+        log("[RESULTS] FootballResultsOnline disabled: unlabelled scores cannot verify regulation-time FT.");
+        return [new ForebetResultProvider(), new SoccerVistaResultProvider(httpClient),
+            new OpenFootballResultProvider(httpClient)];
+    }
+
     public static async Task<CollectedMatchResults> CollectAsync(
         DateOnly date, IEnumerable<IMatchResultProvider> providers, Action<string> log,
         CancellationToken cancellationToken = default)
