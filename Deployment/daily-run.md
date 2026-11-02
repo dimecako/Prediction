@@ -13,13 +13,31 @@ Do not paste a PostgreSQL URI or commit credentials. The database must already
 contain the current migrations. This job never migrates, imports Excel, rebuilds
 at runtime, or runs a separate ML training command; `ai-rank` trains from history.
 
-Two UTC schedules (06:00 and 07:00) cover 08:00 Europe/Skopje year-round.
-The guard compares `github.event.schedule` with the offset at local 08:00, not
-the runner's current hour: same-day queue delays still execute the intended
-occurrence. GitHub can delay or drop cron jobs; it is not a guaranteed exact-time
-scheduler. After a dropped run use **Actions → Daily football automation → Run
-workflow**, optionally specifying a target date and count. A delay crossing a
-local midnight uses the new local date; use manual dispatch to recover that date.
+The first attempt is at **08:00 Europe/Skopje**, with up to three additional
+attempts at **09:00, 10:00 and 11:00** if no attempt has succeeded for that date.
+Five UTC schedules (06:00 through 10:00) cover both seasonal offsets; the guard
+selects only the four local hours. It compares `github.event.schedule` with the
+planned offset, not the runner's current hour, so same-day queue delays still
+execute the intended occurrence. GitHub can delay, drop or coalesce queued cron
+jobs; these are retry opportunities, not a guaranteed exact-time scheduler.
+
+After a completely successful execution, the workflow uploads
+`daily-success-yyyy-MM-dd` with 90-day retention. Before building or scraping,
+each attempt checks the exact target date's artifacts and verifies that the
+producing run completed successfully in this workflow. A successful manual run
+also stops automatic attempts for that date; manually selecting an already
+successful date skips the work too, regardless of the requested ticket count.
+Inactive cron occurrences and skipped jobs do not upload success markers.
+GitHub API errors fail the guard explicitly rather than risking duplicate work.
+Do not delete the marker if you want to retain the once-per-date guard.
+Older runs made before this marker mechanism was deployed are not backfilled.
+
+After a dropped run or three failed retries, use **Actions → Daily football
+automation → Run workflow**, optionally specifying a target date and count.
+The target date is frozen by the guard and reused by execution and the marker,
+even if the job subsequently crosses midnight. A queue delay crossing midnight
+before the guard starts uses the new local date; dispatch the intended date
+manually to recover it. Dates outside artifact retention can be executed again.
 
 Execution is bounded by job/step timeouts. Actions serializes runs without
 cancelling an active one; a shared Postgres transaction advisory lock also

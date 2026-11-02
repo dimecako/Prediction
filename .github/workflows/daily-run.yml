@@ -15,9 +15,13 @@ on:
   schedule:
     - cron: "0 6 * * *"
     - cron: "0 7 * * *"
+    - cron: "0 8 * * *"
+    - cron: "0 9 * * *"
+    - cron: "0 10 * * *"
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: football-daily-run
@@ -38,11 +42,13 @@ jobs:
           ref: prediction-api
           persist-credentials: false
 
-      - name: Select the 08:00 Skopje occurrence
+      - name: Select 08:00-11:00 Skopje attempt unless this date already succeeded
         id: schedule
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_SCHEDULE: ${{ github.event.schedule }}
+          TARGET_DATE: ${{ inputs.target_date }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 Deployment/daily_schedule.py
 
       - uses: actions/setup-dotnet@v4
@@ -88,16 +94,25 @@ jobs:
         env:
           ConnectionStrings__FootballDb: ${{ secrets.FOOTBALL_DB_CONNECTION }}
           FLARESOLVERR_URL: http://127.0.0.1:8191/v1
-          TARGET_DATE: ${{ inputs.target_date }}
+          TARGET_DATE: ${{ steps.schedule.outputs.target_date }}
           TICKET_COUNT: ${{ inputs.count || '15' }}
         run: |
           if [ -z "$ConnectionStrings__FootballDb" ]; then
             echo "::error::FOOTBALL_DB_CONNECTION secret is missing."
             exit 1
           fi
-          target="${TARGET_DATE:-$(TZ=Europe/Skopje date +%F)}"
-          dotnet .automation/publish/Prediction.dll daily-run "$target" "$TICKET_COUNT"
+          dotnet .automation/publish/Prediction.dll daily-run "$TARGET_DATE" "$TICKET_COUNT"
+          printf '%s\n' "$TARGET_DATE" > "$RUNNER_TEMP/daily-success.txt"
 
       - name: Stop local FlareSolverr
         if: always() && steps.schedule.outputs.run == 'true'
         run: docker rm --force daily-flaresolverr >/dev/null 2>&1 || true
+
+      - name: Record successful daily execution
+        if: steps.schedule.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-success-${{ steps.schedule.outputs.target_date }}
+          path: ${{ runner.temp }}/daily-success.txt
+          if-no-files-found: error
+          retention-days: 90

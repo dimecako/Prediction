@@ -55,9 +55,12 @@ already train their ranking models from history; a separate `train` command is
 not needed. Build happens before execution, and Excel imports are not needed
 because selections are stored in PostgreSQL.
 
-Scheduling uses both possible UTC hours for 08:00 Europe/Skopje, selecting the
-appropriate occurrence for winter/summer time. GitHub scheduling is best-effort
-and can be delayed. Scheduled workflows must exist on the repository's default
+Scheduling starts at 08:00 Europe/Skopje, with three hourly retry opportunities
+at 09:00, 10:00 and 11:00, using the appropriate winter/summer UTC offset.
+Once a manual or scheduled execution succeeds for the target date, subsequent
+attempts skip building and collection. Success is tracked by a date-specific
+GitHub artifact retained for 90 days and checked against its successful run.
+GitHub scheduling is best-effort and can be delayed. Scheduled workflows must exist on the repository's default
 branch; the workflow checks out the deployed `prediction-api` branch. Use the
 Actions tab for manual runs, failure details and reruns. Check the first real
 run before relying on unattended operation.
