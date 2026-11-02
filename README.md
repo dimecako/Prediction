@@ -48,8 +48,9 @@ string. Keep credentials out of workflow YAML, logs and commits.
 
 The daily workflow runs the `daily-run` command, not the Windows-only
 `tickets.ps1`. It collects predictions for the current Europe/Skopje date,
-rechecks every past date with unresolved ticket selections, and runs the same
-nine ticket variants. Confirmed results are not overwritten. ML-ranked variants
+collects results for the previous day, and checks one additional day back only
+if that date has unresolved ticket selections. Older pending dates are not
+scanned. It then runs the same nine ticket variants. Confirmed results are not overwritten. ML-ranked variants
 already train their ranking models from history; a separate `train` command is
 not needed. Build happens before execution, and Excel imports are not needed
 because selections are stored in PostgreSQL.

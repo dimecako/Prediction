@@ -30,8 +30,14 @@ heartbeats every 20 seconds. Lost lock connections stop further steps. Avoid
 overlapping manual/local ticket scripts: those legacy individual commands do
 not acquire the automation lock.
 
-All past ticket dates with **any Pending selection** are rechecked, even when
-another leg has already lost the accumulator. Missing scores and required
+Results are always collected for the day before the target date, even if there
+are no pending tickets or results were already collected locally. One additional
+day back is checked only when that date has **any Pending selection**, even when
+another leg has already lost the accumulator. No earlier dates are scanned;
+older pending history requires a separate manual `collect-results` command.
+For example, a November 2 run collects November 1 results and optionally
+October 31 results, never October 30 or earlier. Manual target dates use the same
+two-day window relative to the supplied date. Missing scores and required
 half-time scores remain Pending; confirmed scores are not overwritten.
 Failures are reported per step, remaining steps continue, and any failed step
 makes the job fail. No usable selections or an empty prediction source is

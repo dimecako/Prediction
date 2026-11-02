@@ -24,13 +24,16 @@ public sealed class DailyAutomationTests
     }
 
     [Fact]
-    public void PlanRechecksAllOldDatesAndContainsExactlyNineVariantsWithoutImportOrTraining()
+    public void PlanRechecksOnlyYesterdayAndPendingDayBeforeAndContainsExactlyNineVariantsWithoutImportOrTraining()
     {
         var old = Target.AddYears(-2);
-        var steps = DailyRunPlan.Build(Target, 15, [Target, Target.AddDays(-1), old, old]);
+        var steps = DailyRunPlan.Build(Target, 15,
+            [Target.AddDays(1), Target, Target.AddDays(-1), Target.AddDays(-2), Target.AddDays(-2), Target.AddDays(-3), old]);
         Assert.Equal(["collect-results", "ticket-report", "collect-results", "ticket-report"],
             steps.Take(4).Select(s => s.Args[0]));
-        Assert.Equal(old.ToString("yyyy-MM-dd"), steps[0].Args[1]);
+        Assert.Equal(Target.AddDays(-1).ToString("yyyy-MM-dd"), steps[0].Args[1]);
+        Assert.Equal(Target.AddDays(-2).ToString("yyyy-MM-dd"), steps[2].Args[1]);
+        Assert.Equal(15, steps.Count);
         Assert.Equal([Target.ToString("yyyy-MM-dd")], steps[4].Args);
         Assert.Equal(new[]
         {
@@ -44,10 +47,25 @@ public sealed class DailyAutomationTests
         Assert.DoesNotContain(steps, s => s.Args[0] is "ticket-import" or "train" or "build");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void YesterdayIsAlwaysCollectedWithoutRecheckingOlderPendingHistory(bool hasPendingHistory)
+    {
+        DateOnly[] pending = hasPendingHistory
+            ? [Target.AddDays(-1), Target.AddDays(-3), Target.AddYears(-2), Target, Target.AddDays(1)]
+            : [];
+        var steps = DailyRunPlan.Build(Target, 15, pending);
+        var yesterday = Target.AddDays(-1).ToString("yyyy-MM-dd");
+        Assert.Equal([yesterday], steps.Where(s => s.Args[0] == "collect-results").Select(s => s.Args[1]));
+        Assert.Equal(["ticket-report", yesterday, yesterday], steps[1].Args);
+        Assert.Equal(13, steps.Count);
+    }
+
     [Fact]
     public void PendingLegsInLostAccumulatorsAreStillRecheckedAndConfirmedDatesAreExcluded()
     {
-        var old = Target.AddYears(-2);
+        var old = Target.AddDays(-2);
         var lost = Ticket(old, Pick(1), Pick(2));
         var results = new Dictionary<long, MatchResult>
         {
@@ -56,7 +74,9 @@ public sealed class DailyAutomationTests
         };
         Assert.Equal(SimulatedTicketStatus.Lost, TicketPerformanceAnalyzer.Settle(lost, results).Status);
         Assert.Equal([old], DailyRunPlan.PendingDates(
-            [lost, Ticket(old, Pick(2)), Ticket(Target.AddDays(-1), Pick(3)), Ticket(Target, Pick(4))],
+            [lost, Ticket(old, Pick(2)), Ticket(Target.AddDays(-1), Pick(3)), Ticket(Target, Pick(4)),
+                Ticket(Target.AddDays(1), Pick(5)), Ticket(Target.AddDays(-3), Pick(6)),
+                Ticket(Target.AddYears(-2), Pick(7))],
             results, Target));
     }
 

@@ -35,14 +35,17 @@ public partial class Program
 
         Console.WriteLine($"[DAILY-RUN] Starting {date:yyyy-MM-dd}; count={count}; no Excel import, build or migrations.");
         await using var db = new FootballDbContextFactory().CreateDbContext([]);
+        var oldestResultDate = date.AddDays(-2);
         var tickets = await db.SimulatedTickets.AsNoTracking()
-            .Where(x => x.MatchDate < date)
+            .Where(x => x.MatchDate >= oldestResultDate && x.MatchDate < date)
             .Include(x => x.Selections).ToListAsync();
         var matchIds = tickets.SelectMany(x => x.Selections).Select(x => x.MatchId).Distinct().ToList();
         var results = await db.MatchResults.AsNoTracking()
             .Where(x => matchIds.Contains(x.MatchId)).ToDictionaryAsync(x => x.MatchId);
         var pendingDates = DailyRunPlan.PendingDates(tickets, results, date);
-        Console.WriteLine($"[DAILY-RUN] Rechecking {pendingDates.Count} past dates with Pending selections (including lost accumulators).");
+        Console.WriteLine($"[DAILY-RUN] Collecting yesterday ({date.AddDays(-1):yyyy-MM-dd}); " +
+            $"also checking {oldestResultDate:yyyy-MM-dd} only if it has Pending selections (including lost accumulators). " +
+            "Older dates are excluded.");
         var steps = DailyRunPlan.Build(date, count, pendingDates);
         var failed = new List<string>();
         foreach (var step in steps)
@@ -98,7 +101,7 @@ namespace Prediction.Services
 
         public static IReadOnlyList<DateOnly> PendingDates(IEnumerable<SimulatedTicket> tickets,
             IReadOnlyDictionary<long, MatchResult> results, DateOnly target) =>
-            tickets.Where(t => t.MatchDate < target && t.Selections.Any(s =>
+            tickets.Where(t => t.MatchDate >= target.AddDays(-2) && t.MatchDate < target && t.Selections.Any(s =>
                 !results.TryGetValue(s.MatchId, out var result) ||
                 !TicketMarkets.IsCorrect(new(s.Market, s.Pick, s.CalibrationKey, ""),
                     result, allowFinalOnlyLoss: true).HasValue))
@@ -108,10 +111,15 @@ namespace Prediction.Services
             IEnumerable<DateOnly> pendingDates)
         {
             var steps = new List<DailyRunStep>();
-            foreach (var pending in pendingDates.Where(d => d < date).Distinct().Order())
+            var yesterday = date.AddDays(-1);
+            var dayBeforeYesterday = date.AddDays(-2);
+            var resultDates = new List<DateOnly> { yesterday };
+            if (pendingDates.Contains(dayBeforeYesterday))
+                resultDates.Add(dayBeforeYesterday);
+            foreach (var resultDate in resultDates)
             {
-                string old = pending.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-                steps.Add(new($"Collect pending results {old}", ["collect-results", old]));
+                string old = resultDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                steps.Add(new($"Collect recent results {old}", ["collect-results", old]));
                 steps.Add(new($"Report past tickets {old}", ["ticket-report", old, old]));
             }
             string target = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
