@@ -83,8 +83,9 @@ rewrite it.
 
 Prediction persistence verifies shared-source aliases even when the new display
 name has no exact stored match. Verification includes stored FT/HT results, not
-just names and source IDs. Ambiguous identities are skipped, independent valid
-fixtures are saved, and the command still fails. Safe diagnostics report capture
+just names and source IDs. Ambiguous identities are diagnosed and the capture
+fails without saving any of its pending changes, including earlier snapshots
+implicated by a later collision. Safe diagnostics report capture
 row, conflict reason and numeric stored match IDs; unexpected exceptions report
 their code origin, never raw exception messages or connection strings.
 

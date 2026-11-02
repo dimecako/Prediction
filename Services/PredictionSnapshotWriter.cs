@@ -248,6 +248,12 @@ public sealed class PredictionSnapshotWriter
             }
         }
 
+        if (conflicts.Count > 0)
+        {
+            Console.Error.WriteLine($"[DB] Rejected {conflicts.Count} identity conflicts; no capture changes saved, capture FAILED.");
+            throw conflicts[0];
+        }
+
         int changes = await db.SaveChangesAsync();
 
         Console.WriteLine(
@@ -255,10 +261,5 @@ public sealed class PredictionSnapshotWriter
             $"existing matches: {matchesExisting}, " +
             $"snapshots: {snapshotsCreated}, " +
             $"EF changes: {changes}");
-        if (conflicts.Count > 0)
-        {
-            Console.Error.WriteLine($"[DB] Rejected {conflicts.Count} identity conflicts; valid fixtures saved, capture FAILED.");
-            throw conflicts[0];
-        }
     }
 }

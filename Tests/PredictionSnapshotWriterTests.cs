@@ -9,7 +9,7 @@ namespace Prediction.Tests;
 public sealed class PredictionSnapshotWriterTests
 {
     [DatabaseFact]
-    public async Task CaptureReusesVerifiedAliasesAndPreservesConflictingHistoryWhileSavingIndependentFixtures()
+    public async Task CaptureReusesVerifiedAliasesButAnyConflictPreventsAllCaptureWrites()
     {
         await using var db = new FootballDbContextFactory().CreateDbContext([]);
         await using var transaction = await db.Database.BeginTransactionAsync();
@@ -46,10 +46,40 @@ public sealed class PredictionSnapshotWriterTests
         await Assert.ThrowsAsync<PredictionIdentityConflictException>(() =>
             new PredictionSnapshotWriter(db).SaveAsync("2026-11-01", [capture, independent]));
         db.ChangeTracker.Clear();
-        Assert.Equal(3, await db.Matches.CountAsync(x => x.HomeTeam.Contains(token)));
+        Assert.Equal(2, await db.Matches.CountAsync(x => x.HomeTeam.Contains(token)));
         Assert.Equal(new[] { 3, 5 }, await db.MatchResults
             .Where(x => x.Match.HomeTeam.Contains(token)).OrderBy(x => x.MatchId)
             .Select(x => x.HomeGoals).ToArrayAsync());
+        await transaction.RollbackAsync();
+    }
+
+    [DatabaseFact]
+    public async Task LaterSourceIdCollisionCannotSaveAnEarlierDisputedSnapshot()
+    {
+        await using var db = new FootballDbContextFactory().CreateDbContext([]);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        string token = Guid.NewGuid().ToString("N");
+        var first = Fixture(0, $"First {token}");
+        var second = Fixture(0, $"Second {token}");
+        foreach (var match in new[] { first, second })
+            match.ExternalMatchId = MatchIdentity.BuildExternalMatchId(
+                "2026-11-01", match.HomeTeam, match.AwayTeam);
+        db.Matches.AddRange(first, second);
+        await db.SaveChangesAsync();
+        var captures = new[] { first, second }.Select(match =>
+        {
+            var capture = new UnifiedMatch { HomeOrig = match.HomeTeam, AwayOrig = match.AwayTeam };
+            capture.Sources["Forebet"] = new() { SourceMatchId = $"forebet:{token}", Tip = "1" };
+            return capture;
+        }).ToArray();
+        foreach (var order in new[] { captures, captures.Reverse().ToArray() })
+        {
+            db.ChangeTracker.Clear();
+            await Assert.ThrowsAsync<PredictionIdentityConflictException>(() =>
+                new PredictionSnapshotWriter(db).SaveAsync("2026-11-01", order));
+            db.ChangeTracker.Clear();
+            Assert.False(await db.PredictionSnapshots.AnyAsync(x => x.SourceMatchId == $"forebet:{token}"));
+        }
         await transaction.RollbackAsync();
     }
 
