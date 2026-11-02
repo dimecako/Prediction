@@ -1,0 +1,22 @@
+@baseUrl = http://localhost:10000
+
+### Stored predictions (add Basic Authorization when configured)
+GET {{baseUrl}}/predictions?date=2026-11-01
+
+### Stored tickets
+GET {{baseUrl}}/tickets?from=2026-09-24&to=2026-11-01
+
+### Ticket details
+GET {{baseUrl}}/tickets/75
+
+### Missing ticket
+GET {{baseUrl}}/tickets/9223372036854775807
+
+### Simulation ROI
+GET {{baseUrl}}/performance?from=2026-09-24&to=2026-11-01
+
+### Strict league statistics
+GET {{baseUrl}}/leagues?from=2026-09-24&to=2026-11-01
+
+### Invalid date returns 400
+GET {{baseUrl}}/predictions?date=invalid
