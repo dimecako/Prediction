@@ -197,6 +197,29 @@ public sealed class DailyAutomationTests
     }
 
     [Fact]
+    public async Task PersistenceDiagnosticsExposeOnlyReasonCodesAndNumericIdsNotExceptionSecrets()
+    {
+        var original = Console.Error;
+        using var output = new StringWriter();
+        Console.SetError(output);
+        try
+        {
+            Assert.Equal(1, await CommandExecution.RunAsync(() =>
+                throw new PredictionIdentityConflictException(
+                    PredictionIdentityConflict.StoredSourceIds, [20, 10])));
+            Assert.Contains("conflict=StoredSourceIds; stored match IDs=10,20", output.ToString());
+            Assert.Equal(1, await CommandExecution.RunAsync(() =>
+                throw new InvalidOperationException("credential-must-not-appear")));
+            Assert.Contains("InvalidOperationException", output.ToString());
+            Assert.DoesNotContain("credential-must-not-appear", output.ToString());
+        }
+        finally
+        {
+            Console.SetError(original);
+        }
+    }
+
+    [Fact]
     public async Task ParallelInvocationsHaveIndependentExitStatus()
     {
         var results = await Task.WhenAll(

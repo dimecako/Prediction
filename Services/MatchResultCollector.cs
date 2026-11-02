@@ -16,6 +16,7 @@ public static class MatchResultCollector
     {
         var results = new Dictionary<string, ExternalMatchResult>(StringComparer.Ordinal);
         var sourceResults = new List<ExternalMatchResult>();
+        var unresolved = new HashSet<string>(StringComparer.Ordinal);
         int failed = 0, rejected = 0;
         foreach (var provider in providers)
         {
@@ -46,6 +47,13 @@ public static class MatchResultCollector
             log($"[RESULTS] {provider.Name} returned: {rows.Count}");
             foreach (var row in rows)
             {
+                if (!row.IsRegulationTimeVerified)
+                {
+                    log($"[RESULTS] {provider.Name}: {row.HomeTeam} vs {row.AwayTeam}; " +
+                        "regulation-time FT not verified; left unresolved (extra time/penalties must not be used).");
+                    rejected++;
+                    continue;
+                }
                 bool hasHalfTime = row.HalfTimeHomeGoals.HasValue && row.HalfTimeAwayGoals.HasValue;
                 if (string.IsNullOrWhiteSpace(row.HomeTeam) || string.IsNullOrWhiteSpace(row.AwayTeam) ||
                     string.IsNullOrWhiteSpace(row.Source) || row.HomeGoals < 0 || row.AwayGoals < 0 ||
@@ -60,6 +68,12 @@ public static class MatchResultCollector
 
                 string id = MatchIdentity.BuildExternalMatchId(
                     date.ToString("yyyy-MM-dd"), row.HomeTeam, row.AwayTeam);
+                if (unresolved.Contains(id))
+                {
+                    rejected++;
+                    log($"[RESULTS] {row.HomeTeam} vs {row.AwayTeam}: conflicting regulation-time evidence; left unresolved.");
+                    continue;
+                }
                 if (!results.TryGetValue(id, out var existing))
                 {
                     results.Add(id, row);
@@ -76,7 +90,12 @@ public static class MatchResultCollector
                         $"{existing.Source} FT={existing.HomeGoals}-{existing.AwayGoals} " +
                         $"HT={existing.HalfTimeHomeGoals}-{existing.HalfTimeAwayGoals}; " +
                         $"{row.Source} FT={row.HomeGoals}-{row.AwayGoals} " +
-                        $"HT={row.HalfTimeHomeGoals}-{row.HalfTimeAwayGoals}; keeping first source.");
+                        $"HT={row.HalfTimeHomeGoals}-{row.HalfTimeAwayGoals}; " +
+                        "regulation-time score requires verification; all conflicting fixture rows left unresolved.");
+                    results.Remove(id);
+                    sourceResults.RemoveAll(candidate => MatchIdentity.BuildExternalMatchId(
+                        date.ToString("yyyy-MM-dd"), candidate.HomeTeam, candidate.AwayTeam) == id);
+                    unresolved.Add(id);
                     rejected++;
                     continue;
                 }

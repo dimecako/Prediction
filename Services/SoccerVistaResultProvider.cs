@@ -96,6 +96,7 @@ public sealed class SoccerVistaResultProvider(HttpClient httpClient) : IMatchRes
                     KickoffUtc = DateTimeOffset.FromUnixTimeSeconds(row["timeStart"]!.Value<long>()).UtcDateTime,
                     HomeGoals = score.Home,
                     AwayGoals = score.Away,
+                    IsRegulationTimeVerified = true,
                     Source = Name
                 });
             }

@@ -14,6 +14,8 @@ public sealed class ExternalMatchResult
 
     public int AwayGoals { get; set; }
 
+    public bool IsRegulationTimeVerified { get; set; }
+
     public int? HalfTimeHomeGoals { get; set; }
 
     public int? HalfTimeAwayGoals { get; set; }

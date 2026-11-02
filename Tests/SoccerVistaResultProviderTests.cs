@@ -29,6 +29,7 @@ public sealed class SoccerVistaResultProviderTests
 
         Assert.Equal(home, result.HomeGoals);
         Assert.Equal(away, result.AwayGoals);
+        Assert.True(result.IsRegulationTimeVerified);
         Assert.Null(result.HalfTimeHomeGoals);
         Assert.Null(result.HalfTimeAwayGoals);
         Assert.Equal("SoccerVista", result.Source);
@@ -397,6 +398,7 @@ public sealed class SoccerVistaResultProviderTests
         public Task<IReadOnlyList<ExternalMatchResult>> GetResultsAsync(
             DateOnly date, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ExternalMatchResult>>(
-                [new ExternalMatchResult { HomeTeam = "Other", AwayTeam = "Team", Source = Name }]);
+                [new ExternalMatchResult { HomeTeam = "Other", AwayTeam = "Team", Source = Name,
+                    IsRegulationTimeVerified = true }]);
     }
 }

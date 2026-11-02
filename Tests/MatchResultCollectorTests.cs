@@ -39,24 +39,24 @@ public sealed class MatchResultCollectorTests
     }
 
     [Fact]
-    public async Task ConflictingFinalScoreCannotSupplyHalfTimeOrReplaceFirstSource()
+    public async Task ConflictingFinalScoreLeavesBothSourcesUnresolved()
     {
         var conflict = Row("Home", "Away", 1, 0);
         conflict.HomeGoals = 3;
         var result = await Collect(new Provider("primary", Row("Home", "Away")), new Provider("secondary", conflict));
-        var row = Assert.Single(result.Results);
-        Assert.Equal(2, row.HomeGoals);
-        Assert.Null(row.HalfTimeHomeGoals);
+        Assert.Empty(result.Results);
+        Assert.Empty(result.SourceResults);
         Assert.Equal(1, result.RejectedRows);
         Assert.DoesNotContain(conflict, result.SourceResults);
     }
 
     [Fact]
-    public async Task ConflictingHalfTimeKeepsFirstExplicitScore()
+    public async Task ConflictingHalfTimeLeavesFixtureUnresolved()
     {
         var result = await Collect(new Provider("primary", Row("Home", "Away", 1, 0)),
             new Provider("secondary", Row("Home", "Away", 0, 0)));
-        Assert.Equal(1, Assert.Single(result.Results).HalfTimeHomeGoals);
+        Assert.Empty(result.Results);
+        Assert.Empty(result.SourceResults);
         Assert.Equal(1, result.RejectedRows);
     }
 
@@ -87,6 +87,56 @@ public sealed class MatchResultCollectorTests
         var result = await Collect(new Provider("invalid", invalid, Row("", "Away")));
         Assert.Empty(result.Results);
         Assert.Equal(2, result.RejectedRows);
+    }
+
+    [Fact]
+    public async Task UnverifiedPeriodCannotBePersistedEvenWhenAnotherSourceHasTheSameScore()
+    {
+        var unverified = Row("Home", "Away");
+        unverified.IsRegulationTimeVerified = false;
+        var messages = new List<string>();
+        var result = await MatchResultCollector.CollectAsync(Date,
+            [new Provider("unknown-period", unverified)], messages.Add);
+        Assert.Empty(result.Results);
+        Assert.Empty(result.SourceResults);
+        Assert.Equal(1, result.RejectedRows);
+        Assert.Contains(messages, x => x.Contains("regulation-time FT not verified"));
+    }
+
+    [Fact]
+    public async Task FootballResultsOnlineBareScoreDoesNotProveRegulationTime()
+    {
+        string content = "var scrollercontent = '<table><tr><td>23/10/2026</td>" +
+            "<td>Home</td><td>2</td><td>v</td><td>1</td><td>Away</td></tr></table>';";
+        using var handler = new ResponseHandler(System.Net.HttpStatusCode.OK, content);
+        using var http = new HttpClient(handler);
+        var messages = new List<string>();
+        var result = await MatchResultCollector.CollectAsync(Date,
+            [new FootballResultsOnlineProvider(http)], messages.Add);
+        Assert.Empty(result.Results);
+        Assert.Empty(result.SourceResults);
+        Assert.Equal(1, result.RejectedRows);
+        Assert.Contains(messages, x => x.Contains("regulation-time FT not verified"));
+    }
+
+    [Theory]
+    [InlineData("{\"ft\":[1,1],\"et\":[2,1],\"p\":[5,4]}", true)]
+    [InlineData("{\"et\":[2,1],\"p\":[5,4]}", false)]
+    [InlineData("[2,1]", false)]
+    public async Task OpenFootballUsesOnlyTheExplicitRegulationTimeField(string score, bool expected)
+    {
+        string content = "{\"matches\":[{\"date\":\"2026-10-23\",\"team1\":\"Home\"," +
+            "\"team2\":\"Away\",\"score\":" + score + "}]}";
+        using var handler = new ResponseHandler(System.Net.HttpStatusCode.OK, content);
+        using var http = new HttpClient(handler);
+        var result = await new OpenFootballResultProvider(http).GetResultsAsync(Date);
+        Assert.Equal(expected ? 7 : 0, result.Count);
+        Assert.All(result, row =>
+        {
+            Assert.Equal(1, row.HomeGoals);
+            Assert.Equal(1, row.AwayGoals);
+            Assert.True(row.IsRegulationTimeVerified);
+        });
     }
 
     [Fact]
@@ -121,10 +171,9 @@ public sealed class MatchResultCollectorTests
              new Provider("last", Row("Last", "Away"))], messages.Add);
         Assert.Equal(1, result.FailedProviders);
         Assert.Equal(2, result.RejectedRows);
-        Assert.Equal(3, result.Results.Count);
-        var primary = Assert.Single(result.Results.Where(x => x.HomeTeam == "Home"));
-        Assert.Equal(2, primary.HomeGoals);
-        Assert.Equal(1, primary.HalfTimeHomeGoals);
+        Assert.Equal(2, result.Results.Count);
+        Assert.DoesNotContain(result.Results, x => x.HomeTeam == "Home");
+        Assert.DoesNotContain(result.SourceResults, x => x.HomeTeam == "Home");
         Assert.Contains(messages, x => x.Contains("fixture failed: fixture unavailable"));
     }
 
@@ -139,6 +188,22 @@ public sealed class MatchResultCollectorTests
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             MatchResultCollector.CollectAsync(Date, new[] { new Provider("primary") }, _ => { }, cancellation.Token));
+    }
+
+    [Fact]
+    public async Task LaterOrLargerScoreCannotResolveAnEarlierConflict()
+    {
+        var larger = Row("Home", "Away");
+        larger.HomeGoals = 5;
+        var messages = new List<string>();
+        var result = await MatchResultCollector.CollectAsync(Date,
+            [new Provider("first", Row("Home", "Away")),
+             new Provider("second", larger),
+             new Provider("latest", larger, Row("Other", "Away"))], messages.Add);
+        Assert.Equal("Other", Assert.Single(result.Results).HomeTeam);
+        Assert.Equal("Other", Assert.Single(result.SourceResults).HomeTeam);
+        Assert.Equal(2, result.RejectedRows);
+        Assert.Contains(messages, x => x.Contains("left unresolved"));
     }
 
     [Fact]
@@ -174,6 +239,7 @@ public sealed class MatchResultCollectorTests
     private static ExternalMatchResult Row(string home, string away, int? htHome = null, int? htAway = null) => new()
     {
         HomeTeam = home, AwayTeam = away, HomeGoals = 2, AwayGoals = 1,
+        IsRegulationTimeVerified = true,
         HalfTimeHomeGoals = htHome, HalfTimeAwayGoals = htAway, Source = "primary"
     };
 

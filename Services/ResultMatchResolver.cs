@@ -13,6 +13,8 @@ public static class ResultMatchResolver
     public static ResultMatchResolution Resolve(DateOnly date, ExternalMatchResult result,
         IReadOnlyCollection<Match> matches, IReadOnlyCollection<PredictionSnapshot> snapshots)
     {
+        if (!result.IsRegulationTimeVerified)
+            return new(null, "regulation-time FT not verified; left unresolved", true);
         string identity = MatchIdentity.BuildExternalMatchId(
             date.ToString("yyyy-MM-dd"), result.HomeTeam, result.AwayTeam);
         var exact = matches.Where(x => x.MatchDate == date && x.ExternalMatchId == identity).ToList();

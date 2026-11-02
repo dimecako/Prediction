@@ -14,6 +14,28 @@ public sealed class PredictionSnapshotWriter
         this.db = db;
     }
 
+    public static Prediction.Entities.Match? ResolveStoredMatch(
+        Prediction.Entities.Match? exact,
+        IReadOnlyCollection<Prediction.Entities.Match> linked,
+        IReadOnlyCollection<PredictionSnapshot> snapshots,
+        IEnumerable<(string Source, string SourceMatchId)> sourceLinks)
+    {
+        var candidates = linked.Concat(exact == null ? [] : new[] { exact })
+            .DistinctBy(x => x.Id).OrderBy(x => x.Id).ToList();
+        if (candidates.Count <= 1)
+            return candidates.SingleOrDefault();
+
+        if (!sourceLinks.Any(link => ResultMatchResolver.AreVerifiedDuplicates(
+                candidates, snapshots, link.Source, link.SourceMatchId)))
+            throw new PredictionIdentityConflictException(
+                exact == null ? PredictionIdentityConflict.StoredSourceIds :
+                    PredictionIdentityConflict.FixtureAndSourceIds,
+                candidates.Select(x => x.Id));
+
+        // Preserve the exact canonical fixture when present; never merge or rename stored rows.
+        return exact ?? candidates[0];
+    }
+
     private static string? CleanValue(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -52,12 +74,15 @@ public sealed class PredictionSnapshotWriter
         int matchesCreated = 0;
         int matchesExisting = 0;
         int snapshotsCreated = 0;
+        var conflicts = new List<PredictionIdentityConflictException>();
+        int captureIndex = 0;
 
         Console.WriteLine(
             $"[DB] Saving {matches.Count} unified matches for {targetDate}");
 
         foreach (var unified in matches)
         {
+            captureIndex++;
             string externalMatchId =
                 MatchIdentity.BuildExternalMatchId(
                     targetDate,
@@ -96,33 +121,34 @@ public sealed class PredictionSnapshotWriter
             {
                 if (localLinks.Count != 1 || linkedMatchIds.Count > 0 ||
                     match != null && !ReferenceEquals(match, localLinks[0]))
-                    throw new InvalidOperationException(
-                        $"Conflicting source-ID links in this capture for {unified.HomeOrig} vs {unified.AwayOrig}.");
+                {
+                    var conflict = new PredictionIdentityConflictException(
+                        PredictionIdentityConflict.CurrentCapture, linkedMatchIds);
+                    conflicts.Add(conflict);
+                    Console.Error.WriteLine($"[DB] Capture row {captureIndex}: {conflict.Diagnostic}; unresolved, skipped.");
+                    continue;
+                }
                 match = localLinks[0];
                 Console.WriteLine("[DB] Reusing unsaved fixture by source ID; canonical names preserved.");
             }
-            if (match == null && linkedMatchIds.Count == 1)
+            if (linkedMatchIds.Count > 0)
             {
-                long linkedId = linkedMatchIds.Single();
-                match = await db.Matches.SingleAsync(x => x.Id == linkedId);
-                Console.WriteLine($"[DB] Reusing #{linkedId} by stored source ID; canonical names preserved.");
-            }
-            else if (match == null && linkedMatchIds.Count > 1)
-            {
-                throw new InvalidOperationException(
-                    $"Conflicting stored source IDs for {unified.HomeOrig} vs {unified.AwayOrig}; no new duplicate created.");
-            }
-            if (match != null && linkedMatchIds.Any(x => x != match.Id))
-            {
+                long exactId = match?.Id ?? 0;
                 var group = await db.Matches.Include(x => x.PredictionSnapshots)
-                    .Where(x => linkedMatchIds.Contains(x.Id) || x.Id == match.Id).ToListAsync();
+                    .Include(x => x.Result)
+                    .Where(x => linkedMatchIds.Contains(x.Id) || x.Id == exactId).ToListAsync();
                 var groupSnapshots = group.SelectMany(x => x.PredictionSnapshots).ToList();
-                bool verified = sourceLinks.Any(link =>
-                    ResultMatchResolver.AreVerifiedDuplicates(group, groupSnapshots,
-                        link.Key, link.Value!.SourceMatchId!));
-                if (!verified)
-                    throw new InvalidOperationException(
-                        $"Conflicting source-ID links for {unified.HomeOrig} vs {unified.AwayOrig}; predictions not saved.");
+                try
+                {
+                    match = ResolveStoredMatch(match, group, groupSnapshots,
+                        sourceLinks.Select(link => (link.Key, link.Value!.SourceMatchId!)));
+                }
+                catch (PredictionIdentityConflictException conflict)
+                {
+                    conflicts.Add(conflict);
+                    Console.Error.WriteLine($"[DB] Capture row {captureIndex}: {conflict.Diagnostic}; unresolved, skipped.");
+                    continue;
+                }
             }
 
             if (match == null)
@@ -229,5 +255,10 @@ public sealed class PredictionSnapshotWriter
             $"existing matches: {matchesExisting}, " +
             $"snapshots: {snapshotsCreated}, " +
             $"EF changes: {changes}");
+        if (conflicts.Count > 0)
+        {
+            Console.Error.WriteLine($"[DB] Rejected {conflicts.Count} identity conflicts; valid fixtures saved, capture FAILED.");
+            throw conflicts[0];
+        }
     }
 }
