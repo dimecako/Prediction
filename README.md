@@ -343,6 +343,14 @@ snapshot persistence. Result collection resolves that ID within the same source
 and match date before falling back to exact normalized names/date. Verified
 shared-ID duplicates use the safeguards described above; other conflicting
 or ambiguous ID/name links are logged and rejected.
+
+`merge-duplicate-matches [--apply]` lists stored fixture rows that share one
+provider ID (for example `forebet:ID` or `soccervista:ID`) on the same match date
+and pass the verified-duplicate checks (no differing IDs per source, consistent
+scores, related team names). Without `--apply` it is a dry run. With `--apply`
+it moves snapshots, and a missing result, to one kept row and deletes the others
+in one transaction. Rows used by more than one saved ticket, cross-date links and
+name-only duplicates are reported as skipped and never merged automatically.
 The nullable source-ID migration is additive. Existing snapshots remain valid
 but have no recoverable source ID unless a new prediction capture provides it;
 old frozen ticket selections, prices and results are not rewritten.

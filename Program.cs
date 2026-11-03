@@ -131,6 +131,13 @@ public partial class Program
         }
 
         if (args.Length > 0 &&
+            args[0].Equals("merge-duplicate-matches", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunMergeDuplicateMatchesAsync(args);
+            return;
+        }
+
+        if (args.Length > 0 &&
             args[0].Equals("weighted-consensus", StringComparison.OrdinalIgnoreCase))
         {
             await RunWeightedConsensusAsync(args);
