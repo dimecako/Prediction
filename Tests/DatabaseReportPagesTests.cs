@@ -59,4 +59,17 @@ public sealed class DatabaseReportPagesTests
         Assert.Contains("page=1", html);
         Assert.DoesNotContain("Next", html);
     }
+
+    [Fact]
+    public void MacedonianLanguageIsAppliedAndRetainedInReportNavigation()
+    {
+        var language = DatabaseReportPages.ParseLanguage("MK");
+        string html = DatabaseReportPages.Predictions(new DateOnly(2026, 11, 1), [], 1, 0, language);
+
+        Assert.Contains("<html lang=\"mk\">", html);
+        Assert.Contains("Почетна", html);
+        Assert.Contains("Нема зачувани прогнози", html);
+        Assert.Contains("name=\"lang\" value=\"mk\"", html);
+        Assert.Contains("href=\"?lang=en\">EN</a><a lang=\"mk\" href=\"?lang=mk\">MK</a>", html);
+    }
 }

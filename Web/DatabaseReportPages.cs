@@ -6,17 +6,144 @@ using Prediction.Services;
 
 namespace Prediction.Web;
 
+public enum UiLanguage { English, Macedonian }
+
 public static class DatabaseReportPages
 {
     public static string Encode(object? value) =>
         WebUtility.HtmlEncode(Convert.ToString(value, CultureInfo.InvariantCulture) ?? "");
 
-    public static string Page(string title, string body, bool showNotice = true) => $$$"""
+    public static UiLanguage ParseLanguage(string? value) =>
+        string.Equals(value, "mk", StringComparison.OrdinalIgnoreCase) ? UiLanguage.Macedonian : UiLanguage.English;
+
+    public static string Text(UiLanguage language, string english) =>
+        language == UiLanguage.English ? english : english switch
+        {
+            "Football analytics" => "Фудбалска аналитика",
+            "SIMULATION ONLY" => "САМО СИМУЛАЦИЈА",
+            "1 unit is staked on the whole ticket; these are not actual payments. Source probabilities are not calibrated ticket probabilities. Pages display stored records only and do not collect or generate tickets." =>
+                "Се вложува 1 единица на целиот тикет; ова не се вистински уплати. Веројатностите од изворите не се калибрирани веројатности за тикет. Страниците прикажуваат само зачувани записи и не собираат или генерираат тикети.",
+            "Overview" => "Почетна",
+            "Predictions" => "Прогнози",
+            "Tickets" => "Тикети",
+            "Performance" => "Успешност",
+            "Leagues" => "Лиги",
+            "Main navigation" => "Главна навигација",
+            "Match intelligence" => "Натпреварувачка аналитика",
+            "Explore analytics" => "Истражи ја статистиката",
+            "Matchday, at a glance" => "Натпреварите на едно место",
+            "Matchday dashboard" => "Табла на натпреварите",
+            "Make every fixture" => "Искористи го секој натпревар",
+            "count." => "паметно.",
+            "Explore stored predictions, compare ticket simulations, and track results in one place." =>
+                "Прегледај ги зачуваните прогнози, спореди симулации на тикети и следи ги резултатите на едно место.",
+            "Choose a match date" => "Избери датум на натпревар",
+            "View predictions" => "Прикажи прогнози",
+            "Collect predictions" => "Собери прогнози",
+            "Ticket simulations" => "Симулации на тикети",
+            "Browse saved ticket variants, frozen picks, and settlement status." =>
+                "Прегледај зачувани варијанти на тикети, фиксни избори и статус на порамнување.",
+            "Performance & ROI" => "Успешност и ROI",
+            "Review simulated returns across dates and ticket strategies." =>
+                "Прегледај симулирани добивки според датум и стратегија на тикети.",
+            "League insights" => "Статистика по лиги",
+            "Compare historical consensus accuracy by league and market." =>
+                "Спореди ја историската точност на консензусот по лига и пазар.",
+            "Daily automation targets 08:00 Europe/Skopje; GitHub scheduling may be delayed." =>
+                "Дневната автоматизација е планирана за 08:00 часот (Europe/Skopje); GitHub може да ја започне со задоцнување.",
+            "Stored predictions and tickets are available without Excel files." =>
+                "Зачуваните прогнози и тикети се достапни без Excel-датотеки.",
+            "View run history and errors →" => "Прегледај ја историјата и грешките →",
+            "Analysis complete" => "Анализата е завршена",
+            "Prediction date:" => "Датум на прогноза:",
+            "← Back to dashboard" => "← Назад на почетната",
+            "Something went wrong" => "Настана грешка",
+            "Analysis could not be completed" => "Анализата не можеше да се заврши",
+            "Analysis error" => "Грешка при анализа",
+            "Prediction results" => "Резултати од прогнозите",
+            "Stored predictions" => "Зачувани прогнози",
+            "Stored tickets" => "Зачувани тикети",
+            "Ticket performance" => "Успешност на тикетите",
+            "League statistics" => "Статистика по лиги",
+            "Date" => "Датум",
+            "Show stored predictions" => "Прикажи зачувани прогнози",
+            "stored fixtures for" => "зачувани натпревари за",
+            "Latest snapshot per source; capture times are UTC." =>
+                "Најнова снимка од секој извор; времињата на зачувување се UTC.",
+            "No stored predictions for this date." => "Нема зачувани прогнози за овој датум.",
+            "Fixture / league" => "Натпревар / лига",
+            "Source" => "Извор",
+            "Score" => "Резултат",
+            "Goals" => "Голови",
+            "Source Prob." => "Веројатност од извор",
+            "Captured UTC" => "Зачувано (UTC)",
+            "Final / half-time" => "Крај / полувреме",
+            "No stored snapshots." => "Нема зачувани снимки.",
+            "Ticket" => "Тикет",
+            "Mode" => "Режим",
+            "Picks" => "Избори",
+            "Status" => "Статус",
+            "Odds" => "Коефициент",
+            "Stake" => "Влог",
+            "Profit" => "Добивка",
+            "Created UTC" => "Креирано (UTC)",
+            "Pending" => "Во тек",
+            "Won" => "Добитен",
+            "Lost" => "Губитен",
+            "Won count" => "Добитни",
+            "Lost count" => "Губитни",
+            "Frozen selections and current results" => "Фиксни избори и тековни резултати",
+            "Market / pick" => "Пазар / избор",
+            "FT / HT" => "Крај / полувреме",
+            "Details" => "Детали",
+            "Evidence / pending reason" => "Извор / причина за чекање",
+            "Historical accuracy:" => "Историска точност:",
+            "Wilson lower bound:" => "Долна Wilson граница:",
+            "sample:" => "примерок:",
+            "Kickoff UTC:" => "Почеток (UTC):",
+            "From" => "Од",
+            "To" => "До",
+            "Show stored records" => "Прикажи зачувани записи",
+            "Page" => "Страница",
+            "records" => "записи",
+            "← Previous" => "← Претходна",
+            "Next →" => "Следна →",
+            "All modes" => "Сите режими",
+            "No saved tickets in this range." => "Нема зачувани тикети во овој период.",
+            "Current stored results applied to frozen selections. Pending stakes are excluded from settled ROI. Overlapping tickets are not independent evidence." =>
+                "Тековните зачувани резултати се применети на фиксните избори. Влоговите на тикети што се во тек не се вклучени во пресметаниот ROI. Тикетите што се преклопуваат не се независен доказ.",
+            "Settled stake" => "Порамнет влог",
+            "Pending stake" => "Влог во тек",
+            "ROI" => "ROI",
+            "ALL" => "СИТЕ",
+            "Equal-vote consensus; only snapshots BEFORE 00:00 UTC on match date. Missing league labels remain unknown. Accuracy is not ROI. Samples under 30 are not reliable." =>
+                "Консензус со еднаков глас; само снимки ПРЕД 00:00 UTC на денот на натпреварот. Непознатите лиги остануваат означени како непознати. Точноста не е ROI. Примероци под 30 не се сигурни.",
+            "League" => "Лига",
+            "Market" => "Пазар",
+            "Correct" => "Точни",
+            "Graded" => "Оценети",
+            "Accuracy" => "Точност",
+            "Wilson lower bound" => "Долна Wilson граница",
+            "Sample" => "Примерок",
+            "Small sample" => "Мал примерок",
+            "30+ observations" => "30+ набљудувања",
+            "No graded pre-date consensus picks in this range." => "Нема оценети консензус-избори пред датумот во овој период.",
+            "missing final result (unfinished, unavailable or unmatched; not inferred)" =>
+                "недостасува конечен резултат (натпреварот не е завршен, резултатот не е достапен или натпреварот не е усогласен; не е претпоставен)",
+            "missing required half-time score" => "недостасува потребниот резултат на полувреме",
+            "n/a" => "н/д",
+            _ => english
+        };
+
+    public static string Page(string title, string body, bool showNotice = true, UiLanguage language = UiLanguage.English)
+    {
+        string langCode = LanguageCode(language);
+        return $$$"""
         <!doctype html>
-        <html lang="en"><head><meta charset="utf-8">
+        <html lang="{{{langCode}}}"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
         <meta name="theme-color" content="#080d18">
-        <title>{{{Encode(title)}}} - Football AI</title>
+        <title>{{{Encode(Text(language, title))}}} - Football AI</title>
         <style>
         :root{color-scheme:dark;--bg:#080d18;--surface:#101827;--surface-raised:#151f30;--line:#243248;--text:#edf3fb;--muted:#93a2b8;--accent:#b9f36a;--blue:#8eb7ff;--red:#ff8f91;--amber:#f7ce76;--radius:18px}
         *{box-sizing:border-box}
@@ -31,6 +158,8 @@ public static class DatabaseReportPages
         nav{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
         nav a{padding:8px 12px;border:1px solid transparent;border-radius:999px;color:#b1bfd1;font-size:13px;font-weight:600}
         nav a:hover{border-color:var(--line);background:#ffffff08;color:var(--text)}
+        .language-switch{display:inline-flex;align-items:center;gap:2px;margin-left:8px;padding:3px;border:1px solid var(--line);border-radius:999px}
+        .language-switch a{padding:5px 8px;font-size:11px}
         h1,h2,h3,p{margin-top:0}
         h1{font-size:clamp(28px,4vw,42px);line-height:1.12;letter-spacing:-.045em;margin-bottom:10px}
         h2{font-size:21px;letter-spacing:-.025em}
@@ -85,28 +214,30 @@ public static class DatabaseReportPages
         @media(max-width:760px){main{padding-top:18px}.topbar{align-items:flex-start;flex-direction:column;margin-bottom:25px;padding-bottom:17px}nav{justify-content:flex-start;margin-left:-7px}.grid{grid-template-columns:1fr}.feature{min-height:130px}.hero:after{right:-70px;top:45%}form{align-items:stretch;flex-direction:column}form label,form input,form select,form button{width:100%}.notice{flex-direction:column;gap:5px}}
         @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
         </style></head><body><main>
-        <header class="topbar"><a class="brand" href="/"><span class="brand-mark">⚽</span><span>FOOTBALL AI<small>Match intelligence</small></span></a>
-        <nav aria-label="Main navigation"><a href="/">Overview</a><a href="/predictions">Predictions</a>
-        <a href="/tickets">Tickets</a><a href="/performance">Performance</a>
-        <a href="/leagues">Leagues</a></nav></header>
-        {{{(showNotice ? "<p class=\"notice\"><strong>SIMULATION ONLY</strong><span>1 unit is staked on the whole ticket; these are not actual payments. Source probabilities are not calibrated ticket probabilities. Pages display stored records only and do not collect or generate tickets.</span></p>" : "")}}}
-        <section class="page-heading"><div class="eyebrow">Football analytics</div><h1>{{{Encode(title)}}}</h1></section>
+        <header class="topbar"><a class="brand" href="/?lang={{{langCode}}}"><span class="brand-mark">⚽</span><span>FOOTBALL AI<small>{{{Encode(Text(language, "Match intelligence"))}}}</small></span></a>
+        <nav aria-label="{{{Encode(Text(language, "Main navigation"))}}}"><a href="/?lang={{{langCode}}}">{{{Encode(Text(language, "Overview"))}}}</a><a href="/predictions?lang={{{langCode}}}">{{{Encode(Text(language, "Predictions"))}}}</a>
+        <a href="/tickets?lang={{{langCode}}}">{{{Encode(Text(language, "Tickets"))}}}</a><a href="/performance?lang={{{langCode}}}">{{{Encode(Text(language, "Performance"))}}}</a>
+        <a href="/leagues?lang={{{langCode}}}">{{{Encode(Text(language, "Leagues"))}}}</a>
+        <span class="language-switch"><a lang="en" href="?lang=en">EN</a><a lang="mk" href="?lang=mk">MK</a></span></nav></header>
+        {{{(showNotice ? $"<p class=\"notice\"><strong>{Encode(Text(language, "SIMULATION ONLY"))}</strong><span>{Encode(Text(language, "1 unit is staked on the whole ticket; these are not actual payments. Source probabilities are not calibrated ticket probabilities. Pages display stored records only and do not collect or generate tickets."))}</span></p>" : "")}}}
+        <section class="page-heading"><div class="eyebrow">{{{Encode(Text(language, "Football analytics"))}}}</div><h1>{{{Encode(Text(language, title))}}}</h1></section>
         {{{body}}}
         </main></body></html>
         """;
+    }
 
-    public static string Predictions(DateOnly date, IReadOnlyList<Match> matches, int page, int total)
+    public static string Predictions(DateOnly date, IReadOnlyList<Match> matches, int page, int total, UiLanguage language = UiLanguage.English)
     {
         var body = new StringBuilder($"""
-            <form method="get"><label>Date <input type="date" name="date" value="{date:yyyy-MM-dd}" required></label>
-            <button>Show stored predictions</button></form>
-            <p>{total} stored fixtures for {date:yyyy-MM-dd}. Latest snapshot per source; capture times are UTC.</p>
+            <form method="get"><input type="hidden" name="lang" value="{LanguageCode(language)}"><label>{Text(language, "Date")} <input type="date" name="date" value="{date:yyyy-MM-dd}" required></label>
+            <button>{Text(language, "Show stored predictions")}</button></form>
+            <p>{total} {Text(language, "stored fixtures for")} {date:yyyy-MM-dd}. {Text(language, "Latest snapshot per source; capture times are UTC.")}</p>
             """);
         if (matches.Count == 0)
-            body.Append("<p>No stored predictions for this date.</p>");
+            body.Append($"<p>{Text(language, "No stored predictions for this date.")}</p>");
         else
         {
-            body.Append("<div class='scroll'><table><tr><th>Fixture / league</th><th>Source</th><th>1X2</th><th>Score</th><th>BTTS</th><th>Goals</th><th>Source Prob.</th><th>Captured UTC</th><th>Final / half-time</th></tr>");
+            body.Append($"<div class='scroll'><table><tr><th>{Text(language, "Fixture / league")}</th><th>{Text(language, "Source")}</th><th>1X2</th><th>{Text(language, "Score")}</th><th>BTTS</th><th>{Text(language, "Goals")}</th><th>{Text(language, "Source Prob.")}</th><th>{Text(language, "Captured UTC")}</th><th>{Text(language, "Final / half-time")}</th></tr>");
             foreach (var match in matches)
             {
                 foreach (var snapshot in CalibrationAnalyzer.LatestPerSource(match).OrderBy(x => x.Source))
@@ -121,45 +252,45 @@ public static class DatabaseReportPages
                     Cell(body, snapshot.Goals);
                     Cell(body, snapshot.Confidence.HasValue ? snapshot.Confidence.Value.ToString("P1", CultureInfo.InvariantCulture) : "n/a");
                     Cell(body, snapshot.CapturedAtUtc.ToString("u"));
-                    Cell(body, Score(result));
+                    Cell(body, Score(result, language));
                     body.Append("</tr>");
                 }
                 if (match.PredictionSnapshots.Count == 0)
                 {
                     body.Append("<tr>");
                     Cell(body, $"{match.HomeTeam} - {match.AwayTeam}");
-                    body.Append("<td colspan='8'>No stored snapshots.</td></tr>");
+                    body.Append($"<td colspan='8'>{Text(language, "No stored snapshots.")}</td></tr>");
                 }
             }
             body.Append("</table></div>");
         }
-        body.Append(Pagination($"/predictions?date={date:yyyy-MM-dd}", page, total, 100));
-        return Page("Stored predictions", body.ToString());
+        body.Append(Pagination($"/predictions?date={date:yyyy-MM-dd}", page, total, 100, language));
+        return Page("Stored predictions", body.ToString(), language: language);
     }
 
-    public static string TicketTable(IEnumerable<TicketSettlement> settlements)
+    public static string TicketTable(IEnumerable<TicketSettlement> settlements, UiLanguage language = UiLanguage.English)
     {
-        var body = new StringBuilder("<div class='scroll'><table><tr><th>Ticket</th><th>Date</th><th>Mode</th><th>Picks</th><th>Status</th><th>Odds</th><th>Stake</th><th>Profit</th><th>Created UTC</th></tr>");
+        var body = new StringBuilder($"<div class='scroll'><table><tr><th>{Text(language, "Ticket")}</th><th>{Text(language, "Date")}</th><th>{Text(language, "Mode")}</th><th>{Text(language, "Picks")}</th><th>{Text(language, "Status")}</th><th>{Text(language, "Odds")}</th><th>{Text(language, "Stake")}</th><th>{Text(language, "Profit")}</th><th>{Text(language, "Created UTC")}</th></tr>");
         foreach (var row in settlements)
         {
-            body.Append($"<tr><td><a href='/tickets/{row.Ticket.Id}'>#{row.Ticket.Id}</a></td>");
+            body.Append($"<tr><td><a href='/tickets/{row.Ticket.Id}?lang={LanguageCode(language)}'>#{row.Ticket.Id}</a></td>");
             Cell(body, row.Ticket.MatchDate);
             Cell(body, row.Ticket.Mode);
             Cell(body, row.Selections.Count);
-            body.Append($"<td class='{row.Status}'>{row.Status}</td>");
-            Cell(body, Money(row.CombinedOdds));
-            Cell(body, Money(row.Ticket.Stake));
-            Cell(body, Money(row.Profit));
+            body.Append($"<td class='{row.Status}'>{Text(language, row.Status.ToString())}</td>");
+            Cell(body, Money(row.CombinedOdds, language));
+            Cell(body, Money(row.Ticket.Stake, language));
+            Cell(body, Money(row.Profit, language));
             Cell(body, row.Ticket.CreatedAtUtc.ToString("u"));
             body.Append("</tr>");
         }
         return body.Append("</table></div>").ToString();
     }
 
-    public static string Ticket(TicketSettlement settlement, IReadOnlyDictionary<long, MatchResult> results)
+    public static string Ticket(TicketSettlement settlement, IReadOnlyDictionary<long, MatchResult> results, UiLanguage language = UiLanguage.English)
     {
-        var body = new StringBuilder(TicketTable([settlement]));
-        body.Append("<h2>Frozen selections and current results</h2><div class='scroll'><table><tr><th>#</th><th>Fixture / league</th><th>Market / pick</th><th>Odds</th><th>Status</th><th>FT / HT</th><th>Details</th></tr>");
+        var body = new StringBuilder(TicketTable([settlement], language));
+        body.Append($"<h2>{Text(language, "Frozen selections and current results")}</h2><div class='scroll'><table><tr><th>#</th><th>{Text(language, "Fixture / league")}</th><th>{Text(language, "Market / pick")}</th><th>{Text(language, "Odds")}</th><th>{Text(language, "Status")}</th><th>{Text(language, "FT / HT")}</th><th>{Text(language, "Details")}</th></tr>");
         foreach (var leg in settlement.Selections.OrderBy(x => x.Selection.Position))
         {
             var selection = leg.Selection;
@@ -169,38 +300,42 @@ public static class DatabaseReportPages
             Cell(body, selection.Position);
             Cell(body, $"{selection.Fixture} / {TicketPerformanceAnalyzer.LeagueName(selection.League)}");
             Cell(body, $"{selection.Market} / {selection.Pick}");
-            Cell(body, Money(selection.Odds));
+            Cell(body, Money(selection.Odds, language));
             body.Append($"<td class='{status}'>{status}</td>");
-            Cell(body, Score(result));
-            body.Append("<td><details><summary>Evidence / pending reason</summary>");
+            Cell(body, Score(result, language));
+            body.Append($"<td><details><summary>{Text(language, "Evidence / pending reason")}</summary>");
             body.Append(Encode(selection.Evidence));
-            body.Append("<p>").Append(Encode(TicketPerformanceAnalyzer.PendingReason(leg, result))).Append("</p>");
+            body.Append("<p>").Append(Encode(Text(language, TicketPerformanceAnalyzer.PendingReason(leg, result) ?? ""))).Append("</p>");
             if (!TicketLedger.IsDailyMode(settlement.Ticket.Mode))
-                body.Append($"<p>Historical accuracy: {Encode(selection.Accuracy.ToString("P1"))}; Wilson lower bound: {Encode(selection.Safe.ToString("P1"))}; sample: {selection.Sample}</p>");
-            body.Append($"<p>Kickoff UTC: {Encode(selection.KickoffUtc.ToString("u"))}</p></details></td></tr>");
+                body.Append($"<p>{Text(language, "Historical accuracy:")} {Encode(selection.Accuracy.ToString("P1"))}; {Text(language, "Wilson lower bound:")} {Encode(selection.Safe.ToString("P1"))}; {Text(language, "sample:")} {selection.Sample}</p>");
+            body.Append($"<p>{Text(language, "Kickoff UTC:")} {Encode(selection.KickoffUtc.ToString("u"))}</p></details></td></tr>");
         }
-        return Page($"Ticket #{settlement.Ticket.Id}", body.Append("</table></div>").ToString());
+        return Page($"{Text(language, "Ticket")} #{settlement.Ticket.Id}", body.Append("</table></div>").ToString(), language: language);
     }
 
-    public static string RangeForm(DateOnly from, DateOnly to) => $"""
+    public static string RangeForm(DateOnly from, DateOnly to, UiLanguage language = UiLanguage.English) => $"""
         <form method="get">
-        <label>From <input type="date" name="from" value="{from:yyyy-MM-dd}" required></label>
-        <label>To <input type="date" name="to" value="{to:yyyy-MM-dd}" required></label>
-        <button>Show stored records</button></form>
+        <input type="hidden" name="lang" value="{LanguageCode(language)}">
+        <label>{Text(language, "From")} <input type="date" name="from" value="{from:yyyy-MM-dd}" required></label>
+        <label>{Text(language, "To")} <input type="date" name="to" value="{to:yyyy-MM-dd}" required></label>
+        <button>{Text(language, "Show stored records")}</button></form>
         """;
 
-    public static string Pagination(string url, int page, int total, int size) =>
-        $"<div class='pagination'><span class='muted'>Page {page} · {total} records</span> " +
-        (page > 1 ? $"<a href='{Encode(url)}&amp;page={page - 1}'>← Previous</a>" : "") +
-        ((long)page * size < total ? $"<a href='{Encode(url)}&amp;page={page + 1}'>Next →</a>" : "") + "</div>";
+    public static string Pagination(string url, int page, int total, int size, UiLanguage language = UiLanguage.English) =>
+        $"<div class='pagination'><span class='muted'>{Text(language, "Page")} {page} · {total} {Text(language, "records")}</span> " +
+        (page > 1 ? $"<a href='{Encode(url)}&amp;page={page - 1}&amp;lang={LanguageCode(language)}'>{Text(language, "← Previous")}</a>" : "") +
+        ((long)page * size < total ? $"<a href='{Encode(url)}&amp;page={page + 1}&amp;lang={LanguageCode(language)}'>{Text(language, "Next →")}</a>" : "") + "</div>";
 
     public static void Cell(StringBuilder body, object? value) =>
         body.Append("<td>").Append(Encode(value ?? "n/a")).Append("</td>");
 
-    public static string Money(decimal? value) => value?.ToString("F2", CultureInfo.InvariantCulture) ?? "n/a";
+    public static string Money(decimal? value, UiLanguage language = UiLanguage.English) =>
+        value?.ToString("F2", CultureInfo.InvariantCulture) ?? Text(language, "n/a");
 
-    private static string Score(MatchResult? result) => result == null ? "Pending" :
+    public static string LanguageCode(UiLanguage language) => language == UiLanguage.Macedonian ? "mk" : "en";
+
+    private static string Score(MatchResult? result, UiLanguage language) => result == null ? Text(language, "Pending") :
         $"FT {result.HomeGoals}-{result.AwayGoals} / HT " +
         (result.HalfTimeHomeGoals.HasValue && result.HalfTimeAwayGoals.HasValue
-            ? $"{result.HalfTimeHomeGoals}-{result.HalfTimeAwayGoals}" : "n/a");
+            ? $"{result.HalfTimeHomeGoals}-{result.HalfTimeAwayGoals}" : Text(language, "n/a"));
 }

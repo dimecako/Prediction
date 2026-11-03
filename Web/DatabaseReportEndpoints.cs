@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Prediction.Services;
+using Prediction.Web;
 
 namespace Prediction.Web;
 
@@ -13,7 +14,8 @@ public static class DatabaseReportEndpoints
         {
             if (!TryDate(context, "date", Today(), out var date) || !TryPage(context, out int page))
                 return InvalidQuery(context);
-            return TypedResults.Content(await reports.PredictionsAsync(date, page, ct), "text/html; charset=utf-8");
+            var language = DatabaseReportPages.ParseLanguage(context.Request.Query["lang"]);
+            return TypedResults.Content(await reports.PredictionsAsync(date, page, language, ct), "text/html; charset=utf-8");
         }).WithSummary("Read stored predictions by date");
 
         app.MapGet("/tickets", async Task<Results<ContentHttpResult, ProblemHttpResult>> (
@@ -21,13 +23,15 @@ public static class DatabaseReportEndpoints
         {
             if (!TryRange(context, out var from, out var to) || !TryPage(context, out int page))
                 return InvalidQuery(context);
-            return TypedResults.Content(await reports.TicketsAsync(from, to, context.Request.Query["mode"], page, ct), "text/html; charset=utf-8");
+            var language = DatabaseReportPages.ParseLanguage(context.Request.Query["lang"]);
+            return TypedResults.Content(await reports.TicketsAsync(from, to, context.Request.Query["mode"], page, language, ct), "text/html; charset=utf-8");
         }).WithSummary("Browse stored ticket simulations");
 
         app.MapGet("/tickets/{id:long}", async Task<Results<ContentHttpResult, NotFound>> (
-            long id, IDatabaseReportService reports, CancellationToken ct) =>
+            long id, HttpContext context, IDatabaseReportService reports, CancellationToken ct) =>
         {
-            string? html = await reports.TicketAsync(id, ct);
+            var language = DatabaseReportPages.ParseLanguage(context.Request.Query["lang"]);
+            string? html = await reports.TicketAsync(id, language, ct);
             return html == null ? TypedResults.NotFound() : TypedResults.Content(html, "text/html; charset=utf-8");
         }).WithSummary("Read frozen selections, results and pending reasons for a ticket");
 
@@ -36,7 +40,8 @@ public static class DatabaseReportEndpoints
         {
             if (!TryRange(context, out var from, out var to))
                 return InvalidQuery(context);
-            return TypedResults.Content(await reports.PerformanceAsync(from, to, ct), "text/html; charset=utf-8");
+            var language = DatabaseReportPages.ParseLanguage(context.Request.Query["lang"]);
+            return TypedResults.Content(await reports.PerformanceAsync(from, to, language, ct), "text/html; charset=utf-8");
         }).WithSummary("Read simulated ticket profit and ROI");
 
         app.MapGet("/leagues", async Task<Results<ContentHttpResult, ProblemHttpResult>> (
@@ -44,7 +49,8 @@ public static class DatabaseReportEndpoints
         {
             if (!TryRange(context, out var from, out var to))
                 return InvalidQuery(context);
-            return TypedResults.Content(await reports.LeaguesAsync(from, to, ct), "text/html; charset=utf-8");
+            var language = DatabaseReportPages.ParseLanguage(context.Request.Query["lang"]);
+            return TypedResults.Content(await reports.LeaguesAsync(from, to, language, ct), "text/html; charset=utf-8");
         }).WithSummary("Read strict historical consensus accuracy by league and market");
     }
 

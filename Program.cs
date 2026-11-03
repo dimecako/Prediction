@@ -839,7 +839,8 @@ public partial class Program
             context.Response.ContentType =
                 "text/html; charset=utf-8";
 
-            await context.Response.WriteAsync(GetHomePage());
+            var language = Prediction.Web.DatabaseReportPages.ParseLanguage(context.Request.Query["lang"]);
+            await context.Response.WriteAsync(GetHomePage(language));
         });
 
         // ------------------------------------------------
@@ -848,6 +849,7 @@ public partial class Program
 
         app.MapGet("/analyse", async context =>
         {
+            var language = Prediction.Web.DatabaseReportPages.ParseLanguage(context.Request.Query["lang"]);
             string targetDate =
                 context.Request.Query["date"].ToString();
 
@@ -986,7 +988,8 @@ public partial class Program
                 await context.Response.WriteAsync(
                     GetResultPage(
                         targetDate,
-                        result));
+                        result,
+                        language));
             }
             catch (Exception ex)
             {
@@ -1000,7 +1003,7 @@ public partial class Program
                     "text/html; charset=utf-8";
 
                 await context.Response.WriteAsync(
-                    GetErrorPage(ex.Message));
+                    GetErrorPage(ex.Message, language));
             }
             finally
             {
