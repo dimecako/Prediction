@@ -1,250 +1,73 @@
-using System.Net;
+using Prediction.Web;
 
 public partial class Program
 {
     private static string GetHomePage()
     {
-        string today =
-            Prediction.Web.DatabaseReportEndpoints.Today().ToString("yyyy-MM-dd");
+        string today = DatabaseReportEndpoints.Today().ToString("yyyy-MM-dd");
+        string body = $$"""
+            <section class="hero">
+              <div class="hero-content">
+                <div class="eyebrow">Matchday, at a glance</div>
+                <h2>Make every fixture <span>count.</span></h2>
+                <p>Explore stored predictions, compare ticket simulations, and track results in one place.</p>
+                <form class="date-form" method="get">
+                  <label for="analysisDate">Choose a match date
+                    <input id="analysisDate" name="date" type="date" value="{{today}}" required>
+                  </label>
+                  <button type="submit" formaction="/predictions">View predictions <span aria-hidden="true">→</span></button>
+                  <button class="button-secondary" type="submit" formaction="/analyse">Collect predictions</button>
+                </form>
+              </div>
+            </section>
+            <section class="grid" aria-label="Explore analytics">
+              <a class="card feature" href="/tickets">
+                <span class="icon" aria-hidden="true">▤</span>
+                <h2>Ticket simulations</h2>
+                <p>Browse saved ticket variants, frozen picks, and settlement status.</p>
+              </a>
+              <a class="card feature" href="/performance">
+                <span class="icon" aria-hidden="true">↗</span>
+                <h2>Performance &amp; ROI</h2>
+                <p>Review simulated returns across dates and ticket strategies.</p>
+              </a>
+              <a class="card feature" href="/leagues">
+                <span class="icon" aria-hidden="true">◎</span>
+                <h2>League insights</h2>
+                <p>Compare historical consensus accuracy by league and market.</p>
+              </a>
+            </section>
+            <p class="footer-note">Daily automation targets 08:00 Europe/Skopje; GitHub scheduling may be delayed.
+            Stored predictions and tickets are available without Excel files.
+            <a href="https://github.com/dimecako/Prediction/actions">View run history and errors →</a></p>
+            """;
 
-        return $@"
-            <!DOCTYPE html>
-            <html>
-            <head>
-
-            <meta charset='utf-8'>
-            <meta name='viewport'
-                content='width=device-width, initial-scale=1'>
-
-            <title>Football AI</title>
-
-            <style>
-
-            body {{
-                margin: 0;
-                font-family: Arial, sans-serif;
-                background: #0f172a;
-                color: white;
-            }}
-
-            .container {{
-                max-width: 700px;
-                margin: 70px auto;
-                padding: 20px;
-            }}
-
-            .card {{
-                background: #1e293b;
-                padding: 35px;
-                border-radius: 16px;
-            }}
-
-            h1 {{
-                margin-top: 0;
-                color: #38bdf8;
-            }}
-
-            input {{
-                width: 100%;
-                box-sizing: border-box;
-                padding: 14px;
-                margin-top: 10px;
-                margin-bottom: 20px;
-                border-radius: 8px;
-                border: 1px solid #475569;
-                background: #0f172a;
-                color: white;
-                font-size: 18px;
-            }}
-
-            button {{
-                width: 100%;
-                padding: 15px;
-                border: 0;
-                border-radius: 8px;
-                background: #0284c7;
-                color: white;
-                font-size: 18px;
-                font-weight: bold;
-                cursor: pointer;
-            }}
-
-            button:hover {{
-                background: #0369a1;
-            }}
-
-            .small {{
-                color: #94a3b8;
-                margin-top: 20px;
-            }}
-
-            </style>
-
-            </head>
-
-            <body>
-
-            <div class='container'>
-
-            <div class='card'>
-
-            <h1>⚽ Football AI</h1>
-
-            <p>
-            Select prediction date:
-            </p>
-
-            <input
-                id='analysisDate'
-                type='date'
-                value='{today}'
-                required>
-
-            <button
-                type='button'
-                onclick=""window.location.href='/predictions?date=' + document.getElementById('analysisDate').value"">
-                STORED PREDICTIONS
-            </button>
-            <p><a style='color:#38bdf8' href='/tickets'>ALL TICKET VARIANTS</a> |
-            <a style='color:#38bdf8' href='/performance'>RESULTS / ROI</a> |
-            <a style='color:#38bdf8' href='/leagues'>LEAGUE STATISTICS</a></p>
-            <p class='small'>Daily automation: 08:00 Europe/Skopje (GitHub scheduling may be delayed).
-            No Excel files are needed to view saved predictions and tickets.
-            <a style='color:#38bdf8' href='https://github.com/dimecako/Prediction/actions'>Run history / errors</a></p>
-            <button
-                type='button'
-                onclick=""window.location.href='/analyse?date=' + document.getElementById('analysisDate').value"">
-                COLLECT NEW PREDICTIONS (MANUAL)
-            </button>
-
-            <div class='small'>
-            Forebet · Statarea · PredictZ · WinDrawWin
-            </div>
-
-            </div>
-
-            </div>
-
-            </body>
-            </html>";
+        return DatabaseReportPages.Page("Matchday dashboard", body, showNotice: false);
     }
 
-
-    private static string GetResultPage(
-        string date,
-        string result)
+    private static string GetResultPage(string date, string result)
     {
-        string encoded =
-            WebUtility.HtmlEncode(result);
-
-        return $@"
-            <!DOCTYPE html>
-
-            <html>
-
-            <head>
-
-            <meta charset='utf-8'>
-
-            <meta name='viewport'
-                content='width=device-width, initial-scale=1'>
-
-            <title>Football AI - {date}</title>
-
-            <style>
-
-            body {{
-                margin: 0;
-                background: #0f172a;
-                color: #e2e8f0;
-                font-family: Arial, sans-serif;
-            }}
-
-            .container {{
-                max-width: 1400px;
-                margin: auto;
-                padding: 25px;
-            }}
-
-            h1 {{
-                color: #38bdf8;
-            }}
-
-            a {{
-                color: #38bdf8;
-                text-decoration: none;
-            }}
-
-            pre {{
-                background: #020617;
-                padding: 20px;
-                border-radius: 12px;
-                overflow-x: auto;
-                font-size: 14px;
-                line-height: 1.5;
-            }}
-
-            </style>
-
-            </head>
-
-            <body>
-
-            <div class='container'>
-
-            <h1>⚽ Football AI</h1>
-
-            <h2>
-            Prediction date: {date}
-            </h2>
-
-            <p>
-            /
-            ← New analysis
-            </a>
-            </p>
-
-            <pre>{encoded}</pre>
-
-            </div>
-
-            </body>
-
-            </html>";
+        string body = $$"""
+            <section class="panel result-panel">
+              <div class="eyebrow">Analysis complete</div>
+              <h2>Prediction date: {{DatabaseReportPages.Encode(date)}}</h2>
+              <p><a class="button button-secondary" href="/">← Back to dashboard</a></p>
+              <pre>{{DatabaseReportPages.Encode(result)}}</pre>
+            </section>
+            """;
+        return DatabaseReportPages.Page("Prediction results", body, showNotice: false);
     }
-
 
     private static string GetErrorPage(string error)
     {
-        return $@"
-            <!DOCTYPE html>
-
-            <html>
-
-            <head>
-
-            <meta charset='utf-8'>
-
-            <title>Football AI Error</title>
-
-            </head>
-
-            <body>
-
-            <h1>Football AI</h1>
-
-            <h2>Analysis failed</h2>
-
-            <pre>
-            {WebUtility.HtmlEncode(error)}
-            </pre>
-
-            /
-            Back
-            </a>
-
-            </body>
-
-            </html>";
+        string body = $$"""
+            <section class="panel error-panel">
+              <div class="eyebrow">Something went wrong</div>
+              <h2>Analysis could not be completed</h2>
+              <pre>{{DatabaseReportPages.Encode(error)}}</pre>
+              <a class="button button-secondary" href="/">← Back to dashboard</a>
+            </section>
+            """;
+        return DatabaseReportPages.Page("Analysis error", body, showNotice: false);
     }
 }
