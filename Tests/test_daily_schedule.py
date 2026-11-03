@@ -142,6 +142,36 @@ class DailyScheduleTests(unittest.TestCase):
             "2026-11-02", "owner/repo", "test-token", "https://api.github.com", request))
         self.assertEqual(3, len(calls))
 
+    def test_latest_checkpoint_uses_only_completed_runs_of_daily_workflow(self):
+        artifact = self.artifact(name="daily-checkpoint-2026-11-02-15")
+
+        def request(url, token):
+            if "/actions/artifacts?" in url:
+                self.assertEqual(["daily-checkpoint-2026-11-02-15"],
+                                 parse_qs(urlparse(url).query)["name"])
+                return {"artifacts": [artifact]}
+            return {"status": "completed", "path": ".github/workflows/daily-run.yml"}
+
+        self.assertEqual(("123", "daily-checkpoint-2026-11-02-15"),
+                         module.latest_checkpoint(
+                             "2026-11-02", 15, "owner/repo", "test-token",
+                             "https://api.github.com", request))
+
+    def test_incomplete_or_other_workflow_checkpoint_is_not_restored(self):
+        artifact = self.artifact(name="daily-checkpoint-2026-11-02-15")
+
+        for status, path in [("in_progress", ".github/workflows/daily-run.yml"),
+                             ("completed", ".github/workflows/other.yml")]:
+            with self.subTest(status=status, path=path):
+                def request(url, token):
+                    if "/actions/artifacts?" in url:
+                        return {"artifacts": [artifact]}
+                    return {"status": status, "path": path}
+
+                self.assertEqual(("", ""), module.latest_checkpoint(
+                    "2026-11-02", 15, "owner/repo", "test-token",
+                    "https://api.github.com", request))
+
     def test_github_failure_does_not_silently_allow_another_run(self):
         def request(url, token):
             raise HTTPError(url, 403, "Forbidden", {}, None)
@@ -161,9 +191,12 @@ class DailyScheduleTests(unittest.TestCase):
                 if already_succeeded:
                     responses.append({"status": "completed", "conclusion": "success",
                                       "path": ".github/workflows/daily-run.yml"})
+                else:
+                    responses.append({"artifacts": []})
                 environment = {
                     "EVENT_NAME": "workflow_dispatch", "EVENT_SCHEDULE": "",
                     "TARGET_DATE": "2026-10-31", "GITHUB_REPOSITORY": "owner/repo",
+                    "TICKET_COUNT": "15",
                     "GITHUB_TOKEN": "test-token", "GITHUB_API_URL": "https://api.github.com",
                     "GITHUB_OUTPUT": str(output),
                 }
@@ -174,7 +207,10 @@ class DailyScheduleTests(unittest.TestCase):
                     runpy.run_path(str(Path(__file__).parents[1] / "Deployment" / "daily_schedule.py"),
                                    run_name="__main__")
                 decision = "false" if already_succeeded else "true"
-                self.assertEqual(f"run={decision}\ntarget_date=2026-10-31\n", output.read_text())
+                self.assertEqual(
+                    f"run={decision}\ntarget_date=2026-10-31\n"
+                    "checkpoint_run_id=\ncheckpoint_artifact_name=\n",
+                    output.read_text())
 
 
 if __name__ == "__main__":

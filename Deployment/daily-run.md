@@ -32,6 +32,18 @@ GitHub API errors fail the guard explicitly rather than risking duplicate work.
 Do not delete the marker if you want to retain the once-per-date guard.
 Older runs made before this marker mechanism was deployed are not backfilled.
 
+Each `daily-run` step checkpoints its success to a local manifest, which the
+workflow uploads as `daily-checkpoint-yyyy-MM-dd-count` even when the daily job
+fails. The next retry downloads the newest completed checkpoint artifact for
+that target date and ticket count. Steps already successful for the same
+deployed `prediction-api` revision are skipped; failed steps are retried.
+Dependent work is also retried when its prerequisite failed (for example,
+ticket reports after result collection, and ticket generation after prediction
+collection). A changed source revision or ticket count invalidates the saved
+steps. Checkpoints are only available when the workflow reaches its artifact
+upload step; a runner cancellation or timeout before upload may require a full
+retry. Checkpoint artifacts expire after 90 days.
+
 After a dropped run or three failed retries, use **Actions → Daily football
 automation → Run workflow**, optionally specifying a target date and count.
 The target date is frozen by the guard and reused by execution and the marker,

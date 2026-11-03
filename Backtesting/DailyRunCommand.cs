@@ -46,12 +46,34 @@ public partial class Program
         Console.WriteLine($"[DAILY-RUN] Collecting yesterday ({date.AddDays(-1):yyyy-MM-dd}); " +
             $"also checking {oldestResultDate:yyyy-MM-dd} only if it has Pending selections (including lost accumulators). " +
             "Older dates are excluded.");
-        var steps = DailyRunPlan.Build(date, count, pendingDates);
+        var checkpoint = await DailyRunCheckpoint.LoadAsync(
+            Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_FILE"), date, count,
+            Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_REVISION") ?? "local", Console.WriteLine);
+        DateOnly dayBefore = date.AddDays(-2);
+        bool includeDayBefore = pendingDates.Contains(dayBefore) || checkpoint.IncludesDayBefore;
+        await checkpoint.SetPlanAsync(includeDayBefore);
+        var steps = DailyRunPlan.Build(date, count,
+            includeDayBefore ? pendingDates.Append(dayBefore) : pendingDates);
         var failed = new List<string>();
         foreach (var step in steps)
         {
             // A lost connection also loses the advisory lock: stop before any further writes.
             await runLock.CheckAsync();
+            if (checkpoint.IsCompleted(step))
+            {
+                Console.WriteLine($"[DAILY-RUN] SKIP {step.Name}; already completed for this date, count, and revision.");
+                continue;
+            }
+            string[] pendingDependencies = step.Dependencies
+                .Where(key => !checkpoint.IsCompleted(key)).ToArray();
+            if (pendingDependencies.Length > 0)
+            {
+                failed.Add(step.Name);
+                Console.Error.WriteLine($"[DAILY-RUN] DEFERRED {step.Name}; prerequisite step(s) did not complete: " +
+                    string.Join(", ", pendingDependencies));
+                continue;
+            }
+
             Console.WriteLine($"[DAILY-RUN] START {step.Name}");
             int status = await CommandExecution.RunAsync(() => ExecuteCommandAsync(step.Args), automation: true);
             if (status != 0)
@@ -60,7 +82,10 @@ public partial class Program
                 Console.Error.WriteLine($"[DAILY-RUN] FAILED {step.Name} (exit {status}); continuing remaining independent steps.");
             }
             else
+            {
+                await checkpoint.MarkCompletedAsync(step);
                 Console.WriteLine($"[DAILY-RUN] OK {step.Name}");
+            }
         }
         await runLock.CheckAsync();
         if (failed.Count > 0)
@@ -75,7 +100,12 @@ public partial class Program
 
 namespace Prediction.Services
 {
-    public sealed record DailyRunStep(string Name, string[] Args);
+    public sealed record DailyRunStep(string Name, string[] Args, IReadOnlyList<string> Dependencies)
+    {
+        public DailyRunStep(string name, string[] args) : this(name, args, []) { }
+
+        public string CheckpointKey => string.Join("\u001f", new[] { Name }.Concat(Args));
+    }
 
     public static class DailyRunPlan
     {
@@ -119,13 +149,16 @@ namespace Prediction.Services
             foreach (var resultDate in resultDates)
             {
                 string old = resultDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-                steps.Add(new($"Collect recent results {old}", ["collect-results", old]));
-                steps.Add(new($"Report past tickets {old}", ["ticket-report", old, old]));
+                var collectResults = new DailyRunStep($"Collect recent results {old}", ["collect-results", old]);
+                steps.Add(collectResults);
+                steps.Add(new($"Report past tickets {old}", ["ticket-report", old, old],
+                    [collectResults.CheckpointKey]));
             }
             string target = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             string size = count.ToString(CultureInfo.InvariantCulture);
-            steps.Add(new("Collect target predictions", [target]));
-            steps.AddRange(new DailyRunStep[]
+            var collectPredictions = new DailyRunStep("Collect target predictions", [target]);
+            steps.Add(collectPredictions);
+            var ticketSteps = new DailyRunStep[]
             {
                 new("ticket", ["ticket", target, size]),
                 new("ticket safe", ["ticket", target, size, "safe"]),
@@ -135,9 +168,11 @@ namespace Prediction.Services
                 new("daily-ticket", ["daily-ticket", target, size]),
                 new("daily-ticket-league", ["daily-ticket-league", target, size]),
                 new("ticket-1-3p3+", ["ticket-1-3p3+", target, size]),
-                new("ticket-1-3p3+ safe", ["ticket-1-3p3+", target, size, "safe"]),
-                new("Target ticket report", ["ticket-report", target, target])
-            });
+                new("ticket-1-3p3+ safe", ["ticket-1-3p3+", target, size, "safe"])
+            }.Select(step => step with { Dependencies = [collectPredictions.CheckpointKey] }).ToArray();
+            steps.AddRange(ticketSteps);
+            steps.Add(new("Target ticket report", ["ticket-report", target, target],
+                ticketSteps.Select(step => step.CheckpointKey).ToArray()));
             return steps;
         }
     }

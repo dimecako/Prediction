@@ -40,6 +40,24 @@ public sealed class SoccerVistaResultProviderTests
         Assert.Equal("/events/As77hb15/live-updates/", handler.Paths[1]);
     }
 
+    [Fact]
+    public async Task TargetedCollectionFetchesDetailsOnlyForPendingFixture()
+    {
+        var other = Row();
+        other["id"] = "other-fixture";
+        other["homeTeam"] = "Other Home";
+        other["awayTeam"] = "Other Away";
+        using var handler = new Handler(Feed(Row(), other), Detail().ToString());
+        using var http = new HttpClient(handler);
+        var target = new Match { MatchDate = Date, HomeTeam = "Frosinone", AwayTeam = "Lecce" };
+
+        var result = Assert.Single(await new SoccerVistaResultProvider(http)
+            .GetResultsAsync(Date, [target]));
+
+        Assert.Equal("soccervista:As77hb15", result.ExternalId);
+        Assert.Equal(["/events/by/date/29-10-2026/", "/events/As77hb15/live-updates/"], handler.Paths);
+    }
+
     [Theory]
     [InlineData("isFinished", false)]
     [InlineData("isLive", true)]

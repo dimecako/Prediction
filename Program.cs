@@ -567,13 +567,6 @@ public partial class Program
             Console.WriteLine(
                 $"[RESULTS] Collecting results for {resultTargetDate}...");
 
-            using var httpClient = new HttpClient();
-            var collected = await MatchResultCollector.CollectAsync(date,
-                MatchResultCollector.CreateDefaultProviders(httpClient, Console.WriteLine), Console.WriteLine);
-            var externalResults = collected.Results;
-            if (collected.FailedProviders > 0 || collected.RejectedRows > 0)
-                CommandExecution.Fail();
-
             var collectConnectionString =
                 Environment.GetEnvironmentVariable(
                     "ConnectionStrings__FootballDb");
@@ -594,127 +587,46 @@ public partial class Program
 
             if (!CommandExecution.IsAutomation)
                 await collectDb.Database.MigrateAsync();
-            int matched = 0;
-            int inserted = 0;
-            int existing = 0;
-            int unmatched = 0;
-            int halfTimeUpdated = 0;
-            var resultMatches = await collectDb.Matches.Include(x => x.Result)
-                .Where(x => x.MatchDate == date).ToListAsync();
-            var sourceSnapshots = await collectDb.PredictionSnapshots.AsNoTracking()
-                .Where(x => x.Match.MatchDate == date && x.SourceMatchId != null).ToListAsync();
+            using var httpClient = new HttpClient();
+            var primaryCollected = await MatchResultCollector.CollectAsync(date,
+                MatchResultCollector.CreatePrimaryProviders(Console.WriteLine), Console.WriteLine);
+            if (primaryCollected.FailedProviders > 0 || primaryCollected.RejectedRows > 0)
+                CommandExecution.Fail();
+            var primaryPersistence = await MatchResultPersister.PersistAsync(
+                collectDb, date, primaryCollected.SourceResults, Console.WriteLine);
 
-            foreach (var external in collected.SourceResults)
+            var pendingMatches = await collectDb.Matches.AsNoTracking()
+                .Where(x => x.MatchDate == date && x.Result == null).ToListAsync();
+            CollectedMatchResults fallbackCollected = new([], 0, 0);
+            MatchResultPersistenceSummary fallbackPersistence = new(0, 0, 0, 0, 0, 0);
+            if (pendingMatches.Count > 0)
             {
-                var resolution = ResultMatchResolver.Resolve(date, external, resultMatches, sourceSnapshots);
-                if (resolution.Conflict)
-                {
-                    Console.WriteLine($"[RESULTS] Identity conflict: {external.Source} {external.ExternalId} | " +
-                        $"{external.HomeTeam} vs {external.AwayTeam}; {resolution.Method}.");
+                Console.WriteLine($"[RESULTS] {pendingMatches.Count} fixtures still have no stored result; " +
+                    "checking only those fixtures with SoccerVista.");
+                fallbackCollected = await MatchResultCollector.CollectTargetedAsync(date,
+                    new SoccerVistaResultProvider(httpClient), pendingMatches, Console.WriteLine);
+                if (fallbackCollected.FailedProviders > 0 || fallbackCollected.RejectedRows > 0)
                     CommandExecution.Fail();
-                }
-                else if (resolution.Matches.Count > 0 && resolution.Method.Contains("source ID"))
-                    Console.WriteLine($"[RESULTS] Linked by {resolution.Method}: {external.Source} {external.ExternalId} -> " +
-                        string.Join(", ", resolution.Matches.Select(x => $"#{x.Id}")) + ".");
-
-                if (resolution.Matches.Count == 0)
-                {
-                    Console.WriteLine(
-                        $"[UNMATCHED] {external.HomeTeam} | " +
-                        $"{external.AwayTeam} | " +
-                        $"{external.HomeGoals}-{external.AwayGoals}");
-
-                    unmatched++;
-                    continue;
-                }
-
-                foreach (var match in resolution.Matches)
-                {
-                matched++;
-
-                if (match.Result != null)
-                {
-                    if (match.Result.HomeGoals != external.HomeGoals || match.Result.AwayGoals != external.AwayGoals)
-                    {
-                        Console.WriteLine($"[RESULTS] Conflicting stored final score for #{match.Id}: " +
-                            $"stored={match.Result.HomeGoals}-{match.Result.AwayGoals} " +
-                            $"(source={match.Result.Source}, captured UTC={match.Result.CollectedAtUtc:O}), " +
-                            $"{external.Source} {external.ExternalId} regulation FT={external.HomeGoals}-{external.AwayGoals}; " +
-                            "not overwritten. Verify source fixture identity and regulation-time evidence; " +
-                            "score differences alone do not prove extra time or penalties.");
-                        CommandExecution.Fail();
-                        existing++;
-                        continue;
-                    }
-                    if (external.HalfTimeHomeGoals.HasValue && external.HalfTimeAwayGoals.HasValue &&
-                        (!match.Result.HalfTimeHomeGoals.HasValue || !match.Result.HalfTimeAwayGoals.HasValue))
-                    {
-                        match.Result.HalfTimeHomeGoals = external.HalfTimeHomeGoals;
-                        match.Result.HalfTimeAwayGoals = external.HalfTimeAwayGoals;
-                        halfTimeUpdated++;
-                    }
-                    else if (external.HalfTimeHomeGoals.HasValue && external.HalfTimeAwayGoals.HasValue &&
-                        (match.Result.HalfTimeHomeGoals != external.HalfTimeHomeGoals ||
-                         match.Result.HalfTimeAwayGoals != external.HalfTimeAwayGoals))
-                    {
-                        Console.WriteLine($"[RESULTS] Conflicting stored half-time score for #{match.Id}; not overwritten.");
-                        CommandExecution.Fail();
-                    }
-                    Console.WriteLine(
-                        $"[EXISTS] #{match.Id} | " +
-                        $"{match.HomeTeam} | {match.AwayTeam} | " +
-                        $"{match.Result.HomeGoals}-{match.Result.AwayGoals}");
-
-                    existing++;
-                    continue;
-                }
-
-                string result =
-                    external.HomeGoals > external.AwayGoals
-                        ? "1"
-                        : external.HomeGoals < external.AwayGoals
-                            ? "2"
-                            : "X";
-
-                match.Result =
-                    new Prediction.Entities.MatchResult
-                    {
-                        MatchId = match.Id,
-
-                        HomeGoals = external.HomeGoals,
-                        AwayGoals = external.AwayGoals,
-                        HalfTimeHomeGoals = external.HalfTimeHomeGoals,
-                        HalfTimeAwayGoals = external.HalfTimeAwayGoals,
-
-                        Result = result,
-
-                        Btts =
-                            external.HomeGoals > 0 &&
-                            external.AwayGoals > 0,
-
-                        TotalGoals =
-                            external.HomeGoals +
-                            external.AwayGoals,
-
-                        Source = external.Source,
-
-                        CollectedAtUtc = DateTime.UtcNow
-                    };
-
-                inserted++;
-
-                Console.WriteLine(
-                    $"[SAVED] #{match.Id} | " +
-                    $"{match.HomeTeam} | {match.AwayTeam} | " +
-                    $"{external.HomeGoals}-{external.AwayGoals} | " +
-                    $"Result={result} | " +
-                    $"BTTS={(external.HomeGoals > 0 && external.AwayGoals > 0 ? "YES" : "NO")} | " +
-                    $"Goals={external.HomeGoals + external.AwayGoals}");
-                }
+                fallbackPersistence = await MatchResultPersister.PersistAsync(
+                    collectDb, date, fallbackCollected.SourceResults, Console.WriteLine);
             }
+            else
+                Console.WriteLine("[RESULTS] No fixtures are missing results; SoccerVista fallback skipped.");
 
-            int changes =
-                await collectDb.SaveChangesAsync();
+            var collected = new CollectedMatchResults(
+                primaryCollected.Results.Concat(fallbackCollected.Results).ToList(),
+                primaryCollected.FailedProviders + fallbackCollected.FailedProviders,
+                primaryCollected.RejectedRows + fallbackCollected.RejectedRows)
+            {
+                SourceResults = primaryCollected.SourceResults.Concat(fallbackCollected.SourceResults).ToList()
+            };
+            int matched = primaryPersistence.Matched + fallbackPersistence.Matched;
+            int inserted = primaryPersistence.Inserted + fallbackPersistence.Inserted;
+            int existing = primaryPersistence.Existing + fallbackPersistence.Existing;
+            int unmatched = primaryPersistence.Unmatched + fallbackPersistence.Unmatched;
+            int halfTimeUpdated = primaryPersistence.HalfTimeUpdated + fallbackPersistence.HalfTimeUpdated;
+            int changes = primaryPersistence.Changes + fallbackPersistence.Changes;
+            var externalResults = collected.Results;
 
             Console.WriteLine();
             Console.WriteLine($"[RESULTS] Matched: {matched}");

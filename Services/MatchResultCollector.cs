@@ -1,4 +1,5 @@
 using Prediction.Models;
+using Prediction.Entities;
 
 namespace Prediction.Services;
 
@@ -10,12 +11,21 @@ public sealed record CollectedMatchResults(
 
 public static class MatchResultCollector
 {
-    public static IReadOnlyList<IMatchResultProvider> CreateDefaultProviders(
-        HttpClient httpClient, Action<string> log)
+    public static IReadOnlyList<IMatchResultProvider> CreatePrimaryProviders(Action<string> log)
     {
         log("[RESULTS] FootballResultsOnline disabled: unlabelled scores cannot verify regulation-time FT.");
-        return [new ForebetResultProvider(), new SoccerVistaResultProvider(httpClient),
-            new OpenFootballResultProvider(httpClient)];
+        log("[RESULTS] Forebet is the sole primary source; SoccerVista is reserved for pending fixtures.");
+        return [new ForebetResultProvider()];
+    }
+
+    public static Task<CollectedMatchResults> CollectTargetedAsync(
+        DateOnly date, ITargetedMatchResultProvider provider, IReadOnlyCollection<Match> matches,
+        Action<string> log, CancellationToken cancellationToken = default)
+    {
+        if (matches.Count == 0)
+            return Task.FromResult(new CollectedMatchResults([], 0, 0));
+
+        return CollectAsync(date, [new TargetedProviderAdapter(provider, matches)], log, cancellationToken);
     }
 
     public static async Task<CollectedMatchResults> CollectAsync(
@@ -117,5 +127,15 @@ public static class MatchResultCollector
             }
         }
         return new(results.Values.ToList(), failed, rejected) { SourceResults = sourceResults };
+    }
+
+    private sealed class TargetedProviderAdapter(
+        ITargetedMatchResultProvider provider, IReadOnlyCollection<Match> matches) : IMatchResultProvider
+    {
+        public string Name => provider.Name;
+
+        public Task<IReadOnlyList<ExternalMatchResult>> GetResultsAsync(
+            DateOnly date, CancellationToken cancellationToken = default) =>
+            provider.GetResultsAsync(date, matches, cancellationToken);
     }
 }

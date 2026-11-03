@@ -45,6 +45,11 @@ public sealed class DailyAutomationTests
         }, steps.Skip(5).Take(9).Select(s => string.Join(" ", s.Args)));
         Assert.Equal("ticket-report", steps[^1].Args[0]);
         Assert.DoesNotContain(steps, s => s.Args[0] is "ticket-import" or "train" or "build");
+        Assert.Contains(steps[0].CheckpointKey, steps[1].Dependencies);
+        Assert.All(steps.Skip(5).Take(9),
+            step => Assert.Contains(steps[4].CheckpointKey, step.Dependencies));
+        Assert.Equal(steps.Skip(5).Take(9).Select(step => step.CheckpointKey).Order(),
+            steps[^1].Dependencies.Order());
     }
 
     [Theory]

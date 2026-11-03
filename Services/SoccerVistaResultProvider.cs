@@ -7,13 +7,31 @@ using Prediction.Models;
 
 namespace Prediction.Services;
 
-public sealed class SoccerVistaResultProvider(HttpClient httpClient) : IMatchResultProvider
+public sealed class SoccerVistaResultProvider(HttpClient httpClient) : ITargetedMatchResultProvider
 {
     public string Name => "SoccerVista";
 
     public async Task<IReadOnlyList<ExternalMatchResult>> GetResultsAsync(
         DateOnly date, CancellationToken cancellationToken = default)
+        => await GetResultsCoreAsync(date, null, cancellationToken);
+
+    public async Task<IReadOnlyList<ExternalMatchResult>> GetResultsAsync(
+        DateOnly date, IReadOnlyCollection<Prediction.Entities.Match> matches,
+        CancellationToken cancellationToken = default)
+        => await GetResultsCoreAsync(date, matches, cancellationToken);
+
+    private async Task<IReadOnlyList<ExternalMatchResult>> GetResultsCoreAsync(
+        DateOnly date, IReadOnlyCollection<Prediction.Entities.Match>? matches,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (matches is { Count: 0 })
+            return [];
+
+        HashSet<string>? targetIds = matches == null ? null : matches
+            .Select(match => MatchIdentity.BuildExternalMatchId(
+                date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), match.HomeTeam, match.AwayTeam))
+            .ToHashSet(StringComparer.Ordinal);
         string feed = await GetAsync(
             $"events/by/date/{date.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture)}/",
             cancellationToken);
@@ -32,6 +50,15 @@ public sealed class SoccerVistaResultProvider(HttpClient httpClient) : IMatchRes
                 cancellationToken.ThrowIfCancellationRequested();
                 if (item is not JObject row)
                     throw new JsonException("SoccerVista event must be an object.");
+                if (targetIds != null)
+                {
+                    string candidateHome = RequiredString(row, "homeTeam");
+                    string candidateAway = RequiredString(row, "awayTeam");
+                    string candidateId = MatchIdentity.BuildExternalMatchId(
+                        date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), candidateHome, candidateAway);
+                    if (!targetIds.Contains(candidateId))
+                        continue;
+                }
                 if (!IsFinished(row, includeDetailFlags: false))
                     continue;
 

@@ -63,6 +63,25 @@ def has_successful_run(target, repository, token, api_url, request_json=github_j
         page += 1
 
 
+def latest_checkpoint(target, count, repository, token, api_url, request_json=github_json):
+    name = f"daily-checkpoint-{target}-{count}"
+    base = f"{api_url.rstrip('/')}/repos/{repository}"
+    page = 1
+    while True:
+        query = urlencode({"name": name, "per_page": 100, "page": page})
+        artifacts = request_json(f"{base}/actions/artifacts?{query}", token)["artifacts"]
+        for artifact in artifacts:
+            if artifact["name"] != name or artifact["expired"]:
+                continue
+            run_id = artifact["workflow_run"]["id"]
+            run = request_json(f"{base}/actions/runs/{run_id}", token)
+            if run["status"] == "completed" and run["path"] == ".github/workflows/daily-run.yml":
+                return str(run_id), name
+        if len(artifacts) < 100:
+            return "", ""
+        page += 1
+
+
 def plan_run(event_name, schedule, requested_date, now, repository, token, api_url,
              request_json=github_json):
     target = target_date(requested_date, now)
@@ -84,6 +103,19 @@ if __name__ == "__main__":
         os.environ["GITHUB_API_URL"],
     )
     print(f"[SCHEDULE] {message}")
+    checkpoint_run_id = ""
+    checkpoint_artifact_name = ""
+    if run:
+        count = int(os.environ.get("TICKET_COUNT", "15"))
+        if count < 1 or count > 100:
+            raise ValueError("Ticket count must be between 1 and 100.")
+        checkpoint_run_id, checkpoint_artifact_name = latest_checkpoint(
+            target, count, os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"],
+            os.environ["GITHUB_API_URL"])
+        if checkpoint_run_id:
+            print(f"[SCHEDULE] Restore completed steps from run {checkpoint_run_id}.")
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         output.write(f"run={'true' if run else 'false'}\n")
         output.write(f"target_date={target}\n")
+        output.write(f"checkpoint_run_id={checkpoint_run_id}\n")
+        output.write(f"checkpoint_artifact_name={checkpoint_artifact_name}\n")

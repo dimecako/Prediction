@@ -1,3 +1,4 @@
+using Prediction.Entities;
 using Prediction.Models;
 using Prediction.Services;
 using Xunit;
@@ -11,13 +12,36 @@ public sealed class MatchResultCollectorTests
     [Fact]
     public void DefaultCollectionExplicitlyDisablesSourcesWithoutVerifiedRegulationScores()
     {
-        using var http = new HttpClient();
         var messages = new List<string>();
-        var providers = MatchResultCollector.CreateDefaultProviders(http, messages.Add);
-        Assert.Equal(["Forebet", "SoccerVista", "OpenFootball"], providers.Select(x => x.Name));
+        var providers = MatchResultCollector.CreatePrimaryProviders(messages.Add);
+        Assert.Equal(["Forebet"], providers.Select(x => x.Name));
         Assert.DoesNotContain(providers, x => x is FootballResultsOnlineProvider);
         Assert.Contains(messages, x => x.Contains("FootballResultsOnline disabled") &&
             x.Contains("cannot verify regulation-time FT"));
+        Assert.Contains(messages, x => x.Contains("Forebet is the sole primary source"));
+    }
+
+    [Fact]
+    public async Task TargetedCollectionPassesOnlyPendingFixturesToFallback()
+    {
+        var target = new Match { MatchDate = Date, HomeTeam = "Home", AwayTeam = "Away" };
+        var provider = new TargetedProvider(Row("Home", "Away"));
+        var result = await MatchResultCollector.CollectTargetedAsync(
+            Date, provider, [target], _ => { });
+        Assert.Same(target, Assert.Single(provider.Targets));
+        Assert.Single(result.Results);
+        Assert.Equal(0, provider.UnfilteredCalls);
+    }
+
+    [Fact]
+    public async Task TargetedCollectionSkipsFallbackWhenNoFixturesArePending()
+    {
+        var provider = new TargetedProvider(Row("Home", "Away"));
+        var result = await MatchResultCollector.CollectTargetedAsync(
+            Date, provider, [], _ => { });
+        Assert.Empty(result.Results);
+        Assert.Empty(provider.Targets);
+        Assert.Equal(0, provider.UnfilteredCalls);
     }
 
     [Fact]
@@ -268,6 +292,27 @@ public sealed class MatchResultCollectorTests
             Calls++;
             return Failure == null ? Task.FromResult<IReadOnlyList<ExternalMatchResult>>(rows) :
                 Task.FromException<IReadOnlyList<ExternalMatchResult>>(Failure);
+        }
+    }
+
+    private sealed class TargetedProvider(params ExternalMatchResult[] rows) : ITargetedMatchResultProvider
+    {
+        public string Name => "SoccerVista";
+        public List<Match> Targets { get; } = [];
+        public int UnfilteredCalls { get; private set; }
+
+        public Task<IReadOnlyList<ExternalMatchResult>> GetResultsAsync(
+            DateOnly date, CancellationToken cancellationToken = default)
+        {
+            UnfilteredCalls++;
+            throw new InvalidOperationException("The unfiltered fallback path must not be used.");
+        }
+
+        public Task<IReadOnlyList<ExternalMatchResult>> GetResultsAsync(
+            DateOnly date, IReadOnlyCollection<Match> matches, CancellationToken cancellationToken = default)
+        {
+            Targets.AddRange(matches);
+            return Task.FromResult<IReadOnlyList<ExternalMatchResult>>(rows);
         }
     }
 
