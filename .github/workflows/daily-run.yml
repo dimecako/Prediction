@@ -42,14 +42,28 @@ jobs:
           ref: prediction-api
           persist-credentials: false
 
+      - name: Identify deployed source revision
+        id: source
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Select 08:00-11:00 Skopje attempt unless this date already succeeded
         id: schedule
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_SCHEDULE: ${{ github.event.schedule }}
           TARGET_DATE: ${{ inputs.target_date }}
+          TICKET_COUNT: ${{ inputs.count || '15' }}
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 Deployment/daily_schedule.py
+
+      - name: Restore completed daily steps
+        if: steps.schedule.outputs.run == 'true' && steps.schedule.outputs.checkpoint_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.schedule.outputs.checkpoint_artifact_name }}
+          run-id: ${{ steps.schedule.outputs.checkpoint_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/daily-checkpoint
 
       - uses: actions/setup-dotnet@v4
         if: steps.schedule.outputs.run == 'true'
@@ -96,6 +110,8 @@ jobs:
           FLARESOLVERR_URL: http://127.0.0.1:8191/v1
           TARGET_DATE: ${{ steps.schedule.outputs.target_date }}
           TICKET_COUNT: ${{ inputs.count || '15' }}
+          DAILY_CHECKPOINT_FILE: ${{ runner.temp }}/daily-checkpoint/daily-checkpoints.json
+          DAILY_CHECKPOINT_REVISION: ${{ steps.source.outputs.revision }}
         run: |
           if [ -z "$ConnectionStrings__FootballDb" ]; then
             echo "::error::FOOTBALL_DB_CONNECTION secret is missing."
@@ -107,6 +123,15 @@ jobs:
       - name: Stop local FlareSolverr
         if: always() && steps.schedule.outputs.run == 'true'
         run: docker rm --force daily-flaresolverr >/dev/null 2>&1 || true
+
+      - name: Save daily step checkpoints
+        if: always() && steps.schedule.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-checkpoint-${{ steps.schedule.outputs.target_date }}-${{ inputs.count || '15' }}
+          path: ${{ runner.temp }}/daily-checkpoint/daily-checkpoints.json
+          if-no-files-found: ignore
+          retention-days: 90
 
       - name: Record successful daily execution
         if: steps.schedule.outputs.run == 'true'
