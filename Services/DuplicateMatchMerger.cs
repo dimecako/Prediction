@@ -131,13 +131,14 @@ public static class DuplicateMatchMerger
         canonical.League ??= duplicates.Select(x => x.League)
             .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
         canonical.KickoffUtc ??= duplicates.Select(x => x.KickoffUtc).FirstOrDefault(x => x.HasValue);
-        var donor = duplicates.Select(x => x.Result).Where(x => x != null)
-            .OrderByDescending(x => x!.HalfTimeHomeGoals.HasValue).FirstOrDefault();
+        var results = duplicates.Select(x => x.Result).Where(x => x != null).Select(x => x!).ToList();
+        var donor = results.OrderByDescending(x =>
+            (x.HalfTimeHomeGoals.HasValue ? 1 : 0) + (x.HalfTimeAwayGoals.HasValue ? 1 : 0)).FirstOrDefault();
         long? movedResultId = canonical.Result == null ? donor?.Id : null;
-        if (canonical.Result is { HalfTimeHomeGoals: null } result && donor?.HalfTimeHomeGoals != null)
+        if ((canonical.Result ?? donor) is { } result)
         {
-            result.HalfTimeHomeGoals = donor.HalfTimeHomeGoals;
-            result.HalfTimeAwayGoals = donor.HalfTimeAwayGoals;
+            result.HalfTimeHomeGoals ??= results.Select(x => x.HalfTimeHomeGoals).FirstOrDefault(x => x.HasValue);
+            result.HalfTimeAwayGoals ??= results.Select(x => x.HalfTimeAwayGoals).FirstOrDefault(x => x.HasValue);
         }
         canonical.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync();

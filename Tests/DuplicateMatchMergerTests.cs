@@ -94,6 +94,32 @@ public sealed class DuplicateMatchMergerTests
     }
 
     [DatabaseFact]
+    public async Task ApplyPreservesComplementaryPartialHalfTimeScores()
+    {
+        await using var db = new FootballDbContextFactory().CreateDbContext([]);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        string token = Guid.NewGuid().ToString("N");
+        var kept = Fixture(0, $"Merge {token}", "Away", ($"Test{token}", $"test:{token}"));
+        var duplicate = Fixture(0, $"Merge {token} FC", "Away", ($"Test{token}", $"test:{token}"));
+        kept.Result = Score(3, 1);
+        kept.Result.HalfTimeAwayGoals = 0;
+        duplicate.Result = Score(3, 1);
+        duplicate.Result.HalfTimeHomeGoals = 1;
+        foreach (var match in new[] { kept, duplicate })
+            match.ExternalMatchId = MatchIdentity.BuildExternalMatchId("2026-11-03", match.HomeTeam, match.AwayTeam);
+        db.Matches.AddRange(kept, duplicate);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var plan = DuplicateMatchMerger.Plan(await db.Matches.AsNoTracking()
+            .Include(x => x.PredictionSnapshots).Include(x => x.Result)
+            .Where(x => x.HomeTeam.Contains(token)).ToListAsync(), new HashSet<long> { kept.Id });
+        await DuplicateMatchMerger.ApplyAsync(db, plan.Merges);
+        var stored = await db.MatchResults.SingleAsync(x => x.MatchId == kept.Id);
+        Assert.Equal(1, stored.HalfTimeHomeGoals);
+        Assert.Equal(0, stored.HalfTimeAwayGoals);
+    }
+
+    [DatabaseFact]
     public async Task ApplyRejectsEvidenceChangedSincePlanning()
     {
         await using var db = new FootballDbContextFactory().CreateDbContext([]);
