@@ -103,14 +103,45 @@ public sealed class PredictionConsensusTests
             language, "btts-agreement", true);
         var document = new HtmlDocument();
         document.LoadHtml(html);
-        string cell = document.DocumentNode.SelectSingleNode("//div[@class='scroll']/table/tr[2]/td[2]").InnerText;
+        var table = document.DocumentNode.SelectSingleNode("//div[@class='scroll']/table");
+        string cell = table.SelectSingleNode("./tr[2]/td[3]").InnerText;
         Assert.Contains("57.5", cell);
-        Assert.Contains(label, cell);
+        Assert.DoesNotContain("57.5", table.SelectSingleNode("./tr[2]/td[2]").InnerText);
+        Assert.Contains(label, table.SelectSingleNode("./tr[1]/th[3]").InnerText);
         Assert.Contains($"2/11 {coverage}", cell);
+        Assert.Equal(9, table.SelectNodes("./tr[1]/th").Count);
+        Assert.Equal(9, table.SelectNodes("./tr[2]/td").Count);
+        foreach (var (column, market) in new[] { (3, "result"), (5, "btts"), (7, "goals") })
+        {
+            string href = table.SelectSingleNode($"./tr[1]/th[{column}]/a").GetAttributeValue("href", "");
+            Assert.Contains($"sort={market}-probability", href);
+            Assert.Contains("direction=desc", href);
+            Assert.Contains("date=2026-11-04", href);
+            Assert.Contains($"lang={(language == UiLanguage.Macedonian ? "mk" : "en")}", href);
+        }
         Assert.Contains("sort=btts-agreement&amp;direction=asc", html);
         Assert.Contains("page=2", html);
         Assert.Contains($"lang={(language == UiLanguage.Macedonian ? "mk" : "en")}", html);
         Assert.Contains("sort=goals-probability", html);
+    }
+
+    [Theory]
+    [InlineData("result-probability", 3)]
+    [InlineData("btts-probability", 5)]
+    [InlineData("goals-probability", 7)]
+    public void SourceAverageColumnHeaderTogglesSortDirection(string sort, int column)
+    {
+        foreach (bool ascending in new[] { false, true })
+        {
+            var document = new HtmlDocument();
+            document.LoadHtml(DatabaseReportPages.Predictions(new(2026, 11, 4), [Fixture(1, 8, 11)],
+                1, 1, sort: sort, ascending: ascending));
+            string href = document.DocumentNode.SelectSingleNode(
+                $"//div[@class='scroll']/table/tr[1]/th[{column}]/a").GetAttributeValue("href", "");
+            Assert.Contains($"sort={sort}", href);
+            Assert.Contains($"direction={(ascending ? "desc" : "asc")}", href);
+            Assert.Contains("1 stored fixtures", document.DocumentNode.InnerText);
+        }
     }
 
     [Fact]

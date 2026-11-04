@@ -77,8 +77,9 @@ Authenticated read-only web pages:
   Defaults to highest 1X2 agreement percentage, then matching source count.
   `sort=result-agreement|result-probability|btts-agreement|btts-probability|goals-agreement|goals-probability`
   and `direction=asc|desc` sort the whole date before pagination; unknown values
-  remain last. Each market shows agreement separately from average source
-  probability and its coverage. Only agreeing sources with valid percentages
+  remain last. Each market has separate agreement and source-average probability
+  columns; clicking either column header sorts by that metric and toggles direction.
+  The average column includes its coverage. Only agreeing sources with valid percentages
   contribute to that average (60% and 55% average to 57.5%); missing values are
   excluded. The current schema stores source probabilities only for 1X2.
   BTTS/goals averages are explicitly unavailable, never copied from 1X2 or

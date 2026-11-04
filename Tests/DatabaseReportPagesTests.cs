@@ -33,8 +33,9 @@ public sealed class DatabaseReportPagesTests
         Assert.Equal(2, table.SelectNodes("./tr").Count);
         var row = table.SelectSingleNode("./tr[2]");
         Assert.Contains("1 (2/2)", row.SelectSingleNode("./td[2]").InnerText);
-        Assert.Contains("YES (2/2)", row.SelectSingleNode("./td[3]").InnerText);
-        Assert.Contains("O2.5 (2/2)", row.SelectSingleNode("./td[4]").InnerText);
+        Assert.Contains("YES (2/2)", row.SelectSingleNode("./td[4]").InnerText);
+        Assert.Contains("O2.5 (2/2)", row.SelectSingleNode("./td[6]").InnerText);
+        Assert.Equal(9, row.SelectNodes("./td").Count);
         Assert.Contains(consensusLabel, table.SelectSingleNode("./tr[1]").InnerText);
         Assert.Contains(detailsLabel, row.SelectSingleNode(".//details/summary").InnerText);
         Assert.Equal(2, row.SelectNodes(".//details/table/tr[td]").Count);
@@ -64,7 +65,7 @@ public sealed class DatabaseReportPagesTests
         var document = new HtmlDocument();
         document.LoadHtml(DatabaseReportPages.Predictions(new DateOnly(2026, 11, 1), [match], 1, 1, language));
         var row = document.DocumentNode.SelectSingleNode("//div[@class='scroll']/table/tr[2]");
-        foreach (int column in new[] { 2, 3, 4 })
+        foreach (int column in new[] { 2, 3, 4, 5, 6, 7 })
             Assert.Equal(expected, row.SelectSingleNode($"./td[{column}]").InnerText);
     }
 

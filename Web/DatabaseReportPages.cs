@@ -302,7 +302,8 @@ public static class DatabaseReportPages
                 string direction = key == sort && !ascending ? "asc" : "desc";
                 return $"<a href='/predictions?date={date:yyyy-MM-dd}&amp;lang={LanguageCode(language)}&amp;sort={key}&amp;direction={direction}'>{Encode(text)}</a>";
             }
-            return $"<th>{Text(language, "Consensus")} {Encode(label)}<br>{Link($"{market}-agreement", Text(language, "Agreement"))}<br>{Link($"{market}-probability", Text(language, "Source average"))}</th>";
+            return $"<th>{Text(language, "Consensus")} {Encode(label)}<br>{Link($"{market}-agreement", Text(language, "Agreement"))}</th>" +
+                $"<th>{Link($"{market}-probability", $"{label} / {Text(language, "Source average")}")}</th>";
         }
 
         void VoteCell(MarketConsensus consensus)
@@ -310,12 +311,14 @@ public static class DatabaseReportPages
             if (consensus.Pick == null)
             {
                 Cell(body, Text(language, "n/a"));
+                Cell(body, Text(language, "n/a"));
                 return;
             }
             string average = consensus.AverageProbability?.ToString("P1", CultureInfo.InvariantCulture) ?? Text(language, "n/a");
             body.Append("<td>").Append(Encode($"{consensus.Pick} ({consensus.Matching}/{consensus.Total})"))
                 .Append("<br>").Append(Encode($"{Text(language, "Agreement")}: {consensus.Agreement:P1}"))
-                .Append("<br><small>").Append(Encode($"{Text(language, "Source average")}: {average} — {consensus.Priced}/{consensus.Matching} {Text(language, "with probability")}"))
+                .Append("</td><td>").Append(Encode(average))
+                .Append("<br><small>").Append(Encode($"{consensus.Priced}/{consensus.Matching} {Text(language, "with probability")}"))
                 .Append("</small></td>");
         }
     }
