@@ -29,3 +29,15 @@ GET {{baseUrl}}/leagues?from=2026-09-24&to=2026-11-01
 
 ### Invalid date returns 400
 GET {{baseUrl}}/predictions?date=invalid
+
+### Results-only confirmation form (requires Basic Authorization when configured)
+GET {{baseUrl}}/results/collect?date=2026-11-03&lang=mk
+
+### Submit using the token AND antiforgery cookie from the confirmation form
+POST {{baseUrl}}/results/collect
+Content-Type: application/x-www-form-urlencoded
+
+date=2026-11-03&lang=mk&__RequestVerificationToken=REPLACE_WITH_FORM_TOKEN
+
+### Future collection date returns 400, without collecting
+GET {{baseUrl}}/results/collect?date=2999-01-01

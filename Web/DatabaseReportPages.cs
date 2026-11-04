@@ -40,6 +40,12 @@ public static class DatabaseReportPages
             "Choose a match date" => "Избери датум на натпревар",
             "View predictions" => "Прикажи прогнози",
             "Collect predictions" => "Собери прогнози",
+            "Collect results only" => "Собери само резултати",
+            "Collect verified FT/HT results only. Predictions and tickets will not be generated." =>
+                "Собери само потврдени FT/HT резултати. Нема да се генерираат прогнози или тикети.",
+            "Results collection completed." => "Собирањето резултати е завршено.",
+            "Results collection failed or was partial. Check server logs; confirmed results were preserved." =>
+                "Собирањето резултати не успеа или е делумно. Провери ги серверските логови; потврдените резултати се зачувани.",
             "Ticket simulations" => "Симулации на тикети",
             "Browse saved ticket variants, frozen picks, and settlement status." =>
                 "Прегледај зачувани варијанти на тикети, фиксни избори и статус на порамнување.",
@@ -249,7 +255,8 @@ public static class DatabaseReportPages
             <form method="get"><input type="hidden" name="lang" value="{LanguageCode(language)}"><label>{Text(language, "Date")} <input type="date" name="date" value="{date:yyyy-MM-dd}" required></label>
             <label>{Text(language, "Sort by")}<select name="sort">{sortOptions}</select></label>
             <label>{Text(language, "Direction")}<select name="direction"><option value="desc"{(!ascending ? " selected" : "")}>{Text(language, "Descending")}</option><option value="asc"{(ascending ? " selected" : "")}>{Text(language, "Ascending")}</option></select></label>
-            <button>{Text(language, "Show stored predictions")}</button></form>
+            <button>{Text(language, "Show stored predictions")}</button>
+            <button type="submit" formaction="/results/collect">{Text(language, "Collect results only")}</button></form>
             <p>{total} {Text(language, "stored fixtures for")} {date:yyyy-MM-dd}. {Text(language, "Latest snapshot per source; capture times are UTC.")}</p>
             <p class="muted">{Text(language, "Agreement is the share of voting sources, not a probability of winning. Source averages use only agreeing sources with valid market-specific percentages; missing percentages are excluded, never replaced with 0% or 50%. BTTS/goals source percentages are not currently stored, so their averages are n/a.")}</p>
             """);

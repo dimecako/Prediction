@@ -814,12 +814,30 @@ public partial class Program
             options.UseNpgsql(connectionString));
         builder.Services.AddScoped<Prediction.Services.IDatabaseReportService, Prediction.Services.DatabaseReportService>();
         builder.Services.AddProblemDetails();
+        builder.Services.AddAntiforgery();
 
         var app = builder.Build();
 
         ConfigureWebAccess(app);
         app.UseExceptionHandler();
         Prediction.Web.DatabaseReportEndpoints.MapDatabaseReports(app);
+        Prediction.Web.ResultCollectionEndpoints.MapResultCollection(app, async (date, ct) =>
+        {
+            if (!await analysisLock.WaitAsync(0, ct))
+                return Prediction.Web.ResultCollectionStatus.Busy;
+            try
+            {
+                int exitCode = await CommandExecution.RunAsync(
+                    () => ExecuteCommandAsync(["collect-results", date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)]),
+                    automation: true);
+                return exitCode == 0 ? Prediction.Web.ResultCollectionStatus.Succeeded :
+                    Prediction.Web.ResultCollectionStatus.Failed;
+            }
+            finally
+            {
+                analysisLock.Release();
+            }
+        });
 
         if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
         {

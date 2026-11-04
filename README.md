@@ -84,6 +84,11 @@ Authenticated read-only web pages:
   excluded. The current schema stores source probabilities only for 1X2.
   BTTS/goals averages are explicitly unavailable, never copied from 1X2 or
   confused with source agreement. None of these figures is calibrated win probability.
+  The "Collect results only" button opens a date confirmation form, then submits
+  an authenticated, antiforgery-protected POST to `/results/collect`. It reuses
+  `collect-results` (Forebet plus targeted SoccerVista FT/HT fallback), without
+  migrations, prediction collection or ticket generation. Future dates are rejected;
+  concurrent web collection returns 409 and partial/failed collection returns 502.
 - `/tickets`: date and mode filters for all saved variants.
 - `/tickets/ID`: frozen selections, evidence, current FT/HT scores and pending
   reasons.
