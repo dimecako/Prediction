@@ -3,6 +3,15 @@
 ### Stored predictions (add Basic Authorization when configured)
 GET {{baseUrl}}/predictions?date=2026-11-01
 
+### Highest BTTS agreement first; sorting applies before pagination
+GET {{baseUrl}}/predictions?date=2026-11-04&sort=btts-agreement&direction=desc&lang=mk
+
+### Lowest known average source probability first; unknown values remain last
+GET {{baseUrl}}/predictions?date=2026-11-04&sort=result-probability&direction=asc
+
+### Unsupported sorting returns 400
+GET {{baseUrl}}/predictions?date=2026-11-04&sort=unsupported
+
 ### Stored tickets
 GET {{baseUrl}}/tickets?from=2026-09-24&to=2026-11-01
 

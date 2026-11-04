@@ -229,6 +229,73 @@ public sealed class ResultMatchResolverTests
         Assert.Equal(2, exact.Result.HomeGoals);
     }
 
+    [Fact]
+    public void FreshDatedProviderFixtureCorroboratesExactNamesAndUniqueProviderLink()
+    {
+        var exact = Fixture(1, "Birmingham", "Millwall");
+        var linked = Fixture(2, "Birmingham City", "Millwall");
+        exact.KickoffUtc = linked.KickoffUtc = Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var incoming = Result("Birmingham", "Millwall");
+        incoming.KickoffUtc = Date.ToDateTime(new(20, 0), DateTimeKind.Utc);
+        var resolution = ResultMatchResolver.Resolve(Date, incoming, [exact, linked], [Snapshot(2)]);
+        Assert.False(resolution.Conflict);
+        Assert.Equal(2, resolution.Matches.Count);
+        Assert.Contains("verified live", resolution.Method);
+        Assert.Null(exact.Result);
+        Assert.Equal("Birmingham City", linked.HomeTeam);
+    }
+
+    [Theory]
+    [InlineData("APR", "APR FC", "Gasogi United", "Gasogi United")]
+    [InlineData("Dorking Wanderers", "Dorking Wanderers", "Hampton & Richmond", "Hampton FC")]
+    public void LiveProviderEvidenceAllowsClubDesignatorsWithoutChangingLegacyDuplicateRules(
+        string home, string storedHome, string away, string storedAway)
+    {
+        var exact = Fixture(1, home, away);
+        var linked = Fixture(2, storedHome, storedAway);
+        var incoming = Result(home, away);
+        incoming.KickoffUtc = Date.ToDateTime(new(20, 0), DateTimeKind.Utc);
+        Assert.False(ResultMatchResolver.Resolve(Date, incoming, [exact, linked], [Snapshot(2)]).Conflict);
+        incoming.KickoffUtc = null;
+        Assert.True(ResultMatchResolver.Resolve(Date, incoming, [exact, linked], [Snapshot(2)]).Conflict);
+        Assert.False(ResultMatchResolver.AreVerifiedDuplicates([exact, linked], [Snapshot(2)], "Forebet", "forebet:123"));
+    }
+
+    [Theory]
+    [InlineData("different-id")]
+    [InlineData("different-score")]
+    [InlineData("different-ht")]
+    [InlineData("different-kickoff")]
+    [InlineData("wrong-day")]
+    [InlineData("different-squad")]
+    [InlineData("unverified")]
+    public void LiveExactFixtureEvidenceNeverOverridesContradictions(string conflict)
+    {
+        var exact = Fixture(1, "Birmingham", "Millwall");
+        var linked = Fixture(2, "Birmingham City", "Millwall");
+        var incoming = Result("Birmingham", "Millwall");
+        incoming.KickoffUtc = Date.ToDateTime(new(20, 0), DateTimeKind.Utc);
+        var snapshots = new List<PredictionSnapshot> { Snapshot(2) };
+        if (conflict == "different-id")
+            snapshots.Add(new() { MatchId = 1, Source = "Forebet", SourceMatchId = "other" });
+        if (conflict == "different-score")
+            linked.Result = new() { HomeGoals = 1, AwayGoals = 0 };
+        if (conflict == "different-ht")
+        {
+            exact.Result = new() { HalfTimeHomeGoals = 0, HalfTimeAwayGoals = 0 };
+            linked.Result = new() { HalfTimeHomeGoals = 1, HalfTimeAwayGoals = 0 };
+        }
+        if (conflict == "different-kickoff")
+            exact.KickoffUtc = incoming.KickoffUtc.Value.AddHours(1);
+        if (conflict == "wrong-day")
+            incoming.KickoffUtc = incoming.KickoffUtc.Value.AddDays(1);
+        if (conflict == "different-squad")
+            linked.HomeTeam = "Birmingham City U19";
+        if (conflict == "unverified")
+            incoming.IsRegulationTimeVerified = false;
+        Assert.True(ResultMatchResolver.Resolve(Date, incoming, [exact, linked], snapshots).Conflict);
+    }
+
     private static Match Fixture(long id, string home, string away) => new()
     {
         Id = id, MatchDate = Date, HomeTeam = home, AwayTeam = away,

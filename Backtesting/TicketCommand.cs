@@ -163,8 +163,8 @@ public partial class Program
                     c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick))
                 : TicketSelector.Select(match, calibration,
                     c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), rankBySafety);
-            bool validFixture = decision.BaseOdds is double price && double.IsFinite(price) && price > 1 &&
-                CalibrationAnalyzer.LatestPerSource(match).Any(s => s.PredictedResult is "1" or "X" or "2") &&
+            bool validFixture = TicketSelector.HasRequiredData(match,
+                    c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick)) &&
                 LeagueTicketSelector.Classify(match.League) != LeagueEligibility.Missing;
             evaluatedValidFixture |= validFixture;
             invalidFixtureData |= !validFixture;
@@ -332,12 +332,9 @@ public partial class Program
         else
         {
             Console.WriteLine("[SIMULATION] No confirmed selections; no empty simulation saved.");
-            bool hasSourceData = today.Count > 0 &&
-                today.All(match => CalibrationAnalyzer.LatestPerSource(match)
-                    .Any(s => s.PredictedResult is "1" or "X" or "2"));
             bool hasRequiredData = best.Count > 0
                 ? bookmaker.Count > 0 && best.All(pick => pick.AgreementTotal > 0)
-                : hasSourceData && !invalidFixtureData;
+                : evaluatedValidFixture && !invalidFixtureData;
             if (LeagueTicketSelector.IsNoSelection(prioritizeLeagues, picks.Count,
                 best.Select(x => x.League), hasRequiredData &&
                     CommandExecution.ExitCode == 0, evaluatedValidFixture))

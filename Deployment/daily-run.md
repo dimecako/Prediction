@@ -99,6 +99,17 @@ invalid inputs and technical failures remain errors rather than fabricated succe
 logs before retrying. Daily automation reuses the first saved ticket for each
 date/mode even when odds or selections change. Standalone ticket commands retain
 fingerprint-based simulation behavior and are not an automation retry mechanism.
+No actionable 1/2 signal (including a draw or tied votes) is a normal abstention
+when the matched future fixture has valid source votes and bookmaker prices.
+Unmatched unrelated fixtures do not invalidate that evaluation. Missing source
+votes, invalid probabilities/prices and missing league metadata remain errors.
+
+Result resolution additionally accepts fresh provider evidence linking one exact
+names/date row to one unique provider-ID row, only with a real UTC kickoff on that
+Skopje date, conservative team aliases, compatible scores and no contradictory
+IDs or real kickoffs. This saves results without merging or deleting match rows.
+Date-only midnight values are not real kickoff evidence. Missing live evidence,
+different squads, contradictory results and ambiguous links still fail explicitly.
 
 Only verified regulation-time FT (90 minutes plus stoppage time) is eligible
 for persistence and grading. Forebet requires `FT` without extra-time or

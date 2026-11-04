@@ -29,6 +29,8 @@ public static class ResultMatchResolver
             return Conflict("regulation-time FT not verified; left unresolved");
         if (exact.Count == 1 && bySource.Count == 1 && exact[0].Id != bySource[0].Id)
         {
+            if (VerifiedLiveFixture(exact[0], bySource[0], result, candidates, snapshots))
+                return new(exact[0], "verified live source ID and exact fixture names", false) { Matches = candidates };
             var shared = snapshots.Where(x => candidates.Any(m => m.Id == x.MatchId) &&
                     !string.IsNullOrWhiteSpace(x.SourceMatchId))
                 .GroupBy(x => (x.Source, x.SourceMatchId))
@@ -102,6 +104,43 @@ public static class ResultMatchResolver
 
     private static bool KickoffsAgree(Match match, ExternalMatchResult result) =>
         !result.KickoffUtc.HasValue || !match.KickoffUtc.HasValue || match.KickoffUtc == result.KickoffUtc;
+
+    private static bool VerifiedLiveFixture(Match exact, Match linked, ExternalMatchResult incoming,
+        IReadOnlyCollection<Match> candidates, IReadOnlyCollection<PredictionSnapshot> snapshots)
+    {
+        // A fresh dated provider fixture can corroborate an otherwise unlinked exact-name row.
+        // Midnight is the legacy date-only placeholder, not a verified kickoff.
+        if (incoming.KickoffUtc is not DateTime kickoff || kickoff.Kind != DateTimeKind.Utc ||
+            kickoff.TimeOfDay == TimeSpan.Zero ||
+            MatchIdentity.NormalizeTeam(exact.HomeTeam) != MatchIdentity.NormalizeTeam(incoming.HomeTeam) ||
+            MatchIdentity.NormalizeTeam(exact.AwayTeam) != MatchIdentity.NormalizeTeam(incoming.AwayTeam) ||
+            !LiveTeamAgrees(linked.HomeTeam, incoming.HomeTeam) ||
+            !LiveTeamAgrees(linked.AwayTeam, incoming.AwayTeam))
+            return false;
+        var localDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(kickoff,
+            TimeZoneInfo.FindSystemTimeZoneById("Europe/Skopje")));
+        if (localDate != exact.MatchDate)
+            return false;
+        var ids = candidates.Select(x => x.Id).ToHashSet();
+        if (snapshots.Where(x => ids.Contains(x.MatchId) && !string.IsNullOrWhiteSpace(x.SourceMatchId))
+            .GroupBy(x => x.Source, StringComparer.OrdinalIgnoreCase)
+            .Any(g => g.Select(x => x.SourceMatchId).Distinct(StringComparer.Ordinal).Count() > 1))
+            return false;
+        return candidates.All(x => ScoresAgree(x, incoming) &&
+            (!x.KickoffUtc.HasValue || x.KickoffUtc.Value.TimeOfDay == TimeSpan.Zero || x.KickoffUtc == kickoff)) &&
+            candidates.Where(x => x.Result?.HalfTimeHomeGoals != null)
+                .Select(x => x.Result!.HalfTimeHomeGoals).Distinct().Count() <= 1 &&
+            candidates.Where(x => x.Result?.HalfTimeAwayGoals != null)
+                .Select(x => x.Result!.HalfTimeAwayGoals).Distinct().Count() <= 1;
+    }
+
+    private static bool LiveTeamAgrees(string stored, string incoming)
+    {
+        static string ClubName(string name) => string.Join(" ", MatchIdentity.NormalizeTeam(name)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(x => x is not ("fc" or "cf" or "sc" or "afc" or "bk")));
+        return RelatedTeam(ClubName(stored), ClubName(incoming));
+    }
 
     private static bool RelatedTeam(string left, string right)
     {

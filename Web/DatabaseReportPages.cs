@@ -78,6 +78,15 @@ public static class DatabaseReportPages
             "Score" => "Резултат",
             "Goals" => "Голови",
             "Source Prob." => "Веројатност од извор",
+            "Source average" => "Просек од извори",
+            "Agreement" => "Согласување",
+            "Sort by" => "Сортирај по",
+            "Direction" => "Насока",
+            "Descending" => "Опаѓачки",
+            "Ascending" => "Растечки",
+            "with probability" => "со процент",
+            "Agreement is the share of voting sources, not a probability of winning. Source averages use only agreeing sources with valid market-specific percentages; missing percentages are excluded, never replaced with 0% or 50%. BTTS/goals source percentages are not currently stored, so their averages are n/a." =>
+                "Согласувањето е удел на извори со ист тип, не веројатност за добивка. Просекот ги користи само согласните извори со валиден процент за тој пазар; непознатите не се заменуваат со 0% или 50%. Изворни проценти за BTTS/голови моментално не се зачувуваат, па нивниот просек е н/д.",
             "Captured UTC" => "Зачувано (UTC)",
             "Final / half-time" => "Крај / полувреме",
             "No stored snapshots." => "Нема зачувани снимки.",
@@ -228,27 +237,36 @@ public static class DatabaseReportPages
         """;
     }
 
-    public static string Predictions(DateOnly date, IReadOnlyList<Match> matches, int page, int total, UiLanguage language = UiLanguage.English)
+    public static string Predictions(DateOnly date, IReadOnlyList<Match> matches, int page, int total,
+        UiLanguage language = UiLanguage.English, string sort = "result-agreement", bool ascending = false)
     {
+        string SortLabel(string key) => (key.StartsWith("result-", StringComparison.Ordinal) ? "1X2" :
+            key.StartsWith("btts-", StringComparison.Ordinal) ? "BTTS" : Text(language, "Goals")) + " / " +
+            Text(language, key.EndsWith("-agreement", StringComparison.Ordinal) ? "Agreement" : "Source average");
+        string sortOptions = string.Concat(PredictionConsensus.SortKeys.Select(key =>
+            $"<option value='{key}'{(key == sort ? " selected" : "")}>{Encode(SortLabel(key))}</option>"));
         var body = new StringBuilder($"""
             <form method="get"><input type="hidden" name="lang" value="{LanguageCode(language)}"><label>{Text(language, "Date")} <input type="date" name="date" value="{date:yyyy-MM-dd}" required></label>
+            <label>{Text(language, "Sort by")}<select name="sort">{sortOptions}</select></label>
+            <label>{Text(language, "Direction")}<select name="direction"><option value="desc"{(!ascending ? " selected" : "")}>{Text(language, "Descending")}</option><option value="asc"{(ascending ? " selected" : "")}>{Text(language, "Ascending")}</option></select></label>
             <button>{Text(language, "Show stored predictions")}</button></form>
             <p>{total} {Text(language, "stored fixtures for")} {date:yyyy-MM-dd}. {Text(language, "Latest snapshot per source; capture times are UTC.")}</p>
+            <p class="muted">{Text(language, "Agreement is the share of voting sources, not a probability of winning. Source averages use only agreeing sources with valid market-specific percentages; missing percentages are excluded, never replaced with 0% or 50%. BTTS/goals source percentages are not currently stored, so their averages are n/a.")}</p>
             """);
         if (matches.Count == 0)
             body.Append($"<p>{Text(language, "No stored predictions for this date.")}</p>");
         else
         {
-            body.Append($"<div class='scroll'><table><tr><th>{Text(language, "Fixture / league")}</th><th>{Text(language, "Consensus")} 1X2</th><th>BTTS</th><th>{Text(language, "Goals")}</th><th>{Text(language, "Final / half-time")}</th><th>{Text(language, "Source details")}</th></tr>");
-            foreach (var match in matches)
+            body.Append($"<div class='scroll'><table><tr><th>{Text(language, "Fixture / league")}</th>{Header("1X2", "result")}{Header("BTTS", "btts")}{Header(Text(language, "Goals"), "goals")}<th>{Text(language, "Final / half-time")}</th><th>{Text(language, "Source details")}</th></tr>");
+            foreach (var row in PredictionConsensus.Order(matches, sort, ascending))
             {
+                var match = row.Match;
                 var snapshots = CalibrationAnalyzer.LatestPerSource(match);
                 body.Append("<tr>");
                 Cell(body, $"{match.HomeTeam} - {match.AwayTeam} / {TicketPerformanceAnalyzer.LeagueName(match.League)}");
-                Cell(body, Vote(snapshots.Select(x => x.PredictedResult), ["1", "X", "2"]));
-                Cell(body, Vote(snapshots.Select(x => x.Btts), ["YES", "NO"]));
-                Cell(body, Vote(snapshots.Select(x => x.Goals),
-                    ["O0.5", "U0.5", "O1.5", "U1.5", "O2.5", "U2.5", "O3.5", "U3.5"]));
+                VoteCell(row.Result);
+                VoteCell(row.Btts);
+                VoteCell(row.Goals);
                 Cell(body, Score(match.Result, language));
                 body.Append("<td>");
                 if (snapshots.Count == 0)
@@ -274,18 +292,31 @@ public static class DatabaseReportPages
             }
             body.Append("</table></div>");
         }
-        body.Append(Pagination($"/predictions?date={date:yyyy-MM-dd}", page, total, 100, language));
+        body.Append(Pagination($"/predictions?date={date:yyyy-MM-dd}&sort={Uri.EscapeDataString(sort)}&direction={(ascending ? "asc" : "desc")}", page, total, 100, language));
         return Page("Stored predictions", body.ToString(), language: language);
 
-        string Vote(IEnumerable<string?> values, string[] allowed)
+        string Header(string label, string market)
         {
-            var votes = values.Select(x => x?.Trim().ToUpperInvariant())
-                .Where(x => x != null && allowed.Contains(x)).GroupBy(x => x)
-                .OrderByDescending(g => g.Count()).ToList();
-            int totalVotes = votes.Sum(g => g.Count());
-            return votes.Count == 0 || votes.Count > 1 && votes[0].Count() == votes[1].Count()
-                ? Text(language, "n/a")
-                : $"{votes[0].Key} ({votes[0].Count()}/{totalVotes})";
+            string Link(string key, string text)
+            {
+                string direction = key == sort && !ascending ? "asc" : "desc";
+                return $"<a href='/predictions?date={date:yyyy-MM-dd}&amp;lang={LanguageCode(language)}&amp;sort={key}&amp;direction={direction}'>{Encode(text)}</a>";
+            }
+            return $"<th>{Text(language, "Consensus")} {Encode(label)}<br>{Link($"{market}-agreement", Text(language, "Agreement"))}<br>{Link($"{market}-probability", Text(language, "Source average"))}</th>";
+        }
+
+        void VoteCell(MarketConsensus consensus)
+        {
+            if (consensus.Pick == null)
+            {
+                Cell(body, Text(language, "n/a"));
+                return;
+            }
+            string average = consensus.AverageProbability?.ToString("P1", CultureInfo.InvariantCulture) ?? Text(language, "n/a");
+            body.Append("<td>").Append(Encode($"{consensus.Pick} ({consensus.Matching}/{consensus.Total})"))
+                .Append("<br>").Append(Encode($"{Text(language, "Agreement")}: {consensus.Agreement:P1}"))
+                .Append("<br><small>").Append(Encode($"{Text(language, "Source average")}: {average} — {consensus.Priced}/{consensus.Matching} {Text(language, "with probability")}"))
+                .Append("</small></td>");
         }
     }
 

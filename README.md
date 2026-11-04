@@ -74,6 +74,15 @@ Authenticated read-only web pages:
 
 - `/predictions?date=yyyy-MM-dd`: consolidated fixture rows with latest-per-source
   votes, FT/HT scores and expandable source details, consolidated before pagination.
+  Defaults to highest 1X2 agreement percentage, then matching source count.
+  `sort=result-agreement|result-probability|btts-agreement|btts-probability|goals-agreement|goals-probability`
+  and `direction=asc|desc` sort the whole date before pagination; unknown values
+  remain last. Each market shows agreement separately from average source
+  probability and its coverage. Only agreeing sources with valid percentages
+  contribute to that average (60% and 55% average to 57.5%); missing values are
+  excluded. The current schema stores source probabilities only for 1X2.
+  BTTS/goals averages are explicitly unavailable, never copied from 1X2 or
+  confused with source agreement. None of these figures is calibrated win probability.
 - `/tickets`: date and mode filters for all saved variants.
 - `/tickets/ID`: frozen selections, evidence, current FT/HT scores and pending
   reasons.
@@ -99,6 +108,15 @@ so the ticket script still preserves Excel files on collection failure.
 Prediction saving reuses a unique existing source-ID link while preserving its
 canonical names; ambiguous links without an exact record fail instead of creating
 another duplicate. This does not repair or merge historical database records.
+
+A fresh verified regulation-time provider fixture can also corroborate a unique
+exact-name/date row and a separate unique provider-ID row. This requires a
+non-placeholder UTC kickoff on that Skopje date, conservative same-order team
+aliases (including club designators), compatible stored scores and no conflicting
+provider IDs or real kickoffs. Legacy midnight kickoffs are treated as date-only
+placeholders in this check. Results are saved to the proven rows without merging,
+deleting, renaming or inventing prediction snapshots. Without this live evidence,
+the existing strict duplicate rules still apply.
 
 ## Weighted consensus (local)
 

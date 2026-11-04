@@ -1,4 +1,5 @@
 using Prediction.Infrastructure;
+using Prediction.Entities;
 using Prediction.Services;
 using Xunit;
 
@@ -6,6 +7,28 @@ namespace Prediction.Tests;
 
 public sealed class LeagueNoSelectionTests
 {
+    [Theory]
+    [InlineData("X")]
+    [InlineData("1")]
+    public void ValidPricedVotesWithoutActionableSignalAreEvaluationsNotTechnicalFailures(string pick)
+    {
+        var match = new Match
+        {
+            PredictionSnapshots = [new() { Source = "A", PredictedResult = pick }]
+        };
+        var decision = TicketSelector.Select(match, new(), _ => 1.8, true);
+        Assert.Null(decision.Confirmed);
+        Assert.True(TicketSelector.HasRequiredData(match, _ => 1.8));
+        Assert.True(LeagueTicketSelector.IsNoSelection(true, 0, [],
+            TicketSelector.HasRequiredData(match, _ => 1.8), evaluatedValidFixture: true));
+        Assert.False(TicketSelector.HasRequiredData(match, _ => null));
+        Assert.False(TicketSelector.HasRequiredData(match, _ => double.NaN));
+        match.PredictionSnapshots.First().Confidence = double.PositiveInfinity;
+        Assert.False(TicketSelector.HasRequiredData(match, _ => 1.8));
+        match.PredictionSnapshots.Clear();
+        Assert.False(TicketSelector.HasRequiredData(match, _ => 1.8));
+    }
+
     [Theory]
     [InlineData("UEFA Champions League")]
     [InlineData("Imaginary Cup")]

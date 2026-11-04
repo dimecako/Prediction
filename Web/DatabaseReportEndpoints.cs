@@ -14,8 +14,12 @@ public static class DatabaseReportEndpoints
         {
             if (!TryDate(context, "date", Today(), out var date) || !TryPage(context, out int page))
                 return InvalidQuery(context);
+            string sort = context.Request.Query["sort"].FirstOrDefault() ?? "result-agreement";
+            string direction = context.Request.Query["direction"].FirstOrDefault() ?? "desc";
+            if (!PredictionConsensus.SortKeys.Contains(sort) || direction is not ("asc" or "desc"))
+                return InvalidQuery(context);
             var language = DatabaseReportPages.ParseLanguage(context.Request.Query["lang"]);
-            return TypedResults.Content(await reports.PredictionsAsync(date, page, language, ct), "text/html; charset=utf-8");
+            return TypedResults.Content(await reports.PredictionsAsync(date, page, language, ct, sort, direction == "asc"), "text/html; charset=utf-8");
         }).WithSummary("Read stored predictions by date");
 
         app.MapGet("/tickets", async Task<Results<ContentHttpResult, ProblemHttpResult>> (
@@ -81,8 +85,8 @@ public static class DatabaseReportEndpoints
     private static ProblemHttpResult InvalidQuery(HttpContext context)
     {
         context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseReports")
-            .LogWarning("Invalid report date range or page number.");
+            .LogWarning("Invalid report date range, page number or prediction sort.");
         return TypedResults.Problem(statusCode: 400, title: "Invalid report query",
-            detail: "Use yyyy-MM-dd dates, from <= to, and a positive page number.");
+            detail: "Use yyyy-MM-dd dates, from <= to, a positive page number, and supported sort/direction values.");
     }
 }

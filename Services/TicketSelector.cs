@@ -13,6 +13,18 @@ public sealed record TicketDecision(
 
 public static class TicketSelector
 {
+    public static bool HasRequiredData(Match match, Func<TicketCandidate, double?> getOdds)
+    {
+        var votes = CalibrationAnalyzer.LatestPerSource(match)
+            .Where(x => x.PredictedResult is "1" or "X" or "2").ToList();
+        if (votes.Count == 0 || votes.Any(x => x.Confidence is double value &&
+                (!double.IsFinite(value) || value is < 0 or > 1)))
+            return false;
+        return votes.Select(x => x.PredictedResult!).Distinct()
+            .Any(pick => getOdds(new("1X2", pick, "", "")) is double price &&
+                double.IsFinite(price) && price > 1);
+    }
+
     public const int MinHistory = 100;
     public const int MinComboHistory = 50;
     public const double MinAccuracy = 0.55;

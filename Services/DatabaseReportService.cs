@@ -9,7 +9,8 @@ namespace Prediction.Services;
 
 public interface IDatabaseReportService
 {
-    Task<string> PredictionsAsync(DateOnly date, int page, UiLanguage language, CancellationToken ct);
+    Task<string> PredictionsAsync(DateOnly date, int page, UiLanguage language, CancellationToken ct,
+        string sort = "result-agreement", bool ascending = false);
     Task<string> TicketsAsync(DateOnly from, DateOnly to, string? mode, int page, UiLanguage language, CancellationToken ct);
     Task<string?> TicketAsync(long id, UiLanguage language, CancellationToken ct);
     Task<string> PerformanceAsync(DateOnly from, DateOnly to, UiLanguage language, CancellationToken ct);
@@ -18,14 +19,15 @@ public interface IDatabaseReportService
 
 public sealed class DatabaseReportService(FootballDbContext db) : IDatabaseReportService
 {
-    public async Task<string> PredictionsAsync(DateOnly date, int page, UiLanguage language, CancellationToken ct)
+    public async Task<string> PredictionsAsync(DateOnly date, int page, UiLanguage language, CancellationToken ct,
+        string sort = "result-agreement", bool ascending = false)
     {
         var matches = await db.Matches.AsNoTracking().Where(x => x.MatchDate == date)
             .Include(x => x.PredictionSnapshots).Include(x => x.Result)
             .AsSplitQuery().ToListAsync(ct);
-        var fixtures = PredictionReportFixtures.Consolidate(matches);
-        return DatabaseReportPages.Predictions(date, fixtures.Skip((page - 1) * 100).Take(100).ToList(),
-            page, fixtures.Count, language);
+        var fixtures = PredictionConsensus.Order(PredictionReportFixtures.Consolidate(matches), sort, ascending);
+        return DatabaseReportPages.Predictions(date, fixtures.Skip((page - 1) * 100).Take(100)
+            .Select(x => x.Match).ToList(), page, fixtures.Count, language, sort, ascending);
     }
 
     public async Task<string> TicketsAsync(DateOnly from, DateOnly to, string? mode, int page, UiLanguage language, CancellationToken ct)
