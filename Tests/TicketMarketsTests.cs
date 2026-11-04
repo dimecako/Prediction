@@ -242,6 +242,29 @@ public sealed class TicketMarketsTests
         Assert.Equal(1.85, MaxbetOddsProvider.GetOdds(offer, market, pick));
     }
 
+    [Theory]
+    [InlineData("1 & 1+ prvo", 0, 1)]
+    [InlineData("2 & 1+ prvo", 1, 0)]
+    [InlineData("1 & 1+ prvo & 1+ vtoro", 1, 0)]
+    [InlineData("2 & 1+ prvo & 1+ vtoro", 0, 1)]
+    [InlineData("1-1", 1, 1)]
+    [InlineData("2-2", 2, 1)]
+    [InlineData("1-1 & 2+", 1, 0)]
+    [InlineData("2-2 & 2+", 0, 1)]
+    public void ProvenComboLossSettlesWithoutHalfTimeOnlyForSettlement(string pick, int home, int away)
+    {
+        Assert.False(TicketMarkets.IsCorrect(Combo(pick), Result(home, away), allowFinalOnlyLoss: true));
+        Assert.Null(TicketMarkets.IsCorrect(Combo(pick), Result(home, away)));
+    }
+
+    [Theory]
+    [InlineData("1 & 1+ prvo", 1, 0)]
+    [InlineData("2 & 1+ prvo & 1+ vtoro", 0, 2)]
+    [InlineData("1-1", 2, 0)]
+    [InlineData("2-2 & 2+", 0, 2)]
+    public void PossibleComboWinStillRequiresHalfTime(string pick, int home, int away) =>
+        Assert.Null(TicketMarkets.IsCorrect(Combo(pick), Result(home, away), allowFinalOnlyLoss: true));
+
     private static TicketCandidate Combo(string pick) => new("Combo", pick, pick, "");
 
     private static MatchResult Result(int home, int away, int? htHome = null, int? htAway = null) =>

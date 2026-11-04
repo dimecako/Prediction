@@ -602,13 +602,13 @@ public partial class Program
             var primaryPersistence = await MatchResultPersister.PersistAsync(
                 collectDb, date, primaryCollected.SourceResults, Console.WriteLine);
 
-            var pendingMatches = await collectDb.Matches.AsNoTracking()
-                .Where(x => x.MatchDate == date && x.Result == null).ToListAsync();
+            var pendingMatches = await MatchResultCollector.MissingScores(
+                collectDb.Matches.AsNoTracking().Where(x => x.MatchDate == date)).ToListAsync();
             CollectedMatchResults fallbackCollected = new([], 0, 0);
             MatchResultPersistenceSummary fallbackPersistence = new(0, 0, 0, 0, 0, 0);
             if (pendingMatches.Count > 0)
             {
-                Console.WriteLine($"[RESULTS] {pendingMatches.Count} fixtures still have no stored result; " +
+                Console.WriteLine($"[RESULTS] {pendingMatches.Count} fixtures still lack FT or complete HT; " +
                     "checking only those fixtures with SoccerVista.");
                 fallbackCollected = await MatchResultCollector.CollectTargetedAsync(date,
                     new SoccerVistaResultProvider(httpClient), pendingMatches, Console.WriteLine);
@@ -618,7 +618,7 @@ public partial class Program
                     collectDb, date, fallbackCollected.SourceResults, Console.WriteLine);
             }
             else
-                Console.WriteLine("[RESULTS] No fixtures are missing results; SoccerVista fallback skipped.");
+                Console.WriteLine("[RESULTS] No fixtures are missing FT/HT; SoccerVista fallback skipped.");
 
             var collected = new CollectedMatchResults(
                 primaryCollected.Results.Concat(fallbackCollected.Results).ToList(),

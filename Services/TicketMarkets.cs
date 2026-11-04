@@ -222,7 +222,10 @@ public static class TicketMarkets
             condition != $"-{side}" && condition != $"-{side} & 2+")
             throw new ArgumentException($"Unsupported ticket pick: {candidate.Pick}");
         if (result.HalfTimeHomeGoals is not int home || result.HalfTimeAwayGoals is not int away)
-            return null;
+            return allowFinalOnlyLoss && (winner != side ||
+                condition == " & 1+ prvo & 1+ vtoro" && total < 2 ||
+                condition.EndsWith(" & 2+", StringComparison.Ordinal) && total < 2)
+                ? false : null;
         ValidateHalfTime(result, home, away);
         string htWinner = home > away ? "1" : home < away ? "2" : "X";
         return winner == side && condition switch

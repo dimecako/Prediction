@@ -13,9 +13,11 @@ public sealed class DailyRunCheckpoint
     private readonly int count;
     private readonly string revision;
     private bool includeDayBefore;
+    public const int MaximumAttempts = 3;
+    public int Attempts { get; private set; }
 
     private DailyRunCheckpoint(string? filePath, string date, int count, string revision,
-        IEnumerable<string>? completedSteps = null, bool includeDayBefore = false)
+        IEnumerable<string>? completedSteps = null, bool includeDayBefore = false, int attempts = 0)
     {
         this.filePath = filePath;
         this.date = date;
@@ -23,6 +25,7 @@ public sealed class DailyRunCheckpoint
         this.revision = revision;
         this.completedSteps = new(completedSteps ?? [], StringComparer.Ordinal);
         this.includeDayBefore = includeDayBefore;
+        Attempts = attempts;
     }
 
     public static async Task<DailyRunCheckpoint> LoadAsync(
@@ -35,15 +38,27 @@ public sealed class DailyRunCheckpoint
         await using var stream = File.OpenRead(filePath);
         var saved = await JsonSerializer.DeserializeAsync<CheckpointFile>(stream, JsonOptions)
             ?? throw new InvalidDataException("Daily-run checkpoint file is empty.");
-        if (saved.FormatVersion != CurrentFormatVersion || saved.Date != dateText ||
-            saved.Count != count || saved.Revision != revision)
+        if (saved.FormatVersion != CurrentFormatVersion || saved.Attempts < 0 ||
+            saved.CompletedSteps == null)
+            throw new InvalidDataException("Unsupported or invalid daily-run checkpoint.");
+        if (saved.Date != dateText)
         {
-            log("[DAILY-RUN] Checkpoint does not match this date, ticket count, or deployed revision; starting without saved steps.");
+            log("[DAILY-RUN] Checkpoint belongs to another date; starting without saved steps.");
             return new(filePath, dateText, count, revision);
         }
 
         log($"[DAILY-RUN] Restored {saved.CompletedSteps.Length} completed steps from checkpoint.");
-        return new(filePath, dateText, count, revision, saved.CompletedSteps, saved.IncludeDayBefore);
+        return new(filePath, dateText, count, revision, saved.CompletedSteps, saved.IncludeDayBefore,
+            saved.Attempts);
+    }
+
+    public async Task<bool> TryBeginAttemptAsync()
+    {
+        if (Attempts >= MaximumAttempts)
+            return false;
+        Attempts++;
+        await SaveAsync();
+        return true;
     }
 
     public bool IncludesDayBefore => includeDayBefore;
@@ -81,7 +96,7 @@ public sealed class DailyRunCheckpoint
             await using (var stream = File.Create(temporaryPath))
                 await JsonSerializer.SerializeAsync(stream, new CheckpointFile(
                     CurrentFormatVersion, date, count, revision, includeDayBefore,
-                    completedSteps.Order().ToArray()), JsonOptions);
+                    completedSteps.Order().ToArray(), Attempts), JsonOptions);
             File.Move(temporaryPath, filePath, overwrite: true);
         }
         finally
@@ -93,5 +108,5 @@ public sealed class DailyRunCheckpoint
 
     private sealed record CheckpointFile(
         int FormatVersion, string Date, int Count, string Revision, bool IncludeDayBefore,
-        string[] CompletedSteps);
+        string[] CompletedSteps, int Attempts = 0);
 }

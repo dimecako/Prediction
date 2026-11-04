@@ -34,34 +34,59 @@ public partial class Program
         }
 
         Console.WriteLine($"[DAILY-RUN] Starting {date:yyyy-MM-dd}; count={count}; no Excel import, build or migrations.");
+        var checkpoint = await DailyRunCheckpoint.LoadAsync(
+            Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_FILE") ??
+                Path.Combine(".automation", "daily-checkpoints", $"{date:yyyy-MM-dd}.json"), date, count,
+            Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_REVISION") ?? "local", Console.WriteLine);
+        bool reserved = Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_ATTEMPT_RESERVED") == "true";
+        if (reserved ? checkpoint.Attempts is < 1 or > DailyRunCheckpoint.MaximumAttempts
+                     : !await checkpoint.TryBeginAttemptAsync())
+        {
+            Console.Error.WriteLine("[DAILY-RUN] No attempt available; maximum three attempts per date.");
+            CommandExecution.Fail();
+            return;
+        }
         await using var db = new FootballDbContextFactory().CreateDbContext([]);
         var oldestResultDate = date.AddDays(-2);
-        var tickets = await db.SimulatedTickets.AsNoTracking()
-            .Where(x => x.MatchDate >= oldestResultDate && x.MatchDate < date)
-            .Include(x => x.Selections).ToListAsync();
-        var matchIds = tickets.SelectMany(x => x.Selections).Select(x => x.MatchId).Distinct().ToList();
-        var results = await db.MatchResults.AsNoTracking()
-            .Where(x => matchIds.Contains(x.MatchId)).ToDictionaryAsync(x => x.MatchId);
-        var pendingDates = DailyRunPlan.PendingDates(tickets, results, date);
+        var failed = new List<string>();
+        IReadOnlyList<DateOnly> pendingDates = [];
+        try
+        {
+            var tickets = await db.SimulatedTickets.AsNoTracking()
+                .Where(x => x.MatchDate >= oldestResultDate && x.MatchDate < date)
+                .Include(x => x.Selections).ToListAsync();
+            var matchIds = tickets.SelectMany(x => x.Selections).Select(x => x.MatchId).Distinct().ToList();
+            var results = await db.MatchResults.AsNoTracking()
+                .Where(x => matchIds.Contains(x.MatchId)).ToDictionaryAsync(x => x.MatchId);
+            pendingDates = DailyRunPlan.PendingDates(tickets, results, date);
+        }
+        catch (Exception ex)
+        {
+            failed.Add("Discover pending past results");
+            Console.Error.WriteLine($"[DAILY-RUN] Past result discovery failed ({ex.GetType().Name}); continuing target work.");
+        }
         Console.WriteLine($"[DAILY-RUN] Collecting yesterday ({date.AddDays(-1):yyyy-MM-dd}); " +
             $"also checking {oldestResultDate:yyyy-MM-dd} only if it has Pending selections (including lost accumulators). " +
             "Older dates are excluded.");
-        var checkpoint = await DailyRunCheckpoint.LoadAsync(
-            Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_FILE"), date, count,
-            Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_REVISION") ?? "local", Console.WriteLine);
         DateOnly dayBefore = date.AddDays(-2);
         bool includeDayBefore = pendingDates.Contains(dayBefore) || checkpoint.IncludesDayBefore;
         await checkpoint.SetPlanAsync(includeDayBefore);
         var steps = DailyRunPlan.Build(date, count,
             includeDayBefore ? pendingDates.Append(dayBefore) : pendingDates);
-        var failed = new List<string>();
         foreach (var step in steps)
         {
             // A lost connection also loses the advisory lock: stop before any further writes.
             await runLock.CheckAsync();
             if (checkpoint.IsCompleted(step))
             {
-                Console.WriteLine($"[DAILY-RUN] SKIP {step.Name}; already completed for this date, count, and revision.");
+                Console.WriteLine($"[DAILY-RUN] SKIP {step.Name}; already completed.");
+                continue;
+            }
+            string? mode = DailyRunPlan.TicketMode(step);
+            if (mode != null && await TicketLedger.FindForDateModeAsync(db, date, mode) != null)
+            {
+                await checkpoint.MarkCompletedAsync(step);
+                Console.WriteLine($"[DAILY-RUN] SKIP {step.Name}; frozen ticket already exists for date and mode.");
                 continue;
             }
             string[] pendingDependencies = step.Dependencies
@@ -109,6 +134,20 @@ namespace Prediction.Services
 
     public static class DailyRunPlan
     {
+        public static string? TicketMode(DailyRunStep step) => step.Name switch
+        {
+            "ticket" => "value",
+            "ticket safe" => "safe",
+            "ai-rank" => "ml",
+            "ai-rank safe" => "ml-safe",
+            "ai-rank safe league" => "ml-league-safe",
+            "daily-ticket" => "daily",
+            "daily-ticket-league" => "daily-league",
+            "ticket-1-3p3+" => "1-3p3+",
+            "ticket-1-3p3+ safe" => "1-3p3+-safe",
+            _ => null
+        };
+
         public static bool CheckSourceCoverage(IEnumerable<(string Source, int Rows)> sources,
             Action<string> log)
         {
@@ -169,7 +208,7 @@ namespace Prediction.Services
                 new("daily-ticket-league", ["daily-ticket-league", target, size]),
                 new("ticket-1-3p3+", ["ticket-1-3p3+", target, size]),
                 new("ticket-1-3p3+ safe", ["ticket-1-3p3+", target, size, "safe"])
-            }.Select(step => step with { Dependencies = [collectPredictions.CheckpointKey] }).ToArray();
+            };
             steps.AddRange(ticketSteps);
             steps.Add(new("Target ticket report", ["ticket-report", target, target],
                 ticketSteps.Select(step => step.CheckpointKey).ToArray()));

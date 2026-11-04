@@ -10,6 +10,23 @@ public sealed class MatchResultCollectorTests
     private static readonly DateOnly Date = new(2026, 10, 23);
 
     [Fact]
+    public void FallbackIncludesMissingFinalOrEitherHalfTimeScore()
+    {
+        Match[] fixtures =
+        [
+            new() { Id = 1 },
+            new() { Id = 2, Result = new() { HomeGoals = 2, AwayGoals = 1 } },
+            new() { Id = 3, Result = new() { HomeGoals = 2, AwayGoals = 1, HalfTimeHomeGoals = 1 } },
+            new() { Id = 4, Result = new() { HomeGoals = 2, AwayGoals = 1, HalfTimeAwayGoals = 0 } },
+            new() { Id = 5, Result = new() { HomeGoals = 2, AwayGoals = 1,
+                HalfTimeHomeGoals = 1, HalfTimeAwayGoals = 0 } }
+        ];
+
+        Assert.Equal(new long[] { 1, 2, 3, 4 },
+            MatchResultCollector.MissingScores(fixtures.AsQueryable()).Select(x => x.Id).ToArray());
+    }
+
+    [Fact]
     public void DefaultCollectionExplicitlyDisablesSourcesWithoutVerifiedRegulationScores()
     {
         var messages = new List<string>();

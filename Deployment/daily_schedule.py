@@ -1,7 +1,9 @@
 """Gate daily attempts on the Skopje schedule and a successful run for the date."""
 import json
 import os
+import sys
 from datetime import date, datetime, time, timezone
+from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -16,7 +18,7 @@ def should_run(event_name, schedule, now):
     if event_name != "schedule":
         return False
     local = now.astimezone(LOCAL_ZONE)
-    for hour in range(8, 12):
+    for hour in range(8, 11):
         planned = datetime.combine(local.date(), time(hour), LOCAL_ZONE)
         expected = f"0 {planned.astimezone(timezone.utc).hour} * * *"
         if schedule == expected:
@@ -64,19 +66,20 @@ def has_successful_run(target, repository, token, api_url, request_json=github_j
 
 
 def latest_checkpoint(target, count, repository, token, api_url, request_json=github_json):
-    name = f"daily-checkpoint-{target}-{count}"
+    name = f"daily-checkpoint-{target}"
     base = f"{api_url.rstrip('/')}/repos/{repository}"
     page = 1
     while True:
-        query = urlencode({"name": name, "per_page": 100, "page": page})
+        # Include legacy count-suffixed checkpoints: changing count must not reset attempts.
+        query = urlencode({"per_page": 100, "page": page})
         artifacts = request_json(f"{base}/actions/artifacts?{query}", token)["artifacts"]
         for artifact in artifacts:
-            if artifact["name"] != name or artifact["expired"]:
+            if (artifact["name"] != name and not artifact["name"].startswith(f"{name}-")) or artifact["expired"]:
                 continue
             run_id = artifact["workflow_run"]["id"]
             run = request_json(f"{base}/actions/runs/{run_id}", token)
             if run["status"] == "completed" and run["path"] == ".github/workflows/daily-run.yml":
-                return str(run_id), name
+                return str(run_id), artifact["name"]
         if len(artifacts) < 100:
             return "", ""
         page += 1
@@ -92,7 +95,45 @@ def plan_run(event_name, schedule, requested_date, now, repository, token, api_u
     return True, target, f"Run {target}: no successful daily run recorded"
 
 
+def reserve_attempt(path, target, count, revision):
+    path = Path(path)
+    if path.exists():
+        checkpoint = json.loads(path.read_text(encoding="utf-8"))
+        if (checkpoint.get("FormatVersion") != 1
+                or not isinstance(checkpoint.get("CompletedSteps"), list)
+                or type(checkpoint.get("Attempts", 0)) is not int
+                or checkpoint.get("Attempts", 0) < 0):
+            raise ValueError("Unsupported or invalid daily-run checkpoint.")
+        if checkpoint.get("Date") != target:
+            checkpoint = None
+    else:
+        checkpoint = None
+    if checkpoint is None:
+        checkpoint = {"FormatVersion": 1, "Date": target, "Count": count,
+                      "Revision": revision, "IncludeDayBefore": False, "CompletedSteps": []}
+    attempts = checkpoint.get("Attempts", 0)
+    if attempts >= 3:
+        return False
+    checkpoint["Attempts"] = attempts + 1
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staging = path.with_suffix(".pending")
+    try:
+        staging.write_text(json.dumps(checkpoint, indent=2), encoding="utf-8")
+        staging.replace(path)
+    finally:
+        staging.unlink(missing_ok=True)
+    return True
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--reserve"]:
+        if not reserve_attempt(os.environ["DAILY_CHECKPOINT_FILE"], os.environ["TARGET_DATE"],
+                               int(os.environ.get("TICKET_COUNT", "15")),
+                               os.environ["DAILY_CHECKPOINT_REVISION"]):
+            print("[SCHEDULE] Maximum three attempts for this date already reserved.")
+            sys.exit(1)
+        print("[SCHEDULE] Reserved one of three daily attempts.")
+        sys.exit(0)
     run, target, message = plan_run(
         os.environ.get("EVENT_NAME", ""),
         os.environ.get("EVENT_SCHEDULE", ""),

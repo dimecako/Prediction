@@ -10,6 +10,12 @@ namespace Prediction.Services;
 
 public static class TicketLedger
 {
+    public static Task<SimulatedTicket?> FindForDateModeAsync(
+        FootballDbContext db, DateOnly date, string mode) =>
+        db.SimulatedTickets.AsNoTracking().Include(x => x.Selections)
+            .Where(x => x.MatchDate == date && x.Mode == mode)
+            .OrderBy(x => x.CreatedAtUtc).ThenBy(x => x.Id).FirstOrDefaultAsync();
+
     public static bool IsDailyMode(string mode) => mode is "daily" or "daily-league";
 
     public static SimulatedTicket CreateDaily(

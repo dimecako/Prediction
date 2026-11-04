@@ -11,10 +11,14 @@ public sealed record CollectedMatchResults(
 
 public static class MatchResultCollector
 {
+    public static IQueryable<Match> MissingScores(IQueryable<Match> matches) =>
+        matches.Where(x => x.Result == null ||
+            x.Result.HalfTimeHomeGoals == null || x.Result.HalfTimeAwayGoals == null);
+
     public static IReadOnlyList<IMatchResultProvider> CreatePrimaryProviders(Action<string> log)
     {
         log("[RESULTS] FootballResultsOnline disabled: unlabelled scores cannot verify regulation-time FT.");
-        log("[RESULTS] Forebet is the sole primary source; SoccerVista is reserved for pending fixtures.");
+        log("[RESULTS] Forebet is the sole primary source; SoccerVista is reserved for missing FT/HT.");
         return [new ForebetResultProvider()];
     }
 
