@@ -1,3 +1,4 @@
+using HtmlAgilityPack;
 using Prediction.Entities;
 using Prediction.Services;
 using Prediction.Web;
@@ -7,6 +8,66 @@ namespace Prediction.Tests;
 
 public sealed class DatabaseReportPagesTests
 {
+    [Theory]
+    [InlineData(UiLanguage.English, "Consensus", "Source details")]
+    [InlineData(UiLanguage.Macedonian, "Консензус", "Детали по извор")]
+    public void OneStoredMatchHasOneTopLevelRowWithVisibleConsensusAndSourceDetails(
+        UiLanguage language, string consensusLabel, string detailsLabel)
+    {
+        var match = new Match
+        {
+            HomeTeam = "Home & Team", AwayTeam = "<Away>", League = "<League>",
+            PredictionSnapshots =
+            [
+                new() { Id = 1, Source = "Source A", PredictedResult = "2", PredictedScore = "stale",
+                    CapturedAtUtc = new DateTime(2026, 11, 1, 8, 0, 0, DateTimeKind.Utc) },
+                new() { Id = 2, Source = "Source A", PredictedResult = "1", Btts = "YES", Goals = "O2.5",
+                    CapturedAtUtc = new DateTime(2026, 11, 1, 9, 0, 0, DateTimeKind.Utc) },
+                new() { Id = 3, Source = "<Source B>", PredictedResult = "1", Btts = "YES", Goals = "O2.5" }
+            ]
+        };
+        string html = DatabaseReportPages.Predictions(new DateOnly(2026, 11, 1), [match], 1, 1, language);
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var table = document.DocumentNode.SelectSingleNode("//div[@class='scroll']/table");
+        Assert.Equal(2, table.SelectNodes("./tr").Count);
+        var row = table.SelectSingleNode("./tr[2]");
+        Assert.Contains("1 (2/2)", row.SelectSingleNode("./td[2]").InnerText);
+        Assert.Contains("YES (2/2)", row.SelectSingleNode("./td[3]").InnerText);
+        Assert.Contains("O2.5 (2/2)", row.SelectSingleNode("./td[4]").InnerText);
+        Assert.Contains(consensusLabel, table.SelectSingleNode("./tr[1]").InnerText);
+        Assert.Contains(detailsLabel, row.SelectSingleNode(".//details/summary").InnerText);
+        Assert.Equal(2, row.SelectNodes(".//details/table/tr[td]").Count);
+        Assert.Equal(1, html.Split("Home &amp; Team - &lt;Away&gt;").Length - 1);
+        Assert.Contains("&lt;League&gt;", html);
+        Assert.Contains("&lt;Source B&gt;", html);
+        Assert.DoesNotContain("stale", html);
+        Assert.DoesNotContain("<Source B>", html);
+    }
+
+    [Theory]
+    [InlineData(UiLanguage.English, false, "n/a")]
+    [InlineData(UiLanguage.Macedonian, false, "н/д")]
+    [InlineData(UiLanguage.English, true, "n/a")]
+    [InlineData(UiLanguage.Macedonian, true, "н/д")]
+    public void TiedOrMissingVotesHaveNoConsensus(UiLanguage language, bool missing, string expected)
+    {
+        var match = new Match
+        {
+            HomeTeam = "Home", AwayTeam = "Away",
+            PredictionSnapshots = missing ? [] :
+            [
+                new() { Source = "A", PredictedResult = "1", Btts = "YES", Goals = "O2.5" },
+                new() { Source = "B", PredictedResult = "2", Btts = "NO", Goals = "U2.5" }
+            ]
+        };
+        var document = new HtmlDocument();
+        document.LoadHtml(DatabaseReportPages.Predictions(new DateOnly(2026, 11, 1), [match], 1, 1, language));
+        var row = document.DocumentNode.SelectSingleNode("//div[@class='scroll']/table/tr[2]");
+        foreach (int column in new[] { 2, 3, 4 })
+            Assert.Equal(expected, row.SelectSingleNode($"./td[{column}]").InnerText);
+    }
+
     [Fact]
     public void PredictionsEncodeSourceAndFixtureWithoutRunningCollection()
     {

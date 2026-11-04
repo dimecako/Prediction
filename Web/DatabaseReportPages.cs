@@ -73,6 +73,8 @@ public static class DatabaseReportPages
             "No stored predictions for this date." => "Нема зачувани прогнози за овој датум.",
             "Fixture / league" => "Натпревар / лига",
             "Source" => "Извор",
+            "Consensus" => "Консензус",
+            "Source details" => "Детали по извор",
             "Score" => "Резултат",
             "Goals" => "Голови",
             "Source Prob." => "Веројатност од извор",
@@ -237,35 +239,54 @@ public static class DatabaseReportPages
             body.Append($"<p>{Text(language, "No stored predictions for this date.")}</p>");
         else
         {
-            body.Append($"<div class='scroll'><table><tr><th>{Text(language, "Fixture / league")}</th><th>{Text(language, "Source")}</th><th>1X2</th><th>{Text(language, "Score")}</th><th>BTTS</th><th>{Text(language, "Goals")}</th><th>{Text(language, "Source Prob.")}</th><th>{Text(language, "Captured UTC")}</th><th>{Text(language, "Final / half-time")}</th></tr>");
+            body.Append($"<div class='scroll'><table><tr><th>{Text(language, "Fixture / league")}</th><th>{Text(language, "Consensus")} 1X2</th><th>BTTS</th><th>{Text(language, "Goals")}</th><th>{Text(language, "Final / half-time")}</th><th>{Text(language, "Source details")}</th></tr>");
             foreach (var match in matches)
             {
-                foreach (var snapshot in CalibrationAnalyzer.LatestPerSource(match).OrderBy(x => x.Source))
+                var snapshots = CalibrationAnalyzer.LatestPerSource(match);
+                body.Append("<tr>");
+                Cell(body, $"{match.HomeTeam} - {match.AwayTeam} / {TicketPerformanceAnalyzer.LeagueName(match.League)}");
+                Cell(body, Vote(snapshots.Select(x => x.PredictedResult), ["1", "X", "2"]));
+                Cell(body, Vote(snapshots.Select(x => x.Btts), ["YES", "NO"]));
+                Cell(body, Vote(snapshots.Select(x => x.Goals),
+                    ["O0.5", "U0.5", "O1.5", "U1.5", "O2.5", "U2.5", "O3.5", "U3.5"]));
+                Cell(body, Score(match.Result, language));
+                body.Append("<td>");
+                if (snapshots.Count == 0)
+                    body.Append(Text(language, "No stored snapshots."));
+                else
                 {
-                    var result = match.Result;
-                    body.Append("<tr>");
-                    Cell(body, $"{match.HomeTeam} - {match.AwayTeam} / {TicketPerformanceAnalyzer.LeagueName(match.League)}");
-                    Cell(body, snapshot.Source);
-                    Cell(body, snapshot.PredictedResult);
-                    Cell(body, snapshot.PredictedScore);
-                    Cell(body, snapshot.Btts);
-                    Cell(body, snapshot.Goals);
-                    Cell(body, snapshot.Confidence.HasValue ? snapshot.Confidence.Value.ToString("P1", CultureInfo.InvariantCulture) : "n/a");
-                    Cell(body, snapshot.CapturedAtUtc.ToString("u"));
-                    Cell(body, Score(result, language));
-                    body.Append("</tr>");
+                    body.Append($"<details><summary>{Text(language, "Source details")} ({snapshots.Count})</summary><table><tr><th>{Text(language, "Source")}</th><th>1X2</th><th>{Text(language, "Score")}</th><th>BTTS</th><th>{Text(language, "Goals")}</th><th>{Text(language, "Source Prob.")}</th><th>{Text(language, "Captured UTC")}</th></tr>");
+                    foreach (var snapshot in snapshots.OrderBy(x => x.Source))
+                    {
+                        body.Append("<tr>");
+                        Cell(body, snapshot.Source);
+                        Cell(body, snapshot.PredictedResult);
+                        Cell(body, snapshot.PredictedScore);
+                        Cell(body, snapshot.Btts);
+                        Cell(body, snapshot.Goals);
+                        Cell(body, snapshot.Confidence.HasValue ? snapshot.Confidence.Value.ToString("P1", CultureInfo.InvariantCulture) : "n/a");
+                        Cell(body, snapshot.CapturedAtUtc.ToString("u"));
+                        body.Append("</tr>");
+                    }
+                    body.Append("</table></details>");
                 }
-                if (match.PredictionSnapshots.Count == 0)
-                {
-                    body.Append("<tr>");
-                    Cell(body, $"{match.HomeTeam} - {match.AwayTeam}");
-                    body.Append($"<td colspan='8'>{Text(language, "No stored snapshots.")}</td></tr>");
-                }
+                body.Append("</td></tr>");
             }
             body.Append("</table></div>");
         }
         body.Append(Pagination($"/predictions?date={date:yyyy-MM-dd}", page, total, 100, language));
         return Page("Stored predictions", body.ToString(), language: language);
+
+        string Vote(IEnumerable<string?> values, string[] allowed)
+        {
+            var votes = values.Select(x => x?.Trim().ToUpperInvariant())
+                .Where(x => x != null && allowed.Contains(x)).GroupBy(x => x)
+                .OrderByDescending(g => g.Count()).ToList();
+            int totalVotes = votes.Sum(g => g.Count());
+            return votes.Count == 0 || votes.Count > 1 && votes[0].Count() == votes[1].Count()
+                ? Text(language, "n/a")
+                : $"{votes[0].Key} ({votes[0].Count()}/{totalVotes})";
+        }
     }
 
     public static string TicketTable(IEnumerable<TicketSettlement> settlements, UiLanguage language = UiLanguage.English)

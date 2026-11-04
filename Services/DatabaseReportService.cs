@@ -20,12 +20,12 @@ public sealed class DatabaseReportService(FootballDbContext db) : IDatabaseRepor
 {
     public async Task<string> PredictionsAsync(DateOnly date, int page, UiLanguage language, CancellationToken ct)
     {
-        var query = db.Matches.AsNoTracking().Where(x => x.MatchDate == date);
-        int total = await query.CountAsync(ct);
-        var matches = await query.OrderBy(x => x.HomeTeam).ThenBy(x => x.Id)
-            .Skip((page - 1) * 100).Take(100).Include(x => x.PredictionSnapshots).Include(x => x.Result)
+        var matches = await db.Matches.AsNoTracking().Where(x => x.MatchDate == date)
+            .Include(x => x.PredictionSnapshots).Include(x => x.Result)
             .AsSplitQuery().ToListAsync(ct);
-        return DatabaseReportPages.Predictions(date, matches, page, total, language);
+        var fixtures = PredictionReportFixtures.Consolidate(matches);
+        return DatabaseReportPages.Predictions(date, fixtures.Skip((page - 1) * 100).Take(100).ToList(),
+            page, fixtures.Count, language);
     }
 
     public async Task<string> TicketsAsync(DateOnly from, DateOnly to, string? mode, int page, UiLanguage language, CancellationToken ct)
