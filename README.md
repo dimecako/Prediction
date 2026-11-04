@@ -55,13 +55,16 @@ already train their ranking models from history; a separate `train` command is
 not needed. Build happens before execution, and Excel imports are not needed
 because selections are stored in PostgreSQL.
 
-Scheduling starts at 08:00 Europe/Skopje, with three hourly retry opportunities
-at 09:00, 10:00 and 11:00, using the appropriate winter/summer UTC offset.
+Scheduling starts at 08:00 Europe/Skopje, with up to two hourly retries
+at 09:00 and 10:00, using the appropriate winter/summer UTC offset.
+The three-attempt budget and completed steps survive retries, revision changes
+and ticket-count changes. Existing date/mode tickets are reused rather than regenerated.
 Once a manual or scheduled execution succeeds for the target date, subsequent
 attempts skip building and collection. Success is tracked by a date-specific
 GitHub artifact retained for 90 days and checked against its successful run.
 GitHub scheduling is best-effort and can be delayed. Scheduled workflows must exist on the repository's default
-branch; the workflow checks out the deployed `prediction-api` branch. Use the
+branch; scheduled runs and manual runs from `main` check out the deployed
+`prediction-api` branch. Manual runs from other branches use the selected revision. Use the
 Actions tab for manual runs, failure details and reruns. Check the first real
 run before relying on unattended operation.
 
@@ -69,8 +72,8 @@ Set `Exports__Excel=false` for hosted execution; local Excel exports remain
 enabled by default. Existing workbooks and model ZIPs are not deleted.
 Authenticated read-only web pages:
 
-- `/predictions?date=yyyy-MM-dd`: latest stored source snapshots, scores and
-  capture times, paginated by fixture.
+- `/predictions?date=yyyy-MM-dd`: consolidated fixture rows with latest-per-source
+  votes, FT/HT scores and expandable source details, consolidated before pagination.
 - `/tickets`: date and mode filters for all saved variants.
 - `/tickets/ID`: frozen selections, evidence, current FT/HT scores and pending
   reasons.

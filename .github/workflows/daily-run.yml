@@ -37,8 +37,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Manual runs test the selected revision; scheduled runs use production.
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'prediction-api' }}
+          # main contains only automation; other manual branches can test their selected revision.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name != 'main' && github.sha || 'prediction-api' }}
           persist-credentials: false
 
       - name: Identify deployed source revision
