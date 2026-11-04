@@ -77,6 +77,45 @@ public sealed class DuplicateMatchMergerTests
         Assert.Empty(plan.Skipped);
     }
 
+    [Fact]
+    public void ConflictingKickoffsAndPartialHalfTimeEvidencePreventMerge()
+    {
+        var first = Fixture(1, "Home", "Away", ("Forebet", "forebet:1"));
+        var second = Fixture(2, "Home FC", "Away", ("Forebet", "forebet:1"));
+        first.KickoffUtc = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
+        second.KickoffUtc = first.KickoffUtc.Value.AddHours(2);
+        Assert.Empty(DuplicateMatchMerger.Plan([first, second], new HashSet<long>()).Merges);
+        second.KickoffUtc = first.KickoffUtc;
+        first.Result = Score(2, 1);
+        second.Result = Score(2, 1);
+        first.Result.HalfTimeHomeGoals = 0;
+        second.Result.HalfTimeHomeGoals = 1;
+        Assert.Empty(DuplicateMatchMerger.Plan([first, second], new HashSet<long>()).Merges);
+    }
+
+    [DatabaseFact]
+    public async Task ApplyRejectsEvidenceChangedSincePlanning()
+    {
+        await using var db = new FootballDbContextFactory().CreateDbContext([]);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        string token = Guid.NewGuid().ToString("N");
+        var first = Fixture(0, $"Merge {token}", "Away", ($"Test{token}", $"test:{token}"));
+        var second = Fixture(0, $"Merge {token} FC", "Away", ($"Test{token}", $"test:{token}"));
+        foreach (var match in new[] { first, second })
+            match.ExternalMatchId = MatchIdentity.BuildExternalMatchId("2026-11-03", match.HomeTeam, match.AwayTeam);
+        db.Matches.AddRange(first, second);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var plan = DuplicateMatchMerger.Plan(await db.Matches.AsNoTracking()
+            .Include(x => x.PredictionSnapshots).Include(x => x.Result)
+            .Where(x => x.HomeTeam.Contains(token)).ToListAsync(), new HashSet<long>());
+        Assert.Single(plan.Merges);
+        await db.PredictionSnapshots.Where(x => x.MatchId == second.Id)
+            .ExecuteUpdateAsync(x => x.SetProperty(s => s.SourceMatchId, $"changed:{token}"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => DuplicateMatchMerger.ApplyAsync(db, plan.Merges));
+        Assert.Equal(2, await db.Matches.CountAsync(x => x.HomeTeam.Contains(token)));
+    }
+
     [DatabaseFact]
     public async Task ApplyMovesSnapshotsAndResultAndDeletesDuplicate()
     {

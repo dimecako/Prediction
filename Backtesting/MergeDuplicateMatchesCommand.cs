@@ -9,8 +9,15 @@ public partial class Program
         bool apply = args.Skip(1).Any(x => x.Equals("--apply", StringComparison.OrdinalIgnoreCase));
         await using var db = new FootballDbContextFactory().CreateDbContext([]);
         var plan = await DuplicateMatchMerger.LoadPlanAsync(db);
-        static string Row(Match x) => $"#{x.Id} {x.HomeTeam} - {x.AwayTeam}" +
-            $" (snapshots={x.PredictionSnapshots.Count}, result={(x.Result == null ? "-" : $"{x.Result.HomeGoals}-{x.Result.AwayGoals}")})";
+        static string Clean(string value) => string.Concat(value.Select(c => char.IsControl(c) ||
+            char.GetUnicodeCategory(c) is System.Globalization.UnicodeCategory.LineSeparator or
+                System.Globalization.UnicodeCategory.ParagraphSeparator or
+                System.Globalization.UnicodeCategory.Format ? ' ' : c));
+        static string Row(Match x) => Clean($"#{x.Id} {x.HomeTeam} - {x.AwayTeam}" +
+            $" (date={x.MatchDate:yyyy-MM-dd}, kickoff UTC={x.KickoffUtc?.ToString("O") ?? "n/a"}, " +
+            $"source IDs={string.Join(", ", x.PredictionSnapshots.Select(s => $"{s.Source}:{s.SourceMatchId}").Distinct())}, " +
+            $"FT={(x.Result == null ? "-" : $"{x.Result.HomeGoals}-{x.Result.AwayGoals}")}, " +
+            $"HT={x.Result?.HalfTimeHomeGoals?.ToString() ?? "?"}-{x.Result?.HalfTimeAwayGoals?.ToString() ?? "?"})");
 
         Console.WriteLine(apply
             ? "[MERGE] APPLY: verified same-date duplicates are merged in one transaction."

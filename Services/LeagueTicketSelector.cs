@@ -3,6 +3,16 @@ using System.Text;
 
 namespace Prediction.Services;
 
+public enum LeagueEligibility
+{
+    Missing,
+    IntentionallyExcluded,
+    Unrecognized,
+    Eligible
+}
+
+public sealed record LeagueDiagnosis(string League, LeagueEligibility Eligibility, int Count);
+
 public static class LeagueTicketSelector
 {
     private static readonly string[][] LeagueAliases =
@@ -39,9 +49,58 @@ public static class LeagueTicketSelector
             .SelectMany((aliases, priority) => aliases.Select(alias => (Normalize(alias), priority)))
             .ToDictionary(x => x.Item1, x => x.priority, StringComparer.OrdinalIgnoreCase);
 
+    // Exact competition identities only: a substring such as "cup" or "U19" is not evidence.
+    private static readonly HashSet<string> ExcludedCompetitions = new(
+        new[]
+        {
+            "UEFA CHAMPIONS LEAGUE", "CHAMPIONS LEAGUE",
+            "UEFA EUROPA LEAGUE", "EUROPA LEAGUE",
+            "UEFA CONFERENCE LEAGUE", "UEFA EUROPA CONFERENCE LEAGUE",
+            "UEFA YOUTH LEAGUE", "UEFA SUPER CUP",
+            "FA CUP", "ENGLAND FA CUP", "EFL CUP", "ENGLAND EFL CUP",
+            "COPA DEL REY", "SPAIN COPA DEL REY",
+            "DFB POKAL", "GERMANY DFB POKAL",
+            "COPPA ITALIA", "ITALY COPPA ITALIA",
+            "COUPE DE FRANCE", "FRANCE COUPE DE FRANCE"
+        }.Select(Normalize), StringComparer.Ordinal);
+
     public static int GetPriority(string? league) =>
         string.IsNullOrWhiteSpace(league) ? -1 :
         PriorityByAlias.GetValueOrDefault(Normalize(league), -1);
+
+    public static LeagueEligibility Classify(string? league)
+    {
+        if (string.IsNullOrWhiteSpace(league))
+            return LeagueEligibility.Missing;
+        if (GetPriority(league) >= 0)
+            return LeagueEligibility.Eligible;
+        return ExcludedCompetitions.Contains(Normalize(league))
+            ? LeagueEligibility.IntentionallyExcluded
+            : LeagueEligibility.Unrecognized;
+    }
+
+    public static IReadOnlyList<LeagueDiagnosis> Diagnose(IEnumerable<string?> leagues) =>
+        leagues.GroupBy(league => (
+                League: string.IsNullOrWhiteSpace(league) ? "(missing)" :
+                    string.Concat(league.Trim().Select(c => char.IsControl(c) ||
+                        char.GetUnicodeCategory(c) is UnicodeCategory.LineSeparator or
+                            UnicodeCategory.ParagraphSeparator or UnicodeCategory.Format ? ' ' : c)),
+                Eligibility: Classify(league)))
+            .Select(group => new LeagueDiagnosis(group.Key.League, group.Key.Eligibility, group.Count()))
+            .OrderBy(x => x.Eligibility)
+            .ThenBy(x => x.League, StringComparer.Ordinal)
+            .ToList();
+
+    public static bool IsNoSelection(
+        bool leagueMode, int selectedCount, IEnumerable<string?> qualifiedLeagues, bool hasRequiredData,
+        bool evaluatedValidFixture = false)
+    {
+        if (!leagueMode || selectedCount != 0 || !hasRequiredData)
+            return false;
+        var leagues = qualifiedLeagues.ToList();
+        return (leagues.Count > 0 || evaluatedValidFixture) && leagues.All(league =>
+            Classify(league) is LeagueEligibility.IntentionallyExcluded or LeagueEligibility.Unrecognized);
+    }
 
     public static IReadOnlyList<T> Select<T>(
         IEnumerable<T> candidates,

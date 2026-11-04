@@ -77,7 +77,7 @@ public partial class Program
         {
             // A lost connection also loses the advisory lock: stop before any further writes.
             await runLock.CheckAsync();
-            if (checkpoint.IsCompleted(step))
+            if (!step.IsReport && checkpoint.IsCompleted(step))
             {
                 Console.WriteLine($"[DAILY-RUN] SKIP {step.Name}; already completed.");
                 continue;
@@ -89,28 +89,10 @@ public partial class Program
                 Console.WriteLine($"[DAILY-RUN] SKIP {step.Name}; frozen ticket already exists for date and mode.");
                 continue;
             }
-            string[] pendingDependencies = step.Dependencies
-                .Where(key => !checkpoint.IsCompleted(key)).ToArray();
-            if (pendingDependencies.Length > 0)
-            {
+            if (!await DailyRunPlan.ExecuteStepAsync(step, checkpoint,
+                () => CommandExecution.RunAsync(() => ExecuteCommandAsync(step.Args), automation: true),
+                Console.WriteLine, Console.Error.WriteLine))
                 failed.Add(step.Name);
-                Console.Error.WriteLine($"[DAILY-RUN] DEFERRED {step.Name}; prerequisite step(s) did not complete: " +
-                    string.Join(", ", pendingDependencies));
-                continue;
-            }
-
-            Console.WriteLine($"[DAILY-RUN] START {step.Name}");
-            int status = await CommandExecution.RunAsync(() => ExecuteCommandAsync(step.Args), automation: true);
-            if (status != 0)
-            {
-                failed.Add(step.Name);
-                Console.Error.WriteLine($"[DAILY-RUN] FAILED {step.Name} (exit {status}); continuing remaining independent steps.");
-            }
-            else
-            {
-                await checkpoint.MarkCompletedAsync(step);
-                Console.WriteLine($"[DAILY-RUN] OK {step.Name}");
-            }
         }
         await runLock.CheckAsync();
         if (failed.Count > 0)
@@ -129,11 +111,53 @@ namespace Prediction.Services
     {
         public DailyRunStep(string name, string[] args) : this(name, args, []) { }
 
-        public string CheckpointKey => string.Join("\u001f", new[] { Name }.Concat(Args));
+        public bool IsReport => Args.Length > 0 && Args[0] == "ticket-report";
+        public string? ReportPrerequisiteState { get; init; }
+        public string CheckpointKey => string.Join("\u001f", new[] { Name }.Concat(Args)) +
+            (ReportPrerequisiteState == null ? "" : $"\u001freport-prerequisites:{ReportPrerequisiteState}");
     }
 
     public static class DailyRunPlan
     {
+        public static async Task<bool> ExecuteStepAsync(DailyRunStep step, DailyRunCheckpoint checkpoint,
+            Func<Task<int>> execute, Action<string> log, Action<string> error)
+        {
+            string[] pendingDependencies = step.Dependencies
+                .Where(key => !checkpoint.IsCompleted(key)).ToArray();
+            // A report checkpoint describes the data readiness it actually displayed, not later recovery.
+            var completionStep = step.IsReport
+                ? step with { ReportPrerequisiteState = string.Concat(step.Dependencies
+                    .Select(key => checkpoint.IsCompleted(key) ? "1" : "0")) }
+                : step;
+            if (pendingDependencies.Length == 0 && checkpoint.IsCompleted(completionStep))
+            {
+                log($"[DAILY-RUN] SKIP {step.Name}; already completed.");
+                return true;
+            }
+            if (pendingDependencies.Length > 0)
+            {
+                if (!step.IsReport)
+                {
+                    error($"[DAILY-RUN] DEFERRED {step.Name}; prerequisite step(s) did not complete: " +
+                        string.Join(", ", pendingDependencies));
+                    return false;
+                }
+                error($"[DAILY-RUN] WARNING {step.Name}; stored-data view; preceding steps incomplete: " +
+                    string.Join(", ", pendingDependencies));
+            }
+
+            log($"[DAILY-RUN] START {step.Name}");
+            int status = await execute();
+            if (status != 0)
+            {
+                error($"[DAILY-RUN] FAILED {step.Name} (exit {status}); continuing remaining independent steps.");
+                return false;
+            }
+            await checkpoint.MarkCompletedAsync(completionStep);
+            log($"[DAILY-RUN] OK {step.Name}");
+            return pendingDependencies.Length == 0;
+        }
+
         public static string? TicketMode(DailyRunStep step) => step.Name switch
         {
             "ticket" => "value",
@@ -211,7 +235,7 @@ namespace Prediction.Services
             };
             steps.AddRange(ticketSteps);
             steps.Add(new("Target ticket report", ["ticket-report", target, target],
-                ticketSteps.Select(step => step.CheckpointKey).ToArray()));
+                ticketSteps.Select(step => step.CheckpointKey).Prepend(collectPredictions.CheckpointKey).ToArray()));
             return steps;
         }
     }

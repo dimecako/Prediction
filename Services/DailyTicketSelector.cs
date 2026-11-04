@@ -14,7 +14,11 @@ public sealed record DailyTicketDecision(DailyTicketPick? Pick, string Reason);
 
 public sealed record DailyTicketSelection(
     IReadOnlyList<DailyTicketPick> Picks, IReadOnlyList<string> Rejections,
-    int Matched, int Duplicates, int Eligible, int ExcludedLeagues);
+    int Matched, int Duplicates, int Eligible, int ExcludedLeagues)
+{
+    public IReadOnlyList<LeagueDiagnosis> LeagueDiagnoses { get; init; } = [];
+    public bool NoSelection { get; init; }
+}
 
 public static class DailyTicketSelector
 {
@@ -112,6 +116,8 @@ public static class DailyTicketSelector
             .Select(g => g.OrderByDescending(x => CalibrationAnalyzer.LatestPerSource(x.Match).Count).First())
             .ToList();
         var eligible = new List<DailyTicketPick>();
+        bool evaluatedValidFixture = false;
+        bool invalidFixtureData = false;
         foreach (var (match, offer) in unique)
         {
             if (offer.KickoffUtc <= nowUtc)
@@ -119,6 +125,18 @@ public static class DailyTicketSelector
                 rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Natprevarot vekje zapocnal.");
                 continue;
             }
+            var snapshots = CalibrationAnalyzer.LatestPerSource(match);
+            var consensus = CalibrationAnalyzer.BuildResultConsensus(snapshots);
+            double? baseOdds = consensus is { Pick: "1" or "2" }
+                ? MaxbetOddsProvider.GetOdds(offer, "1X2", consensus.Pick)
+                : null;
+            bool validFixture = ValidOdds(baseOdds) &&
+                (consensus!.AverageProbability == null ||
+                    consensus.AverageProbability is double probability &&
+                    double.IsFinite(probability) && probability is >= 0 and <= 100) &&
+                LeagueTicketSelector.Classify(offer.League) != LeagueEligibility.Missing;
+            evaluatedValidFixture |= validFixture;
+            invalidFixtureData |= !validFixture;
             var decision = Select(match, offer);
             if (decision.Pick != null)
                 eligible.Add(decision.Pick);
@@ -140,7 +158,19 @@ public static class DailyTicketSelector
         }
         else
             picks = ranked.Take(count).ToList();
-        return new(picks, rejections, unique.Count, paired.Count - unique.Count, eligible.Count, excluded);
+        var targetMatches = matches.Where(match => match.MatchDate == date).ToList();
+        bool hasSourceData = targetMatches.Count > 0 &&
+            targetMatches.All(match => CalibrationAnalyzer.LatestPerSource(match)
+                .Any(s => s.PredictedResult is "1" or "X" or "2"));
+        return new(picks, rejections, unique.Count, paired.Count - unique.Count, eligible.Count, excluded)
+        {
+            LeagueDiagnoses = LeagueTicketSelector.Diagnose(unique
+                .Where(pair => pair.Offer.KickoffUtc > nowUtc).Select(pair => pair.Offer.League)),
+            NoSelection = LeagueTicketSelector.IsNoSelection(leagueOnly, picks.Count,
+                eligible.Select(p => p.League), offers.Count > 0 && (eligible.Count > 0
+                    ? eligible.All(pick => pick.TotalVotes > 0)
+                    : hasSourceData && !invalidFixtureData), evaluatedValidFixture)
+        };
     }
 
     private static IOrderedEnumerable<DailyTicketPick> Rank(IEnumerable<DailyTicketPick> picks) =>

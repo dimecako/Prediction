@@ -52,7 +52,7 @@ public static class DuplicateMatchMerger
                 component, snapshots, link.Source, link.SourceMatchId)).ToList();
             if (verified.Count == 0)
             {
-                skipped.Add(new(component, "different source IDs, scores or team names"));
+                skipped.Add(new(component, "different source IDs, scores, kickoffs or team names"));
                 continue;
             }
             var ticketed = component.Where(x => ticketedMatchIds.Contains(x.Id)).ToList();
@@ -95,7 +95,7 @@ public static class DuplicateMatchMerger
         if (merges.Count == 0)
             return;
         var owned = db.Database.CurrentTransaction == null
-            ? await db.Database.BeginTransactionAsync() : null;
+            ? await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable) : null;
         try
         {
             foreach (var merge in merges)
@@ -122,6 +122,12 @@ public static class DuplicateMatchMerger
         var canonical = await db.Matches.Include(x => x.Result).SingleAsync(x => x.Id == canonicalId);
         var duplicates = await db.Matches.Include(x => x.Result)
             .Where(x => duplicateIds.Contains(x.Id)).ToListAsync();
+        var all = duplicates.Append(canonical).ToList();
+        var snapshots = await db.PredictionSnapshots.AsNoTracking()
+            .Where(x => x.MatchId == canonicalId || duplicateIds.Contains(x.MatchId)).ToListAsync();
+        if (duplicates.Count != duplicateIds.Count ||
+            !ResultMatchResolver.AreVerifiedDuplicates(all, snapshots, merge.Source, merge.SourceMatchId))
+            throw new InvalidOperationException("Duplicate evidence changed since planning; merge aborted.");
         canonical.League ??= duplicates.Select(x => x.League)
             .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
         canonical.KickoffUtc ??= duplicates.Select(x => x.KickoffUtc).FirstOrDefault(x => x.HasValue);

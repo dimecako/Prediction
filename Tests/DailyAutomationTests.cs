@@ -53,7 +53,7 @@ public sealed class DailyAutomationTests
             "value", "safe", "ml", "ml-safe", "ml-league-safe", "daily", "daily-league",
             "1-3p3+", "1-3p3+-safe"
         }, steps.Skip(5).Take(9).Select(DailyRunPlan.TicketMode));
-        Assert.Equal(steps.Skip(5).Take(9).Select(step => step.CheckpointKey).Order(),
+        Assert.Equal(steps.Skip(4).Take(10).Select(step => step.CheckpointKey).Order(),
             steps[^1].Dependencies.Order());
     }
 
@@ -212,6 +212,75 @@ public sealed class DailyAutomationTests
                 return Task.CompletedTask;
             }, automation: true));
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReportsRunStoredDataAfterFailuresAndRefreshAfterPrerequisiteRecovery(bool targetReport)
+    {
+        string path = Path.Combine(".automation", "test-checkpoints", Guid.NewGuid().ToString("N"), "checkpoint.json");
+        try
+        {
+            var steps = DailyRunPlan.Build(Target, 15, []);
+            var report = targetReport ? steps[^1] : steps[1];
+            var prerequisites = steps.Where(step => report.Dependencies.Contains(step.CheckpointKey)).ToArray();
+            var checkpoint = await DailyRunCheckpoint.LoadAsync(path, Target, 15, "revision", _ => { });
+            var warnings = new List<string>();
+            foreach (var prerequisite in prerequisites)
+            {
+                Assert.False(await DailyRunPlan.ExecuteStepAsync(prerequisite, checkpoint,
+                    () => Task.FromResult(1), _ => { }, warnings.Add));
+                Assert.False(checkpoint.IsCompleted(prerequisite));
+            }
+
+            int reports = 0;
+            Task<int> Report()
+            {
+                reports++;
+                return Task.FromResult(0);
+            }
+            Assert.False(await DailyRunPlan.ExecuteStepAsync(report, checkpoint, Report, _ => { }, warnings.Add));
+            Assert.Equal(1, reports);
+            Assert.Contains(warnings, message => message.Contains("stored-data view; preceding steps incomplete"));
+            Assert.All(prerequisites, step => Assert.False(checkpoint.IsCompleted(step)));
+
+            checkpoint = await DailyRunCheckpoint.LoadAsync(path, Target, 15, "revision", _ => { });
+            Assert.False(await DailyRunPlan.ExecuteStepAsync(report, checkpoint, Report, _ => { }, warnings.Add));
+            Assert.Equal(2, reports);
+
+            foreach (var prerequisite in prerequisites)
+                await checkpoint.MarkCompletedAsync(prerequisite);
+            // Recovery may be checkpointed before an interrupted attempt reaches its stale report.
+            checkpoint = await DailyRunCheckpoint.LoadAsync(path, Target, 15, "revision", _ => { });
+            warnings.Clear();
+            Assert.True(await DailyRunPlan.ExecuteStepAsync(report, checkpoint, Report, _ => { }, warnings.Add));
+            Assert.Equal(3, reports);
+            Assert.Empty(warnings);
+            checkpoint = await DailyRunCheckpoint.LoadAsync(path, Target, 15, "revision", _ => { });
+            Assert.True(await DailyRunPlan.ExecuteStepAsync(report, checkpoint, Report, _ => { }, warnings.Add));
+            Assert.Equal(3, reports);
+        }
+        finally
+        {
+            string directory = Path.GetDirectoryName(path)!;
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task FailedReportIsNotCheckpointedEvenAfterPrerequisitesComplete()
+    {
+        var steps = DailyRunPlan.Build(Target, 15, []);
+        var checkpoint = await DailyRunCheckpoint.LoadAsync(null, Target, 15, "revision", _ => { });
+        await checkpoint.MarkCompletedAsync(steps[0]);
+        Assert.False(await DailyRunPlan.ExecuteStepAsync(steps[1], checkpoint,
+            () => Task.FromResult(1), _ => { }, _ => { }));
+        int reports = 0;
+        Assert.True(await DailyRunPlan.ExecuteStepAsync(steps[1], checkpoint,
+            () => { reports++; return Task.FromResult(0); }, _ => { }, _ => { }));
+        Assert.Equal(1, reports);
     }
 
     [Fact]

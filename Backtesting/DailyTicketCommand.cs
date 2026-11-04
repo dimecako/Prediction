@@ -66,6 +66,9 @@ public partial class Program
             : "[DAILY] Site ligi, bez liga-filter ili ogranicuvanje po liga.");
         Console.WriteLine($"[DAILY] Kvalifikuvani={selection.Eligible} | Iskluceni ligi={selection.ExcludedLeagues} | " +
             $"Izbrani={selection.Picks.Count}/{count}");
+        if (leagueOnly)
+            foreach (var diagnosis in selection.LeagueDiagnoses)
+                Console.WriteLine($"[LEAGUE] {diagnosis.Eligibility}: {diagnosis.League} | count={diagnosis.Count}");
         if (why)
             foreach (var rejection in selection.Rejections)
                 Console.WriteLine($"[ODBIEN] {rejection}");
@@ -81,8 +84,15 @@ public partial class Program
                 (leagueOnly ? " vo izbranite ligi." : ".") + " Nema izmislenuvanje dopolnitelni izbori.");
         if (selection.Picks.Count == 0)
         {
-            Console.Error.WriteLine("[DAILY] Nema potvrdeni izbori; prazen tiket ne e izvezen.");
-            CommandExecution.Fail();
+            if (selection.NoSelection && CommandExecution.ExitCode == 0)
+                Console.WriteLine("[DAILY] NO_SELECTION: no eligible league candidate passed selection thresholds. No ticket saved or exported.");
+            else
+            {
+                if (leagueOnly && selection.LeagueDiagnoses.Any(d => d.Eligibility == LeagueEligibility.Missing))
+                    Console.Error.WriteLine("[DAILY] Missing league metadata; zero selections cannot be treated as NO_SELECTION.");
+                Console.Error.WriteLine("[DAILY] Nema potvrdeni izbori; prazen tiket ne e izvezen.");
+                CommandExecution.Fail();
+            }
             return;
         }
         string path = Path.Combine(Directory.GetCurrentDirectory(),

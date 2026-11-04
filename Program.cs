@@ -643,6 +643,8 @@ public partial class Program
             Console.WriteLine($"[RESULTS] Half-time supplied: {externalResults.Count(x => x.HalfTimeHomeGoals.HasValue && x.HalfTimeAwayGoals.HasValue)}");
             Console.WriteLine($"[RESULTS] Unmatched: {unmatched}");
             Console.WriteLine($"[RESULTS] Failed providers: {collected.FailedProviders}; rejected rows/conflicts: {collected.RejectedRows}");
+            Console.WriteLine($"[RESULTS] Persistence identity conflicts: {primaryPersistence.IdentityConflicts + fallbackPersistence.IdentityConflicts}; " +
+                $"stored-score conflicts: {primaryPersistence.ScoreConflicts + fallbackPersistence.ScoreConflicts}. Conflicting results remain unresolved.");
             Console.WriteLine($"[RESULTS] EF changes: {changes}");
             int dateMatches = await collectDb.Matches.CountAsync(x => x.MatchDate == date);
             int finalResults = await collectDb.Matches.CountAsync(x => x.MatchDate == date && x.Result != null);

@@ -100,10 +100,19 @@ public partial class Program
             Console.WriteLine($"[TIKET] Kvotite od Maxbet ne se dostapni ({ex.Message}). " +
                 "Bez potvrdena osnovna kvota nema izbori.");
             CommandExecution.Fail();
+            return;
+        }
+        if (bookmaker.Count == 0)
+        {
+            Console.Error.WriteLine("[TIKET] Maxbet returned no bookmaker data; no ticket generated.");
+            CommandExecution.Fail();
+            return;
         }
 
         int matched = 0;
         int started = 0;
+        bool evaluatedValidFixture = false;
+        bool invalidFixtureData = false;
 
         var best = new List<TicketPick>();
         var proposals = new List<TicketPick>();
@@ -154,6 +163,11 @@ public partial class Program
                     c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick))
                 : TicketSelector.Select(match, calibration,
                     c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), rankBySafety);
+            bool validFixture = decision.BaseOdds is double price && double.IsFinite(price) && price > 1 &&
+                CalibrationAnalyzer.LatestPerSource(match).Any(s => s.PredictedResult is "1" or "X" or "2") &&
+                LeagueTicketSelector.Classify(match.League) != LeagueEligibility.Missing;
+            evaluatedValidFixture |= validFixture;
+            invalidFixtureData |= !validFixture;
             string SignalText(TicketCandidate? c)
             {
                 if (c == null)
@@ -275,8 +289,10 @@ public partial class Program
                 .ToList();
         if (prioritizeLeagues)
         {
-            int unsupportedLeagues = best.Count(x => LeagueTicketSelector.GetPriority(x.League) < 0);
-            Console.WriteLine($"[TIKET] Liga-rezim: izbori={picks.Count}; kvalifikuvani so nepoznata liga preskoknati={unsupportedLeagues}.");
+            Console.WriteLine($"[TIKET] Liga-rezim: izbori={picks.Count}; league diagnosis of matched future fixtures:");
+            foreach (var diagnosis in LeagueTicketSelector.Diagnose(unique
+                .Where(pair => pair.Offer.KickoffUtc > DateTime.UtcNow).Select(pair => pair.Match.League)))
+                Console.WriteLine($"[LEAGUE] {diagnosis.Eligibility}: {diagnosis.League} | count={diagnosis.Count}");
         }
         var suggested = proposals
             .OrderByDescending(x => x.RankSafe)
@@ -316,7 +332,24 @@ public partial class Program
         else
         {
             Console.WriteLine("[SIMULATION] No confirmed selections; no empty simulation saved.");
-            CommandExecution.Fail();
+            bool hasSourceData = today.Count > 0 &&
+                today.All(match => CalibrationAnalyzer.LatestPerSource(match)
+                    .Any(s => s.PredictedResult is "1" or "X" or "2"));
+            bool hasRequiredData = best.Count > 0
+                ? bookmaker.Count > 0 && best.All(pick => pick.AgreementTotal > 0)
+                : hasSourceData && !invalidFixtureData;
+            if (LeagueTicketSelector.IsNoSelection(prioritizeLeagues, picks.Count,
+                best.Select(x => x.League), hasRequiredData &&
+                    CommandExecution.ExitCode == 0, evaluatedValidFixture))
+                Console.WriteLine("[TIKET] NO_SELECTION: no eligible league candidate passed selection thresholds. No ticket saved or exported.");
+            else
+            {
+                if (prioritizeLeagues && unique.Any(pair =>
+                    LeagueTicketSelector.Classify(pair.Match.League) == LeagueEligibility.Missing))
+                    Console.Error.WriteLine("[TIKET] Missing league metadata; zero selections cannot be treated as NO_SELECTION.");
+                CommandExecution.Fail();
+            }
+            return;
         }
 
         Console.WriteLine($"[PREDLOZI] Bez potvrdena kvota: {proposals.Count}; prikazani: {suggested.Count}. NE se del od tiketot.");

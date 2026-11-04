@@ -7,7 +7,11 @@ using Prediction.Models;
 namespace Prediction.Services;
 
 public sealed record MatchResultPersistenceSummary(
-    int Matched, int Inserted, int Existing, int Unmatched, int HalfTimeUpdated, int Changes);
+    int Matched, int Inserted, int Existing, int Unmatched, int HalfTimeUpdated, int Changes)
+{
+    public int IdentityConflicts { get; init; }
+    public int ScoreConflicts { get; init; }
+}
 
 public static class MatchResultPersister
 {
@@ -16,6 +20,7 @@ public static class MatchResultPersister
         Action<string> log)
     {
         int matched = 0, inserted = 0, existing = 0, unmatched = 0, halfTimeUpdated = 0;
+        int identityConflicts = 0, scoreConflicts = 0;
         var resultMatches = await db.Matches.Include(x => x.Result)
             .Where(x => x.MatchDate == date).ToListAsync();
         var sourceSnapshots = await db.PredictionSnapshots.AsNoTracking()
@@ -26,8 +31,10 @@ public static class MatchResultPersister
             var resolution = ResultMatchResolver.Resolve(date, external, resultMatches, sourceSnapshots);
             if (resolution.Conflict)
             {
+                identityConflicts++;
                 log($"[RESULTS] Identity conflict: {external.Source} {external.ExternalId} | " +
                     $"{external.HomeTeam} vs {external.AwayTeam}; {resolution.Method}.");
+                WriteConflictDiagnostics(date, external, resolution.Candidates, sourceSnapshots, log);
                 CommandExecution.Fail();
             }
             else if (resolution.Matches.Count > 0 && resolution.Method.Contains("source ID"))
@@ -50,6 +57,7 @@ public static class MatchResultPersister
                     if (match.Result.HomeGoals != external.HomeGoals ||
                         match.Result.AwayGoals != external.AwayGoals)
                     {
+                        scoreConflicts++;
                         log($"[RESULTS] Conflicting stored final score for #{match.Id}: " +
                             $"stored={match.Result.HomeGoals}-{match.Result.AwayGoals} " +
                             $"(source={match.Result.Source}, captured UTC={match.Result.CollectedAtUtc:O}), " +
@@ -61,6 +69,17 @@ public static class MatchResultPersister
                         continue;
                     }
 
+                    if (external.HalfTimeHomeGoals.HasValue && match.Result.HalfTimeHomeGoals.HasValue &&
+                            external.HalfTimeHomeGoals != match.Result.HalfTimeHomeGoals ||
+                        external.HalfTimeAwayGoals.HasValue && match.Result.HalfTimeAwayGoals.HasValue &&
+                            external.HalfTimeAwayGoals != match.Result.HalfTimeAwayGoals)
+                    {
+                        scoreConflicts++;
+                        log($"[RESULTS] Conflicting stored half-time score for #{match.Id}; not overwritten.");
+                        CommandExecution.Fail();
+                        existing++;
+                        continue;
+                    }
                     if (external.HalfTimeHomeGoals.HasValue && external.HalfTimeAwayGoals.HasValue &&
                         (!match.Result.HalfTimeHomeGoals.HasValue || !match.Result.HalfTimeAwayGoals.HasValue))
                     {
@@ -68,14 +87,6 @@ public static class MatchResultPersister
                         match.Result.HalfTimeAwayGoals = external.HalfTimeAwayGoals;
                         halfTimeUpdated++;
                     }
-                    else if (external.HalfTimeHomeGoals.HasValue && external.HalfTimeAwayGoals.HasValue &&
-                        (match.Result.HalfTimeHomeGoals != external.HalfTimeHomeGoals ||
-                         match.Result.HalfTimeAwayGoals != external.HalfTimeAwayGoals))
-                    {
-                        log($"[RESULTS] Conflicting stored half-time score for #{match.Id}; not overwritten.");
-                        CommandExecution.Fail();
-                    }
-
                     log($"[EXISTS] #{match.Id} | {match.HomeTeam} | {match.AwayTeam} | " +
                         $"{match.Result.HomeGoals}-{match.Result.AwayGoals}");
                     existing++;
@@ -106,6 +117,40 @@ public static class MatchResultPersister
         }
 
         int changes = await db.SaveChangesAsync();
-        return new(matched, inserted, existing, unmatched, halfTimeUpdated, changes);
+        return new(matched, inserted, existing, unmatched, halfTimeUpdated, changes)
+        {
+            IdentityConflicts = identityConflicts,
+            ScoreConflicts = scoreConflicts
+        };
+    }
+
+    public static void WriteConflictDiagnostics(DateOnly date, ExternalMatchResult incoming,
+        IReadOnlyCollection<Match> candidates, IReadOnlyCollection<PredictionSnapshot> snapshots,
+        Action<string> log)
+    {
+        static string Clean(string? value) =>
+            string.Concat((value ?? "n/a").Select(c => char.IsControl(c) ||
+                char.GetUnicodeCategory(c) is System.Globalization.UnicodeCategory.LineSeparator or
+                    System.Globalization.UnicodeCategory.ParagraphSeparator or
+                    System.Globalization.UnicodeCategory.Format ? ' ' : c));
+        static string Kickoff(DateTime? value) => value?.ToString("O") ?? "n/a";
+        log($"[RESULT-CONFLICT] Incoming {Clean(incoming.Source)} {Clean(incoming.ExternalId)} | " +
+            $"{date:yyyy-MM-dd} | {Clean(incoming.HomeTeam)} vs {Clean(incoming.AwayTeam)} | " +
+            $"kickoff UTC={Kickoff(incoming.KickoffUtc)} | FT={incoming.HomeGoals}-{incoming.AwayGoals} | " +
+            $"HT={incoming.HalfTimeHomeGoals?.ToString() ?? "?"}-{incoming.HalfTimeAwayGoals?.ToString() ?? "?"}");
+        foreach (var match in candidates.OrderBy(x => x.Id))
+        {
+            string links = string.Join(", ", snapshots.Where(x => x.MatchId == match.Id)
+                .Select(x => $"{Clean(x.Source)}:{Clean(x.SourceMatchId)}").Distinct().Order());
+            string score = match.Result == null ? "n/a" : $"{match.Result.HomeGoals}-{match.Result.AwayGoals}";
+            string half = match.Result == null ? "n/a" :
+                $"{match.Result.HalfTimeHomeGoals?.ToString() ?? "?"}-{match.Result.HalfTimeAwayGoals?.ToString() ?? "?"}";
+            log($"[RESULT-CONFLICT] DB #{match.Id} | {match.MatchDate:yyyy-MM-dd} | " +
+                $"{Clean(match.HomeTeam)} vs {Clean(match.AwayTeam)} | league={Clean(match.League)} | " +
+                $"kickoff UTC={Kickoff(match.KickoffUtc)} | FT={score} HT={half} | source IDs={links}");
+        }
+        log("[RESULT-CONFLICT] Unresolved; no rows changed for this result. " +
+            "Use merge-duplicate-matches dry-run to review proven shared-provider duplicates; " +
+            "name similarity alone never authorizes a merge.");
     }
 }

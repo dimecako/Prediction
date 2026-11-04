@@ -49,7 +49,9 @@ an attempt before setup/build; local CLI runs keep their manifest under
 `.automation/daily-checkpoints`. Failed and deferred work is retried, not successful
 work. Ticket commands are independent of collection success and use available
 stored predictions and current odds; insufficient data must not fabricate picks.
-Reports retain their prerequisite checks. Under the daily database lock, an
+Reports still run against stored data when prerequisites fail, with an explicit
+partial-data warning. A partial report is not checkpointed as complete; reports
+refresh after their prerequisite work changes on a retry. Under the daily database lock, an
 existing date/mode ticket prevents regeneration even if odds change or the
 checkpoint is lost. No existing tickets are deleted.
 
@@ -89,8 +91,10 @@ October 31 results, never October 30 or earlier. Manual target dates use the sam
 two-day window relative to the supplied date. Missing scores and required
 half-time scores remain Pending; confirmed scores are not overwritten.
 Failures are reported per step, remaining steps continue, and any failed step
-makes the job fail. No usable selections or an empty prediction source is
-explicitly reported as a failure rather than fabricated success. Inspect job
+makes the job fail. A valid league-filter outcome with no eligible selections,
+or a fully validated league-mode evaluation with no picks passing the safety
+thresholds, is reported as `NO_SELECTION`, without saving an empty ticket. Missing source data,
+invalid inputs and technical failures remain errors rather than fabricated success. Inspect job
 logs before retrying. Daily automation reuses the first saved ticket for each
 date/mode even when odds or selections change. Standalone ticket commands retain
 fingerprint-based simulation behavior and are not an automation retry mechanism.
@@ -128,6 +132,24 @@ and incoming source fixture ID for verification. A score difference alone does
 not establish extra time, penalties or a wrong historical score. Existing
 historical data must be verified separately; these guards do not certify or
 rewrite it.
+
+Identity-conflict logs include the incoming fixture and every exact-name or
+source-linked database candidate, with date, UTC kickoff, source IDs and FT/HT.
+Persistence identity/score conflict counts are separate from provider rejections.
+Two rows may be linked only when shared provider evidence, compatible identities,
+kickoffs and stored scores verify a duplicate; similar names alone are insufficient.
+`merge-duplicate-matches` remains a dry-run by default, showing both kept and
+removed rows with their evidence. Review its output before explicitly applying
+the plan with `--apply`. Application rechecks current evidence inside the
+transaction and refuses changed/conflicting evidence or removal of rows referenced
+by tickets.
+No automatic destructive cleanup is performed by `daily-run`.
+
+League diagnostics separate missing labels, recognized competitions outside the
+allowlist, and unrecognized labels, including the actual labels and counts.
+The existing allowlist and selection thresholds are unchanged. Champions League
+and cups are not implicitly enabled; additional competitions require an explicit
+selection of which ones to allow.
 
 Prediction persistence verifies shared-source aliases even when the new display
 name has no exact stored match. Verification includes stored FT/HT results, not

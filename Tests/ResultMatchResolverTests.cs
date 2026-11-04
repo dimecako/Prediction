@@ -178,6 +178,57 @@ public sealed class ResultMatchResolverTests
         Assert.False(TicketResultDiagnostics.IsCandidate(target, Fixture(4, "UD Ourense", "Gimnastica T.")));
     }
 
+    [Fact]
+    public void ExactAndSourceRowsNeedSharedProviderProofNotJustSimilarNames()
+    {
+        var exact = Fixture(1, "Tabasalu", "Levadia");
+        var alias = Fixture(2, "JK Tabasalu", "Levadia");
+        var incoming = Result("Tabasalu", "Levadia");
+        var links = new[] { Snapshot(2) };
+        var unresolved = ResultMatchResolver.Resolve(Date, incoming, [exact, alias], links);
+        Assert.True(unresolved.Conflict);
+        Assert.Equal(new long[] { 1, 2 }, unresolved.Candidates.Select(x => x.Id));
+        PredictionSnapshot[] proof =
+        [
+            Snapshot(2),
+            new() { MatchId = 1, Source = "SoccerVista", SourceMatchId = "soccervista:shared" },
+            new() { MatchId = 2, Source = "SoccerVista", SourceMatchId = "soccervista:shared" }
+        ];
+        var verified = ResultMatchResolver.Resolve(Date, incoming, [exact, alias], proof);
+        Assert.False(verified.Conflict);
+        Assert.Equal(new long[] { 1, 2 }, verified.Matches.Select(x => x.Id));
+        alias.Result = new() { HomeGoals = 1, AwayGoals = 0 };
+        Assert.True(ResultMatchResolver.Resolve(Date, incoming, [exact, alias], proof).Conflict);
+        alias.Result = null;
+        exact.KickoffUtc = new DateTime(2026, 10, 28, 12, 0, 0, DateTimeKind.Utc);
+        alias.KickoffUtc = exact.KickoffUtc.Value.AddHours(1);
+        Assert.True(ResultMatchResolver.Resolve(Date, incoming, [exact, alias], proof).Conflict);
+        alias.KickoffUtc = exact.KickoffUtc;
+        incoming.KickoffUtc = exact.KickoffUtc.Value.AddHours(2);
+        Assert.True(ResultMatchResolver.Resolve(Date, incoming, [exact, alias], proof).Conflict);
+    }
+
+    [Fact]
+    public void ConflictDiagnosticsShowBothRowsAndTheirEvidenceWithoutControlCharacters()
+    {
+        var exact = Fixture(1, "Home", "Away");
+        exact.League = "League\nInjected";
+        exact.KickoffUtc = new DateTime(2026, 10, 28, 12, 0, 0, DateTimeKind.Utc);
+        exact.Result = new() { HomeGoals = 2, AwayGoals = 1,
+            HalfTimeHomeGoals = 1, HalfTimeAwayGoals = 0 };
+        var other = Fixture(2, "Other", "Team");
+        var incoming = Result("Home", "Away");
+        var resolution = ResultMatchResolver.Resolve(Date, incoming, [exact, other], [Snapshot(2)]);
+        var lines = new List<string>();
+        MatchResultPersister.WriteConflictDiagnostics(Date, incoming, resolution.Candidates,
+            [Snapshot(2)], lines.Add);
+        Assert.Contains(lines, x => x.Contains("DB #1") && x.Contains("FT=2-1 HT=1-0") &&
+            x.Contains("2026-10-28T12:00:00") && x.Contains("League Injected"));
+        Assert.Contains(lines, x => x.Contains("DB #2") && x.Contains("Forebet:forebet:123"));
+        Assert.All(lines, x => Assert.DoesNotContain('\n', x));
+        Assert.Equal(2, exact.Result.HomeGoals);
+    }
+
     private static Match Fixture(long id, string home, string away) => new()
     {
         Id = id, MatchDate = Date, HomeTeam = home, AwayTeam = away,

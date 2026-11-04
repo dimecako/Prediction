@@ -28,6 +28,53 @@ public sealed class LeagueTicketSelectorTests
         Assert.Equal(-1, LeagueTicketSelector.GetPriority("SLOVAKIA 2"));
     }
 
+    [Theory]
+    [InlineData(null, LeagueEligibility.Missing)]
+    [InlineData("", LeagueEligibility.Missing)]
+    [InlineData("  ", LeagueEligibility.Missing)]
+    [InlineData("UEFA Champions League", LeagueEligibility.IntentionallyExcluded)]
+    [InlineData("UEFA Youth League", LeagueEligibility.IntentionallyExcluded)]
+    [InlineData("England FA Cup", LeagueEligibility.IntentionallyExcluded)]
+    [InlineData("DFB-Pokal", LeagueEligibility.IntentionallyExcluded)]
+    [InlineData("England 1", LeagueEligibility.Eligible)]
+    [InlineData("Türkiye Süper Lig", LeagueEligibility.Unrecognized)]
+    [InlineData("Turkey Süper Lig", LeagueEligibility.Eligible)]
+    [InlineData("SWEDEN 3", LeagueEligibility.Unrecognized)]
+    [InlineData("England U19", LeagueEligibility.Unrecognized)]
+    [InlineData("Imaginary Cup", LeagueEligibility.Unrecognized)]
+    [InlineData("Not UEFA Champions League", LeagueEligibility.Unrecognized)]
+    public void DiagnosesOnlyExplicitCompetitionIdentities(string? league, LeagueEligibility expected)
+    {
+        Assert.Equal(expected, LeagueTicketSelector.Classify(league));
+        if (expected != LeagueEligibility.Eligible)
+            Assert.Equal(-1, LeagueTicketSelector.GetPriority(league));
+    }
+
+    [Fact]
+    public void DiagnosisRetainsActualNamesAndCountsInsteadOfCallingEveryExcludedLeagueUnknown()
+    {
+        var diagnosis = LeagueTicketSelector.Diagnose(
+            [null, "", "UEFA Champions League", "UEFA Champions League", "Imaginary Cup", "ENGLAND 1"]);
+        Assert.Contains(new("(missing)", LeagueEligibility.Missing, 2), diagnosis);
+        Assert.Contains(new("UEFA Champions League", LeagueEligibility.IntentionallyExcluded, 2), diagnosis);
+        Assert.Contains(new("Imaginary Cup", LeagueEligibility.Unrecognized, 1), diagnosis);
+        Assert.Contains(new("ENGLAND 1", LeagueEligibility.Eligible, 1), diagnosis);
+    }
+
+    [Theory]
+    [InlineData("Bad\r\n[FAKE] success")]
+    [InlineData("Bad\tleague\u001b[31m")]
+    [InlineData("Bad\u2028league\u2029name")]
+    [InlineData("Bad\u202Eleague")]
+    public void DiagnosisLabelsCannotInjectControlCharactersOrLogLines(string league)
+    {
+        var label = Assert.Single(LeagueTicketSelector.Diagnose([league])).League;
+        Assert.DoesNotContain(label, c => char.IsControl(c) ||
+            char.GetUnicodeCategory(c) is System.Globalization.UnicodeCategory.LineSeparator or
+                System.Globalization.UnicodeCategory.ParagraphSeparator or System.Globalization.UnicodeCategory.Format);
+        Assert.Equal(LeagueEligibility.Unrecognized, LeagueTicketSelector.Classify(league));
+    }
+
     [Fact]
     public void SelectsHighestAgreementInPriorityOrderThenAllowsSecondPickPerLeague()
     {
