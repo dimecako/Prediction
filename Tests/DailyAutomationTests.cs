@@ -47,7 +47,12 @@ public sealed class DailyAutomationTests
         Assert.DoesNotContain(steps, s => s.Args[0] is "ticket-import" or "train" or "build");
         Assert.Contains(steps[0].CheckpointKey, steps[1].Dependencies);
         Assert.All(steps.Skip(5).Take(9),
-            step => Assert.Contains(steps[4].CheckpointKey, step.Dependencies));
+            step => Assert.Empty(step.Dependencies));
+        Assert.Equal(new[]
+        {
+            "value", "safe", "ml", "ml-safe", "ml-league-safe", "daily", "daily-league",
+            "1-3p3+", "1-3p3+-safe"
+        }, steps.Skip(5).Take(9).Select(DailyRunPlan.TicketMode));
         Assert.Equal(steps.Skip(5).Take(9).Select(step => step.CheckpointKey).Order(),
             steps[^1].Dependencies.Order());
     }

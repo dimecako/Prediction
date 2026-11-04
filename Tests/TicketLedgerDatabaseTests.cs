@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
 using Prediction.Entities;
+using Prediction.Infrastructure;
 using Prediction.Services;
 using Xunit;
 
@@ -17,6 +18,41 @@ public sealed class DatabaseFactAttribute : FactAttribute
 
 public sealed class TicketLedgerDatabaseTests
 {
+    [DatabaseFact]
+    public async Task DateModeLookupFindsFrozenTicketDespiteChangedOddsCountOrMissingCheckpoint()
+    {
+        string connection = Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb")!;
+        await using var runLock = await DailyRunLock.TryAcquireAsync(connection);
+        Assert.NotNull(runLock);
+        await using var db = new FootballDbContextFactory().CreateDbContext([]);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var now = new DateTime(DateTime.UtcNow.Ticks / 10 * 10, DateTimeKind.Utc);
+        var date = new DateOnly(2198, 11, 3);
+        var match = new Match
+        {
+            ExternalMatchId = $"daily-once-test-{Guid.NewGuid():N}",
+            HomeTeam = "Daily Once Home", AwayTeam = "Daily Once Away",
+            League = "Test League", MatchDate = date
+        };
+        db.Matches.Add(match);
+        await db.SaveChangesAsync();
+        var pick = new DailyTicketPick(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}",
+            match.League, now.AddDays(1), new("1X2", "1", "DAILY|1X2|1", ""),
+            1.85, 1.85, 70, 2, 3, "Frozen evidence");
+        var saved = await TicketLedger.SaveAsync(db, TicketLedger.CreateDaily(date, [pick], now, false));
+        var changed = TicketLedger.CreateDaily(date, [pick with { Odds = 2.10 }], now, false);
+        Assert.NotEqual(saved.Ticket.Fingerprint, changed.Fingerprint);
+        db.ChangeTracker.Clear();
+        await runLock.CheckAsync();
+        var existing = await TicketLedger.FindForDateModeAsync(db, date, changed.Mode);
+        Assert.NotNull(existing);
+        Assert.Equal(saved.Ticket.Id, existing.Id);
+        Assert.Equal(1.85m, existing.Selections.Single().Odds);
+        Assert.Null(await TicketLedger.FindForDateModeAsync(db, date, "daily-league"));
+        Assert.Null(await TicketLedger.FindForDateModeAsync(db, date.AddDays(1), "daily"));
+        await transaction.RollbackAsync();
+    }
+
     [DatabaseFact]
     public async Task FrozenSimulationRoundTripsDeduplicatesAndGradesFromStoredResults()
     {

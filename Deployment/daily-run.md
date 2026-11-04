@@ -13,10 +13,10 @@ Do not paste a PostgreSQL URI or commit credentials. The database must already
 contain the current migrations. This job never migrates, imports Excel, rebuilds
 at runtime, or runs a separate ML training command; `ai-rank` trains from history.
 
-The first attempt is at **08:00 Europe/Skopje**, with up to three additional
-attempts at **09:00, 10:00 and 11:00** if no attempt has succeeded for that date.
-Five UTC schedules (06:00 through 10:00) cover both seasonal offsets; the guard
-selects only the four local hours. It compares `github.event.schedule` with the
+The first attempt is at **08:00 Europe/Skopje**, with up to two additional
+attempts at **09:00 and 10:00** if no attempt has succeeded for that date.
+Four UTC schedules (06:00 through 09:00) cover both seasonal offsets; the guard
+selects only the three local hours. It compares `github.event.schedule` with the
 planned offset, not the runner's current hour, so same-day queue delays still
 execute the intended occurrence. GitHub can delay, drop or coalesce queued cron
 jobs; these are retry opportunities, not a guaranteed exact-time scheduler.
@@ -33,19 +33,30 @@ Do not delete the marker if you want to retain the once-per-date guard.
 Older runs made before this marker mechanism was deployed are not backfilled.
 
 Each `daily-run` step checkpoints its success to a local manifest, which the
-workflow uploads as `daily-checkpoint-yyyy-MM-dd-count` even when the daily job
+workflow uploads as `daily-checkpoint-yyyy-MM-dd` even when the daily job
 fails. The next retry downloads the newest completed checkpoint artifact for
-that target date and ticket count. Steps already successful for the same
-deployed `prediction-api` revision are skipped; failed steps are retried.
-Dependent work is also retried when its prerequisite failed (for example,
-ticket reports after result collection, and ticket generation after prediction
-collection). A changed source revision or ticket count invalidates the saved
-steps. Checkpoints are only available when the workflow reaches its artifact
-upload step; a runner cancellation or timeout before upload may require a full
-retry. Checkpoint artifacts expire after 90 days.
+that target date, including legacy count-suffixed artifacts. Completed steps and
+the three-attempt budget survive revision or count changes. The workflow reserves
+an attempt before setup/build; local CLI runs keep their manifest under
+`.automation/daily-checkpoints`. Failed and deferred work is retried, not successful
+work. Ticket commands are independent of collection success and use available
+stored predictions and current odds; insufficient data must not fabricate picks.
+Reports retain their prerequisite checks. Under the daily database lock, an
+existing date/mode ticket prevents regeneration even if odds change or the
+checkpoint is lost. No existing tickets are deleted.
 
-After a dropped run or three failed retries, use **Actions → Daily football
-automation → Run workflow**, optionally specifying a target date and count.
+The workflow publishes a separate reservation artifact before setup, so failed
+builds and interrupted application steps still consume their attempt. Reruns also
+use GitHub's run-attempt number as a minimum attempt count. Progress after the
+reservation is available to another runner only after the final checkpoint upload;
+cancellation can lose those later completed-step markers. Deleting or expiring
+all artifacts can lose historical attempt counts across separate runs. The
+database ticket check still prevents repeat ticket creation. Artifacts expire
+after 90 days.
+
+Use **Actions → Daily football automation → Run workflow** to request a manual
+attempt, optionally specifying a target date and count. It shares the same
+three-attempt budget; dispatching again does not reset it.
 The target date is frozen by the guard and reused by execution and the marker,
 even if the job subsequently crosses midnight. A queue delay crossing midnight
 before the guard starts uses the new local date; dispatch the intended date
@@ -72,8 +83,9 @@ half-time scores remain Pending; confirmed scores are not overwritten.
 Failures are reported per step, remaining steps continue, and any failed step
 makes the job fail. No usable selections or an empty prediction source is
 explicitly reported as a failure rather than fabricated success. Inspect job
-logs before retrying; reruns preserve ledger fingerprint deduplication, but
-changed odds/selections intentionally create another simulation.
+logs before retrying. Daily automation reuses the first saved ticket for each
+date/mode even when odds or selections change. Standalone ticket commands retain
+fingerprint-based simulation behavior and are not an automation retry mechanism.
 
 Only verified regulation-time FT (90 minutes plus stoppage time) is eligible
 for persistence and grading. Forebet requires `FT` without extra-time or
@@ -86,6 +98,20 @@ AET/penalty fixtures without verified
 regulation scores stay unresolved with a diagnostic; half-time is not a
 substitute for regulation FT. Providers must explicitly set
 `IsRegulationTimeVerified` after checking their source evidence.
+
+Forebet remains the primary result source. SoccerVista fallback targets fixtures
+missing FT or either half-time score. Its current provider verifies FT but does
+not yet extract HT. Goal-timeline reconstruction is deliberately not enabled
+until an actual provider response can be verified: attempts to fetch a real
+fixture during this change failed DNS resolution. A future implementation must
+identify the scoring side (including own goals), exclude disallowed goals,
+include first-half stoppage time, distinguish periods, and reconcile all valid
+regulation goals against verified FT. Incomplete or ambiguous evidence must
+leave HT unknown, never assume 0-0.
+
+Ticket settlement can mark half-dependent combinations lost without HT when
+the verified FT disproves the required winner or minimum total. Possible wins
+still need HT; calibration continues to require complete half-time evidence.
 
 Disagreeing provider scores quarantine that fixture for the capture rather than
 choosing the first, latest or larger score. Stored-score discrepancies are not

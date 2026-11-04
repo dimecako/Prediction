@@ -65,8 +65,10 @@ def has_successful_run(target, repository, token, api_url, request_json=github_j
         page += 1
 
 
-def latest_checkpoint(target, count, repository, token, api_url, request_json=github_json):
+def latest_checkpoint(target, count, repository, token, api_url, request_json=github_json,
+                      current_run_id=""):
     name = f"daily-checkpoint-{target}"
+    reservation_prefix = f"daily-attempt-{target}-"
     base = f"{api_url.rstrip('/')}/repos/{repository}"
     page = 1
     while True:
@@ -74,11 +76,14 @@ def latest_checkpoint(target, count, repository, token, api_url, request_json=gi
         query = urlencode({"per_page": 100, "page": page})
         artifacts = request_json(f"{base}/actions/artifacts?{query}", token)["artifacts"]
         for artifact in artifacts:
-            if (artifact["name"] != name and not artifact["name"].startswith(f"{name}-")) or artifact["expired"]:
+            if (artifact["name"] != name and not artifact["name"].startswith(f"{name}-")
+                    and not artifact["name"].startswith(reservation_prefix)) or artifact["expired"]:
                 continue
             run_id = artifact["workflow_run"]["id"]
             run = request_json(f"{base}/actions/runs/{run_id}", token)
-            if run["status"] == "completed" and run["path"] == ".github/workflows/daily-run.yml":
+            # A workflow rerun retains its run ID and artifacts while becoming in_progress again.
+            if ((run["status"] == "completed" or str(run_id) == current_run_id)
+                    and run["path"] == ".github/workflows/daily-run.yml"):
                 return str(run_id), artifact["name"]
         if len(artifacts) < 100:
             return "", ""
@@ -95,7 +100,7 @@ def plan_run(event_name, schedule, requested_date, now, repository, token, api_u
     return True, target, f"Run {target}: no successful daily run recorded"
 
 
-def reserve_attempt(path, target, count, revision):
+def reserve_attempt(path, target, count, revision, previous_run_attempts=0):
     path = Path(path)
     if path.exists():
         checkpoint = json.loads(path.read_text(encoding="utf-8"))
@@ -111,10 +116,10 @@ def reserve_attempt(path, target, count, revision):
     if checkpoint is None:
         checkpoint = {"FormatVersion": 1, "Date": target, "Count": count,
                       "Revision": revision, "IncludeDayBefore": False, "CompletedSteps": []}
-    attempts = checkpoint.get("Attempts", 0)
-    if attempts >= 3:
-        return False
-    checkpoint["Attempts"] = attempts + 1
+    # GitHub keeps this counter even if a rerun's checkpoint artifact was lost.
+    attempts = max(checkpoint.get("Attempts", 0), previous_run_attempts)
+    available = attempts < 3
+    checkpoint["Attempts"] = attempts + (1 if available else 0)
     path.parent.mkdir(parents=True, exist_ok=True)
     staging = path.with_suffix(".pending")
     try:
@@ -122,14 +127,15 @@ def reserve_attempt(path, target, count, revision):
         staging.replace(path)
     finally:
         staging.unlink(missing_ok=True)
-    return True
+    return available
 
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["--reserve"]:
         if not reserve_attempt(os.environ["DAILY_CHECKPOINT_FILE"], os.environ["TARGET_DATE"],
                                int(os.environ.get("TICKET_COUNT", "15")),
-                               os.environ["DAILY_CHECKPOINT_REVISION"]):
+                               os.environ["DAILY_CHECKPOINT_REVISION"],
+                               max(0, int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")) - 1)):
             print("[SCHEDULE] Maximum three attempts for this date already reserved.")
             sys.exit(1)
         print("[SCHEDULE] Reserved one of three daily attempts.")
@@ -152,7 +158,7 @@ if __name__ == "__main__":
             raise ValueError("Ticket count must be between 1 and 100.")
         checkpoint_run_id, checkpoint_artifact_name = latest_checkpoint(
             target, count, os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"],
-            os.environ["GITHUB_API_URL"])
+            os.environ["GITHUB_API_URL"], current_run_id=os.environ.get("GITHUB_RUN_ID", ""))
         if checkpoint_run_id:
             print(f"[SCHEDULE] Restore completed steps from run {checkpoint_run_id}.")
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:

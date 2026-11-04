@@ -25,7 +25,7 @@ class DailyScheduleTests(unittest.TestCase):
         for hour in range(24):
             with self.subTest(hour=hour):
                 self.assertEqual(
-                    first_hour <= hour <= first_hour + 3,
+                    first_hour <= hour <= first_hour + 2,
                     module.should_run("schedule", f"0 {hour} * * *", now),
                 )
 
@@ -81,15 +81,15 @@ class DailyScheduleTests(unittest.TestCase):
     def artifact(self, name="daily-success-2026-11-02", expired=False):
         return {"name": name, "expired": expired, "workflow_run": {"id": 123}}
 
-    def test_each_of_four_attempts_runs_without_a_success_record(self):
-        for hour in range(7, 11):
+    def test_each_of_three_attempts_is_eligible_without_a_success_record(self):
+        for hour in range(7, 10):
             with self.subTest(hour=hour):
                 (run, target, _), _ = self.plan(schedule=f"0 {hour} * * *")
                 self.assertTrue(run)
                 self.assertEqual("2026-11-02", target)
 
     def test_successful_manual_or_scheduled_execution_blocks_all_later_attempts(self):
-        for event, schedule in [("schedule", f"0 {hour} * * *") for hour in range(7, 11)] + [
+        for event, schedule in [("schedule", f"0 {hour} * * *") for hour in range(7, 10)] + [
                 ("workflow_dispatch", "")]:
             with self.subTest(event=event, schedule=schedule):
                 (run, _, message), _ = self.plan(
@@ -147,15 +147,105 @@ class DailyScheduleTests(unittest.TestCase):
 
         def request(url, token):
             if "/actions/artifacts?" in url:
-                self.assertEqual(["daily-checkpoint-2026-11-02-15"],
-                                 parse_qs(urlparse(url).query)["name"])
+                self.assertNotIn("name", parse_qs(urlparse(url).query))
                 return {"artifacts": [artifact]}
             return {"status": "completed", "path": ".github/workflows/daily-run.yml"}
 
         self.assertEqual(("123", "daily-checkpoint-2026-11-02-15"),
                          module.latest_checkpoint(
-                             "2026-11-02", 15, "owner/repo", "test-token",
+                             "2026-11-02", 4, "owner/repo", "test-token",
                              "https://api.github.com", request))
+
+    def test_date_only_checkpoint_is_restored_even_when_source_revision_changes(self):
+        def request(url, token):
+            if "/actions/artifacts?" in url:
+                return {"artifacts": [self.artifact(name="daily-checkpoint-2026-11-02")]}
+            return {"status": "completed", "path": ".github/workflows/daily-run.yml",
+                    "head_sha": "previous-deployment"}
+
+        self.assertEqual(("123", "daily-checkpoint-2026-11-02"), module.latest_checkpoint(
+            "2026-11-02", 4, "owner/repo", "test-token", "https://api.github.com", request))
+
+    def test_persisted_reservation_restores_budget_when_final_checkpoint_is_missing(self):
+        name = "daily-attempt-2026-11-02-123-2"
+
+        def request(url, token):
+            if "/actions/artifacts?" in url:
+                return {"artifacts": [self.artifact(name=name),
+                                      self.artifact(name="daily-checkpoint-2026-11-02")]}
+            return {"status": "completed", "path": ".github/workflows/daily-run.yml"}
+
+        self.assertEqual(("123", name), module.latest_checkpoint(
+            "2026-11-02", 15, "owner/repo", "test-token", "https://api.github.com", request))
+
+    def test_checkpoint_lookup_is_paginated_and_ignores_other_dates(self):
+        def request(url, token):
+            if "/actions/runs/" in url:
+                return {"status": "completed", "path": ".github/workflows/daily-run.yml"}
+            page = parse_qs(urlparse(url).query)["page"]
+            return {"artifacts": [self.artifact(name="daily-checkpoint-2026-11-01")] * 100
+                    if page == ["1"] else [self.artifact(name="daily-checkpoint-2026-11-02")]}
+
+        self.assertEqual(("123", "daily-checkpoint-2026-11-02"), module.latest_checkpoint(
+            "2026-11-02", 15, "owner/repo", "test-token", "https://api.github.com", request))
+
+    def test_reservation_enforces_three_attempts_across_count_revision_and_manual_retry(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "nested" / "daily-checkpoints.json"
+            for attempt in range(1, 4):
+                self.assertTrue(module.reserve_attempt(path, "2026-11-02", attempt, f"revision-{attempt}"))
+                state = json.loads(path.read_text())
+                self.assertEqual(attempt, state["Attempts"])
+                state["CompletedSteps"] = ["completed"]
+                state["IncludeDayBefore"] = True
+                path.write_text(json.dumps(state))
+            self.assertFalse(module.reserve_attempt(path, "2026-11-02", 100, "new-revision"))
+            state = json.loads(path.read_text())
+            self.assertEqual(3, state["Attempts"])
+            self.assertEqual(["completed"], state["CompletedSteps"])
+            self.assertTrue(state["IncludeDayBefore"])
+            self.assertTrue(module.reserve_attempt(path, "2026-11-03", 15, "new-revision"))
+            self.assertEqual(1, json.loads(path.read_text())["Attempts"])
+            self.assertEqual([], json.loads(path.read_text())["CompletedSteps"])
+
+    def test_legacy_checkpoint_keeps_completed_steps_and_starts_attempt_count(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "daily-checkpoints.json"
+            path.write_text(json.dumps({"FormatVersion": 1, "Date": "2026-11-02", "Count": 15,
+                                       "Revision": "old", "CompletedSteps": ["done"],
+                                       "IncludeDayBefore": True}))
+            self.assertTrue(module.reserve_attempt(path, "2026-11-02", 4, "new"))
+            state = json.loads(path.read_text())
+            self.assertEqual(1, state["Attempts"])
+            self.assertEqual(["done"], state["CompletedSteps"])
+
+    def test_invalid_checkpoint_does_not_reset_attempt_budget(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "daily-checkpoints.json"
+            for content in ["not-json", '{"FormatVersion":2}',
+                           '{"FormatVersion":1,"CompletedSteps":[],"Attempts":-1}']:
+                path.write_text(content)
+                with self.assertRaises(ValueError):
+                    module.reserve_attempt(path, "2026-11-02", 15, "new")
+
+    def test_missing_checkpoint_cannot_reset_github_rerun_attempt_counter(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "daily-checkpoints.json"
+            self.assertTrue(module.reserve_attempt(path, "2026-11-02", 15, "new",
+                                                   previous_run_attempts=2))
+            self.assertEqual(3, json.loads(path.read_text())["Attempts"])
+            path.unlink()
+            self.assertFalse(module.reserve_attempt(path, "2026-11-02", 4, "newer",
+                                                    previous_run_attempts=3))
+            self.assertEqual(3, json.loads(path.read_text())["Attempts"])
+
+    def test_rerun_counter_is_a_floor_not_added_to_restored_attempt_count(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "daily-checkpoints.json"
+            self.assertTrue(module.reserve_attempt(path, "2026-11-02", 15, "old"))
+            self.assertTrue(module.reserve_attempt(path, "2026-11-02", 15, "new",
+                                                   previous_run_attempts=1))
+            self.assertEqual(2, json.loads(path.read_text())["Attempts"])
 
     def test_incomplete_or_other_workflow_checkpoint_is_not_restored(self):
         artifact = self.artifact(name="daily-checkpoint-2026-11-02-15")
@@ -172,6 +262,16 @@ class DailyScheduleTests(unittest.TestCase):
                     "2026-11-02", 15, "owner/repo", "test-token",
                     "https://api.github.com", request))
 
+    def test_workflow_rerun_restores_its_own_previous_attempt_checkpoint(self):
+        def request(url, token):
+            if "/actions/artifacts?" in url:
+                return {"artifacts": [self.artifact(name="daily-checkpoint-2026-11-02")]}
+            return {"status": "in_progress", "path": ".github/workflows/daily-run.yml"}
+
+        self.assertEqual(("123", "daily-checkpoint-2026-11-02"), module.latest_checkpoint(
+            "2026-11-02", 15, "owner/repo", "test-token", "https://api.github.com", request,
+            current_run_id="123"))
+
     def test_github_failure_does_not_silently_allow_another_run(self):
         def request(url, token):
             raise HTTPError(url, 403, "Forbidden", {}, None)
@@ -184,7 +284,8 @@ class DailyScheduleTests(unittest.TestCase):
 
     def test_entrypoint_writes_run_decision_and_frozen_target_to_github_output(self):
         for already_succeeded in [False, True]:
-            with self.subTest(already_succeeded=already_succeeded), tempfile.TemporaryDirectory() as temp:
+            with self.subTest(already_succeeded=already_succeeded), tempfile.TemporaryDirectory(
+                    dir=Path(__file__).parent) as temp:
                 output = Path(temp) / "github-output"
                 artifacts = [self.artifact(name="daily-success-2026-10-31")] if already_succeeded else []
                 responses = [{"artifacts": artifacts}]
