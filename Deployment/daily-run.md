@@ -7,6 +7,14 @@ branch. No default-branch change is required: this workflow explicitly checks ou
 `prediction-api`, including `Deployment/daily_schedule.py`. Until both branches
 contain the required files, scheduling is not deployed.
 
+Manual **Run workflow** executions instead check out the exact revision of the
+selected branch. To test these changes before deploying, select
+`copilot/ml-leagua-save-pending-results`, enter the target date and ticket count,
+and launch the workflow. This is a real execution using `FOOTBALL_DB_CONNECTION`,
+not a dry run: it shares that date's success marker, attempt budget and saved
+tickets with production. Already-completed steps may be skipped. It does not
+deploy the selected branch to Render.
+
 Create repository Actions secret `FOOTBALL_DB_CONNECTION` containing the existing
 Neon **Npgsql connection string**, for example `Host=...;Database=...;Username=...;Password=...;SSL Mode=Require`.
 Do not paste a PostgreSQL URI or commit credentials. The database must already
