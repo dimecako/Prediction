@@ -1,3 +1,144 @@
+# ROADMAP (status)
+[x] Collection
+[x] Aggregation
+[x] Results Collection
+[x] Backtesting
+[x] Performance Analytics
+[x] Consensus Analytics
+[x] Weighted Consensus   (kodot, testovite i proverkata vrz bazata se gotovi)
+[x] Confidence Engine    (calibration komanda gotova; merenite Prob. grupi go potvrdija pragot: 65-70 -> 69%, 70+ -> 78%, 55-65 -> ~58-60%, <50 -> 41%)
+[x] Value Detection      (Maxbet kvoti + EV; avtomatski zacuvani SIMULACII so 1 edinica po cel tiket; zamrznati izbori/kvoti, bez duplikati; ticket-report: profit/ROI i pending; league-stats: stroga tocnost po liga. Realna profitabilnost uste ne e dokazana; starite ligi se nepoznati.)
+[x] AI Ranking           (site 11 izvori + konsenzus signali vo ML.NET; hronoloska out-of-time validacija na 8522 natprevari; ai-rank i ml flag za rangiranje so kombinirana kalibracija + ML verojatnost; 253 testovi pominaa)
+
+# =====================================================================
+# KOMANDI (dotnet run --no-build -- ...)  prvo: dotnet build
+# =====================================================================
+
+# CLOUD: GitHub Actions daily-run vo 08:00 Europe/Skopje; zapisuvanje vo Neon.
+# Render prikazuva /predictions, /tickets, /tickets/ID, /performance, /leagues.
+# daily-run gi proveruva site stari Pending datumi + gi pravi site 9 varijanti.
+# Exports__Excel=false za cloud; tickets.ps1 ostanuva lokalna komanda so Excel.
+# backtest/calibration/league-stats se analizi, ne se potrebni za dnevno snimanje.
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\tickets.ps1  // SITE 9 ticket varijanti + ocenuvanje; 18:00-23:59 za utre, 00:00-17:59 za denes
+.\tickets.ps1 -Date 2026-10-27                                // racen datum; site Excel fajlovi sekogas se zadrzuvaat
+.\tickets.ps1 -PlanOnly                                      // prikazi go planot, bez izvrsuvanje ili brisenje
+                                                              // nema avtomatsko brisenje na XLSX; brisi gi racno
+dotnet run --no-build -- ticket-import 2026-10-26             // zacuvaj stari daily Excel tiketi i proveri gi drugite, bez brisenje
+
+dotnet build                                                  // kompajlirj posle sekoja promena na kodot
+
+dotnet run --no-build -- 2026-10-17                           // glaven pipeline: sobira prognozi od site izvori, snima vo baza, pravi predictions-DATUM.xlsx
+
+dotnet run --no-build -- collect-results 2026-10-17           // sobira vistinski rezultati za toj den i gi snima vo baza (pusti navecer)
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\collect-results-range.ps1 -From 2026-10-21 -To 2026-10-28
+# Inkluziven opseg + ticket-report; prodolzuva po greski i gi sumira na kraj.
+# Ne generira tiketi i ne brise Excel; nedostapnite rezultati ostanuvaat Pending.
+
+dotnet run --no-build -- db-status 2026-10-17                 // brza proverka sto ima vo bazata za toj den
+
+dotnet run --no-build -- backtest 2026-09-22                  // tocnost po izvor + sporedba Equal vs Weighted consensus od toj datum
+
+dotnet run --no-build -- weighted-consensus 2026-10-16        // glasanje so tezini spored istoriska tocnost na izvor/market (1X2, BTTS, Goals)
+
+dotnet run --no-build -- calibration                          // vistinska tocnost po Prob. grupa, confidence nivo i izvor (samo cita bazata)
+
+dotnet run --no-build -- ticket-report                        // site zacuvani SIMULACII: dobieni/izgubeni/pending, profit i ROI; NE se vistinski uplati
+dotnet run --no-build -- ticket-report 2026-10-01 2026-10-31  // inkluziven opseg po datum na natprevar; pending ulog ne vleguva vo ROI
+dotnet run --no-build -- ticket-diagnostics 2026-10-26 2026-10-28  // pending pricini, izvori, Forebet ID i NEPOTVRDENI kandidati +/-1 den; bez spojuvanje
+dotnet run --no-build -- ticket-source-check 2026-10-28 2026-10-28  // originalni Forebet statusi za pending; cita izvor, ne menuva rezultati
+dotnet run --no-build -- league-stats 2026-10-01 2026-10-31   // tocnost po liga i pazar; samo snapshots pred 00:00 UTC; mala istorija e oznacena
+                                                              // ticket avtomatski cuva Maxbet liga i neprazen potvrden tiket so 1 edinica vkupen ulog
+                                                              // ista kombinacija/kvoti/rezim ne se duplira; drugi kvoti ili safe/value se posebni simulacii
+                                                              // Excel dobiva -sim-ID i Simulation list; starite Excel tiketi ne se uvezuvaat kako istorija
+
+dotnet run --no-build -- 2026-10-21                           // prvo soberi predictions i napravi mecuvanje; NE pravi tiket avtomatski
+dotnet run --no-build -- ticket 2026-10-21 15                 // do 15 razlicni natprevari rangirani po vrednost (EV = Sigurnost x Kvota): potvrden tiket + odvoeni predlozi
+dotnet run --no-build -- ticket 2026-10-21 5                  // pomal i porealen tiket (do 5 natprevari) rangiran po vrednost
+dotnet run --no-build -- ticket 2026-10-21 15 safe            // do 15 natprevari rangirani ISKLUCIVO po najgolema sigurnost (Wilson dolna granica), bez brkanje visoka kvota
+dotnet run --no-build -- ticket 2026-10-21 5 safe             // 5 najsigurni natprevari za denot (najdobar izbor za realna proodnost na tiket)
+
+dotnet run --no-build -- daily-ticket-league 2026-10-26 15   // SAMO dnevni sobrani prognozi + Maxbet, bez istorija/ML-treniranje; po prioritetni ligi vo krugovi do 15
+dotnet run --no-build -- daily-ticket 2026-10-26 15          // SAMO dnevni sobrani prognozi + Maxbet, bez istorija/ML-treniranje; 15 od SITE ligi, rang po Source Prob. i soglasnost
+
+dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15          // do 15 natprevari SAMO so tip "1-3 prvo & 3+" (silen Over 2.5 signal + Maxbet kvota >= 1.70, bez razlika na 1/2 kvota)
+dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15 safe     // do 15 natprevari "1-3 prvo & 3+" rangirani po sigurnost i jacina na 3+ / BTTS signalot
+dotnet run --no-build -- ai-rank 2026-10-23 15                // do 15 natprevari rangirani so AI/ML verojatnost (site 11 izvori) + kalibracija i Maxbet kvota
+dotnet run --no-build -- ai-rank 2026-10-23 15 safe           // do 15 najsigurni natprevari rangirani po kombinirana Wilson sigurnost + AI/ML verojatnost
+dotnet run --no-build -- ai-rank 2026-10-23 15 safe league    // AI-safe tiket po prioritetni ligi i soglasuvanje na izvorite; najmnogu 2 izbora od ista liga
+dotnet run --no-build -- ai-rank 2026-10-23 5 safe            // 5 najsigurni natprevari rangirani po kombinirana Wilson sigurnost + ML verojatnost
+                                                              // DUPLIKATI / ALIJASI (ne se posebni ticket rezimi):
+                                                              // - bez broj: isto kako 15; ticket so ml: isto kako ai-rank za ist datum/broj/flagovi
+                                                              // - why: samo dopolnitelna dijagnostika [ISTORIJA], [ODBIEN], [BEZ-PAR]; ne go menuva izborot
+                                                              // - nodc: ne go menuva izborot (site tiketi se bez dvojna sansa), samo dodava -nodc vo Excel imeto
+                                                              // 5 i 15 se razlicni golemini; safe, ML, league i dnevniot rezim ne se alijasi.
+                                                              // Razlicni rezimi moze slucajno da izberat isti mecevi; toa ne gi pravi isti algoritmi.
+                                                              // DOZVOLENI PAZARI (site so provereni Maxbet kodovi za kvoti):
+                                                              // - fix 1, fix 2
+                                                              // - 1 & 1+ prvo; 2 & 1+ prvo
+                                                              // - 1 & 1+ prvo & 1+ vtoro; 2 & 1+ prvo & 1+ vtoro
+                                                              // - 1 & 2-5 golovi; 1 & 2-6 golovi; 2 & 2-5 golovi; 2 & 2-6 golovi
+                                                              // - 1-1; 2-2; 1-1 & 2+; 2-2 & 2+  (1-1 / 2-2 = poluvreme/kraj, NE tocen rezultat)
+                                                              // - BTTS; BTTS & 3+; 3+
+                                                              // - 1-2 prvo & 1-2 vtoro; 1-3 prvo & 1-3 vtoro; 1-3 prvo & 3+
+                                                              // PRAVILA PO OSNOVNA KVOTA ZA POBEDA (1/2):
+                                                              // - Osnovna kvota < 1.40: dozvoleno 1-1 / 2-2 (so ili bez 2+) ili Pobeda & Golovi, so konecna kvota >= 1.70
+                                                              // - Osnovna kvota 1.40 do < 1.70: dozvoleno Pobeda & Golovi, so konecna kvota >= 1.70
+                                                              // - Osnovna kvota 1.70 do 2.00: SAMO cist fix 1 ili fix 2 (bez dodavanje golovi)
+                                                              // - Osnovna kvota > 2.00: dozvoleno BTTS (kvota >= 1.65), 3+, BTTS & 3+ ili golovi po poluvreme (kvota >= 1.70)
+                                                              // PRAGOVI ZA ISTORISKA TOCNOST I PRIMEROK:
+                                                              // - Cist fix (1X2), cist BTTS i cist 3+ baraat >= 55% istoriska tocnost i >= 100 primeri
+                                                              // - Kombinaciite (Combo i HalfGoals) baraat >= 50 primeri i (>= 55% tocnost ILI ocekuvan povrat EV >= +5%, t.e. Tocnost x Kvota >= 1.05)
+                                                              // - Koristen BTTS YES signal bara >= 55% tocnost (n>=100); koristen Goals (Over/Under 2.5) signal bara >= 60% tocnost (n>=100)
+                                                              // - Cist fix i cist poluvreme/kraj (1-1 / 2-2) ne baraat BTTS/Goals signal; NO i Under 2.5 se samo signali za kalibracija, ne dozvoleni tipovi
+                                                              // - Duplikati vo baza so razlicni iminja za ista Maxbet ponuda avtomatski se spojuvaat (ostanuva zapisot so najmnogu izvori)
+                                                              // - Kombinacii bez kvota vo Maxbet odat samo vo odvoen list "Predlozi - nepotvrdeni" (n/a) i ne vleguvaat vo tiketot
+
+dotnet run --no-build -- collect-results 2026-10-18           // dodava i poluvreme od Forebet; dopolnuva postoecki rezultati ako krajnite golovi se isti
+                                                              // collect-results i ticket avtomatski ja primenuvaat migracijata za nullable poluvreme
+                                                              // povtori collect-results za starite datumi za da se napolni istorijata so poluvreme
+
+dotnet run --no-build -- train-model                          // trenira ML modeli (rezultat, BTTS, goals) od istorijata vo bazata
+
+.\daily.ps1                                                   // sabajle: sobira dneshni prognozi (isto kako glavniot pipeline za deneshen datum)
+.\night.ps1                                                   // navecer: collect-results + backtest + ROI na site zacuvani simulacii
+.\all.ps1                                                   // avtomatski build, pa rezultati/analizi za denes + ROI na site simulacii + tocnost po liga
+.\all.ps1 -Date 2026-10-17                                    // build, collect-results, db-status, backtest, weighted-consensus, calibration, ticket-report, league-stats; NE generira nov tiket
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\all.ps1 -Date 2026-10-18
+dotnet test .\Tests\Prediction.Tests.csproj                   // pusti testovi
+
+# =====================================================================
+# Naodi od calibration (5401 natprevari, 24.09-16.10)
+# =====================================================================
+- 1X2 Prob. e kalibriran: >=65 e vistinski signal. "VERY STRONG" so cap = 76% (n=42)
+- BTTS i Goals soglasnost na izvorite = ~50% (moneta). Ne gi koristi za tiket.
+- Single source bez Prob. (PredictZ, SoccerVista, WinDrawWin) ~44% - bez vrednost
+- Najdobri izvori: Statarea, ZuluBet, Vitibet (so visok Prob.), Forebet samo >=70
+- Dvojna sansa ~84-88%, cist 1X2 ~71-78% na Prob>=65. Tiket od 15 = mala sansa (1.9% 1X2, ~14% DC)
+
+# Napraveno posle roadmap-ot (17.10)
+- BTTS Prob./Goals Prob. preimenuvani vo BTTS Agree/Goals Agree (se samo soglasnost, ne verojatnost)
+- Goals glasovite se sporeduvaat na linija 2.5 (O3.5->O2.5, U1.5/U0.5->U2.5)
+- Sortiranje: CONFLICT na kraj, potoa soglasni glasovi, pomal vkupen broj glasovi, pa Prob.
+
+pass: prediction_dev
+
+psql -h localhost -U prediction_app -d prediction
+
+sudo -i
+
+pg_ctlcluster 16 main start
+pg_isready -h localhost -p 5432
+
+pg_isready
+
+ps aux | grep postgres
+
+sudo -u postgres psql -l
+
+psql -U postgres -l
+
 docker update --restart unless-stopped flaresolverr
 
 docker ps
@@ -17,6 +158,60 @@ docker run --rm \
   -e OPENAI_API_KEY="$OPENAI_API_KEY" \
   football-ai 2026-09-19
 
+dotnet run -- 2026-09-30
+
+dotnet run --no-build -- 2026-09-21
+
+dotnet run --no-build -- 2026-09-26 2>&1 | Tee-Object -FilePath ".\full-output.txt"
+
+$lines = Get-Content ".\full-output.txt"
+$start = ($lines | Select-String "СИТЕ ПОДАТОЦИ ЗА ДАТУМ").LineNumber
+$lines[($start-1)..($lines.Count-1)] | Set-Content ".\predictions-2026-09-26.txt"
+
+$lines = Get-Content ".\full-output.txt"
+$start = ($lines | Select-String "СИТЕ ПОДАТОЦИ ЗА ДАТУМ").LineNumber
+$lines[($start-1)..($lines.Count-1)] | Set-Content ".\predictions-2026-09-26.xlsx"
+
+code ".\predictions-2026-09-26.txt"
+
+ode ".\predictions-2026-09-26.exls"
+
+dotnet run --no-build -- collect-results 2026-09-23 //za sobiranje rezultati
+
+dotnet run --no-build -- backtest 2026-09-22 
+
+dotnet run --no-build -- weighted-consensus 2026-10-16
+
+.\daily.ps1 
+
+ili
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\daily.ps1
+
+# Sabajle
+.\daily.ps1
+
+Get-ChildItem *.ps1 ili Get-ChildItem -Recurse -Filter night.ps1
+
+ Get-ExecutionPolicy
+Restricted
+PS C:\Users\Dimitar\Desktop\Prediction-local> Set-ExecutionPolicy -Scope Process Bypass
+
+# Navecer, po zavrsuvanje na natprevarite
+.\night.ps1
+
+.\all.ps1 -Date 2026-10-17  
+powershell -ExecutionPolicy Bypass -File .\all.ps1 -Date 2026-10-17
+
+dotnet run --no-build -- train-model
+
+docker run -d --name=flaresolverr -p 8191:8191 -e LOG_LEVEL=info ghcr.io/flaresolverr/flaresolverr:latest
+
+docker start flaresolverr
+
+docker ps -a --filter "name=flaresolverr"
+
 
   docker system prune //cistenje
 
@@ -29,43 +224,40 @@ docker run --rm \
 
   docker system prune //cistenje
 
-За твојов случај пушти:
+$env:ConnectionStrings__FootballDb
 
-Shell
-1
-docker system prune -a
-Show more lines
+$env:ConnectionStrings__FootballDb='Host=localhost;Port=5432;Database=prediction;Username=prediction_app;Password=prediction_dev' 
 
-Docker ќе ти покаже што планира да избрише и ќе побара:
+if ($env:ConnectionStrings__FootballDb) { "FootballDb OK" } else { "FootballDb MISSING" }
 
-Plain Text
-1
-Are you sure you want to continue? [y/N]
-Show more lines
+$conn = 'Host=localhost;Port=5432;Database=prediction;Username=prediction_app;Password=prediction_dev'
+[Environment]::SetEnvironmentVariable('ConnectionStrings__FootballDb', $conn, 'User')
+$env:ConnectionStrings__FootballDb = $conn
 
-стави:
+Test-NetConnection localhost -Port 5432
 
-Plain Text
-1
-y
-Show more lines
+# PostgreSQL
+DB: prediction
+User: prediction_app
 
-Ова ги чисти unused images, stopped containers, unused networks и unused build cache. Active container-ите не се предмет на prune. docker system prune
+# Linux / terminal env
+export ConnectionStrings__FootballDb='Host=localhost;Port=5432;Database=prediction;Username=prediction_app;Password=prediction_dev'
 
-Не додавај--volumes, бидејќи не ни треба и volumes може да содржат податоци. Prune unused Docker objects
 
-После тоа провери:
+# Check PostgreSQL
+pg_isready -h localhost -p 5432
 
-Shell
-1
-docker system df
-Show more lines
+Test-NetConnection localhost -Port 5432
 
-Можеш дополнително да исчистиш build cache со:
+# Test login
+psql -h localhost -U prediction_app -d prediction
 
-Shell
-1
-docker builder prune -a
-Show more lines
+# Run predictions
+dotnet run --no-build -- 2026-09-24
 
-но прво пушти docker system prune -a, бидејќи тој веќе чисти unused build cache. docker system prune
+# Collect/backtest
+dotnet run --no-build -- backtest 2026-09-22
+
+# FlareSolverr
+docker start flaresolverr
+docker ps

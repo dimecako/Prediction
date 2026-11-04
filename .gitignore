@@ -8,3 +8,8 @@ obj/
 *.suo
 
 TestResults/
+
+.env
+.env.*
+*.dump
+.neon
