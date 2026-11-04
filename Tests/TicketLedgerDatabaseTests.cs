@@ -50,6 +50,20 @@ public sealed class TicketLedgerDatabaseTests
         Assert.Equal(1.85m, existing.Selections.Single().Odds);
         Assert.Null(await TicketLedger.FindForDateModeAsync(db, date, "daily-league"));
         Assert.Null(await TicketLedger.FindForDateModeAsync(db, date.AddDays(1), "daily"));
+        var legacy = await TicketLedger.SaveAsync(db, TicketLedger.Create(date, true,
+            [new SimulatedTicketSelection
+            {
+                Position = 1, MatchId = match.Id, Fixture = $"{match.HomeTeam} vs {match.AwayTeam}",
+                League = match.League, KickoffUtc = now.AddDays(1), Market = "1X2", Pick = "1",
+                CalibrationKey = "1X2|1|70+", Odds = 1.85m, BaseOdds = 1.85m,
+                Sample = 100, Accuracy = 0.75, Safe = 0.6
+            }], now, "daily-league-safe"));
+        db.ChangeTracker.Clear();
+        var canonical = await TicketLedger.FindForDateModeAsync(db, date, "ml-league-safe");
+        Assert.NotNull(canonical);
+        Assert.Equal(legacy.Ticket.Id, canonical.Id);
+        Assert.Equal("daily-league-safe", canonical.Mode);
+        Assert.Null(await TicketLedger.FindForDateModeAsync(db, date, "ml-safe"));
         await transaction.RollbackAsync();
     }
 

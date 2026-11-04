@@ -11,10 +11,19 @@ namespace Prediction.Services;
 public static class TicketLedger
 {
     public static Task<SimulatedTicket?> FindForDateModeAsync(
-        FootballDbContext db, DateOnly date, string mode) =>
-        db.SimulatedTickets.AsNoTracking().Include(x => x.Selections)
-            .Where(x => x.MatchDate == date && x.Mode == mode)
+        FootballDbContext db, DateOnly date, string mode)
+    {
+        // The league-safe AI variant previously used the daily-league-safe name.
+        string alternateMode = mode switch
+        {
+            "ml-league-safe" => "daily-league-safe",
+            "daily-league-safe" => "ml-league-safe",
+            _ => mode
+        };
+        return db.SimulatedTickets.AsNoTracking().Include(x => x.Selections)
+            .Where(x => x.MatchDate == date && (x.Mode == mode || x.Mode == alternateMode))
             .OrderBy(x => x.CreatedAtUtc).ThenBy(x => x.Id).FirstOrDefaultAsync();
+    }
 
     public static bool IsDailyMode(string mode) => mode is "daily" or "daily-league";
 

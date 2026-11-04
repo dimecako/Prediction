@@ -81,7 +81,7 @@ public static class DatabaseReportEndpoints
     private static ProblemHttpResult InvalidQuery(HttpContext context)
     {
         context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseReports")
-            .LogWarning("Invalid report date range or page number for {Path}", context.Request.Path);
+            .LogWarning("Invalid report date range or page number.");
         return TypedResults.Problem(statusCode: 400, title: "Invalid report query",
             detail: "Use yyyy-MM-dd dates, from <= to, and a positive page number.");
     }

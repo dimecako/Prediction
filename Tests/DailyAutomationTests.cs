@@ -190,6 +190,31 @@ public sealed class DailyAutomationTests
     }
 
     [Fact]
+    public async Task PartialSourceCoverageAndPastResultFailuresLeaveAllTicketVariantsRunnable()
+    {
+        var steps = DailyRunPlan.Build(Target, 15, [Target.AddDays(-2)]);
+        Assert.Equal(1, await CommandExecution.RunAsync(() =>
+        {
+            if (!DailyRunPlan.CheckSourceCoverage([("Forebet", 3), ("SoccerVista", 0)], _ => { }))
+                CommandExecution.Fail();
+            return Task.CompletedTask;
+        }, automation: true));
+        Assert.Equal(1, await CommandExecution.RunAsync(
+            () => throw new InvalidOperationException("past-results-unavailable"), automation: true));
+        var tickets = steps.Where(step => DailyRunPlan.TicketMode(step) != null).ToArray();
+        Assert.Equal(9, tickets.Length);
+        foreach (var step in tickets)
+        {
+            Assert.Empty(step.Dependencies);
+            Assert.Equal(0, await CommandExecution.RunAsync(() =>
+            {
+                Assert.Equal(0, CommandExecution.ExitCode);
+                return Task.CompletedTask;
+            }, automation: true));
+        }
+    }
+
+    [Fact]
     public async Task ExceptionsBecomeFailureAndAutomationScopeIsInheritedAndRestored()
     {
         Assert.Equal(1, await CommandExecution.RunAsync(
