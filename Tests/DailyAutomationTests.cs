@@ -24,7 +24,7 @@ public sealed class DailyAutomationTests
     }
 
     [Fact]
-    public void PlanRechecksOnlyYesterdayAndPendingDayBeforeAndContainsAllVariantsWithoutImportOrTraining()
+    public void PlanRechecksOnlyYesterdayAndPendingDayBeforeAndContainsFourVariantsWithoutImportOrTraining()
     {
         var old = Target.AddYears(-2);
         var steps = DailyRunPlan.Build(Target, 15,
@@ -33,26 +33,24 @@ public sealed class DailyAutomationTests
             steps.Take(4).Select(s => s.Args[0]));
         Assert.Equal(Target.AddDays(-1).ToString("yyyy-MM-dd"), steps[0].Args[1]);
         Assert.Equal(Target.AddDays(-2).ToString("yyyy-MM-dd"), steps[2].Args[1]);
-        Assert.Equal(16, steps.Count);
+        Assert.Equal(10, steps.Count);
         Assert.Equal([Target.ToString("yyyy-MM-dd")], steps[4].Args);
         Assert.Equal([
-            "ticket 2026-11-01 15", "ticket 2026-11-01 15 safe",
-            "ai-rank 2026-11-01 15", "ai-rank 2026-11-01 15 safe",
-            "ai-rank 2026-11-01 15 safe league", "daily-ticket 2026-11-01 15",
-            "daily-ticket-league 2026-11-01 15", "ticket-1-3p3+ 2026-11-01 15",
-            "ticket-1-3p3+ 2026-11-01 15 safe", "daily-fixed-auto 2026-11-01"
-        ], steps.Skip(5).Take(10).Select(s => string.Join(" ", s.Args)));
+            "daily-ticket 2026-11-01 15",
+            "daily-ticket-league 2026-11-01 15",
+            "ticket-1-3p3+ 2026-11-01 15",
+            "daily-fixed-auto 2026-11-01"
+        ], steps.Skip(5).Take(4).Select(s => string.Join(" ", s.Args)));
         Assert.Equal("ticket-report", steps[^1].Args[0]);
         Assert.DoesNotContain(steps, s => s.Args[0] is "ticket-import" or "train" or "build");
         Assert.Contains(steps[0].CheckpointKey, steps[1].Dependencies);
-        Assert.All(steps.Skip(5).Take(10),
+        Assert.All(steps.Skip(5).Take(4),
             step => Assert.Empty(step.Dependencies));
         Assert.Equal(new[]
         {
-            "value", "safe", "ml", "ml-safe", "ml-league-safe", "daily", "daily-league",
-            "1-3p3+", "1-3p3+-safe", "fixed-auto"
-        }, steps.Skip(5).Take(10).Select(DailyRunPlan.TicketMode));
-        Assert.Equal(steps.Skip(4).Take(11).Select(step => step.CheckpointKey).Order(),
+            "daily", "daily-league", "1-3p3+", "fixed-auto"
+        }, steps.Skip(5).Take(4).Select(DailyRunPlan.TicketMode));
+        Assert.Equal(steps.Skip(4).Take(5).Select(step => step.CheckpointKey).Order(),
             steps[^1].Dependencies.Order());
     }
 
@@ -68,7 +66,7 @@ public sealed class DailyAutomationTests
         var yesterday = Target.AddDays(-1).ToString("yyyy-MM-dd");
         Assert.Equal([yesterday], steps.Where(s => s.Args[0] == "collect-results").Select(s => s.Args[1]));
         Assert.Equal(["ticket-report", yesterday, yesterday], steps[1].Args);
-        Assert.Equal(14, steps.Count);
+        Assert.Equal(8, steps.Count);
     }
 
     [Fact]
@@ -201,7 +199,7 @@ public sealed class DailyAutomationTests
         Assert.Equal(1, await CommandExecution.RunAsync(
             () => throw new InvalidOperationException("past-results-unavailable"), automation: true));
         var tickets = steps.Where(step => DailyRunPlan.TicketMode(step) != null).ToArray();
-        Assert.Equal(10, tickets.Length);
+        Assert.Equal(4, tickets.Length);
         foreach (var step in tickets)
         {
             Assert.Empty(step.Dependencies);

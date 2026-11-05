@@ -9,12 +9,11 @@ namespace Prediction.Tests;
 public sealed class DatabaseReportPagesTests
 {
     [Fact]
-    public void TicketDropdownIncludesLegacyAndUnifiedModes()
+    public void TicketDropdownIncludesOnlyFourGeneratedModes()
     {
         Assert.Contains("fixed-auto", DatabaseReportService.TicketModes);
-        Assert.Contains("safe", DatabaseReportService.TicketModes);
-        Assert.Contains("ml-safe", DatabaseReportService.TicketModes);
-        Assert.Contains("1-3p3+", DatabaseReportService.TicketModes);
+        Assert.Equal(["1-3p3+", "daily", "daily-league", "fixed-auto"],
+            DatabaseReportService.TicketModes.Order().ToArray());
     }
 
     [Theory]
