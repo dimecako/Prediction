@@ -8,6 +8,19 @@ namespace Prediction.Tests;
 public sealed class PredictionReportFixturesTests
 {
     [Fact]
+    public void ConsolidatesBenficaNameAliasesWithVerifiedProviderId()
+    {
+        var first = Fixture(1, "SL Benfica", "Lech Poznan");
+        var second = Fixture(2, "Benfica", "Lech Poznan");
+        first.PredictionSnapshots = [Snapshot(1, 1, "Forebet", "1", "fixture-1")];
+        second.PredictionSnapshots = [Snapshot(2, 2, "Forebet", "1", "fixture-1")];
+
+        var display = Assert.Single(PredictionReportFixtures.Consolidate([first, second]));
+
+        Assert.Single(display.PredictionSnapshots);
+    }
+
+    [Fact]
     public void ConsolidatesExactNamesAndLatestSourcesWithoutChangingStoredRows()
     {
         var first = Fixture(1, "Atlético-Team", "Away");

@@ -84,8 +84,17 @@ public static class PredictionReportFixtures
             .Any(x => ResultMatchResolver.AreVerifiedDuplicates([left, right], snapshots, x.Source, x.SourceMatchId!));
     }
 
-    private static string ClubName(string name) => string.Join(" ", Normalize(name).Split(' ')
-        .Where(word => word is not ("fc" or "sc" or "cf" or "afc")));
+    private static string ClubName(string name)
+    {
+        var normalized = Normalize(name);
+        return normalized switch
+        {
+            "sl benfica" or "slb benfica" or "sport lisboa e benfica" or
+            "sport lisbon benfica" or "benfica lisbon" or "benfica" => "benfica",
+            _ => string.Join(" ", normalized.Split(' ')
+                .Where(word => word is not ("fc" or "sc" or "cf" or "afc")))
+        };
+    }
 
     private static string Normalize(string value)
     {

@@ -53,9 +53,15 @@ public static class MatchIdentity
             @"[^a-z0-9]+",
             " ");
 
-        return Regex.Replace(
+        text = Regex.Replace(
             text.Trim(),
             @"\s+",
             " ");
+
+        return text switch
+        {
+            "sl benfica" or "slb benfica" or "sport lisboa e benfica" or "sport lisbon benfica" or "benfica lisbon" => "benfica",
+            _ => text
+        };
     }
 }

@@ -22,6 +22,83 @@ public sealed record DailyTicketSelection(
 
 public static class DailyTicketSelector
 {
+    public static DailyTicketSelection BuildFixed(
+        IReadOnlyList<Match> matches, IReadOnlyList<BookmakerMatch> offers,
+        DateOnly date, DateTime nowUtc, int count)
+    {
+        if (count is not (1 or 2))
+            throw new ArgumentOutOfRangeException(nameof(count), "Fixed ticket count must be 1 or 2.");
+        if (nowUtc.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("Fixed ticket selection needs a UTC clock.");
+
+        var rejections = new List<string>();
+        var paired = new List<(Match Match, BookmakerMatch Offer)>();
+        foreach (var match in matches.Where(m => m.MatchDate == date))
+        {
+            var matching = offers.Where(o => DateOnly.FromDateTime(o.KickoffUtc.ToLocalTime()) == date &&
+                TeamNameMatcher.SameFixture(match.HomeTeam, match.AwayTeam, o.Home, o.Away)).ToList();
+            if (matching.Count == 1)
+                paired.Add((match, matching[0]));
+            else
+                rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: " +
+                    (matching.Count == 0 ? "Nema Maxbet ponuda za datumot." : "Nejasno sparuvanje so povekje ponudi."));
+        }
+
+        var unique = paired.GroupBy(x => (x.Offer.Home, x.Offer.Away, x.Offer.KickoffUtc))
+            .Select(g => g.OrderByDescending(x => CalibrationAnalyzer.LatestPerSource(x.Match).Count).First())
+            .ToList();
+        var eligible = new List<DailyTicketPick>();
+        foreach (var (match, offer) in unique)
+        {
+            if (offer.KickoffUtc <= nowUtc)
+            {
+                rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Natprevarot vekje zapocnal.");
+                continue;
+            }
+            var snapshots = CalibrationAnalyzer.LatestPerSource(match);
+            var consensus = CalibrationAnalyzer.BuildResultConsensus(snapshots);
+            if (consensus is not { Pick: "1" or "2" })
+            {
+                rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Nema nedvosmislen 1/2 konsenzus.");
+                continue;
+            }
+            if (consensus.AverageProbability is not double probability ||
+                !double.IsFinite(probability) || probability < 55)
+            {
+                rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Source Prob. e pod 55%.");
+                continue;
+            }
+            var candidate = TicketMarkets.BuildCandidates(match)
+                .First(c => c.Market == "1X2") with
+            {
+                Pick = consensus.Pick
+            };
+            double? odds = MaxbetOddsProvider.GetOdds(offer, "1X2", consensus.Pick);
+            if (!ValidFixedOdds(odds))
+            {
+                rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Kvota pod 1.60 ili nevalidna.");
+                continue;
+            }
+
+            var evidence = $"FIX 1X2={consensus.Pick} {consensus.MatchingVotes}/{consensus.TotalVotes}; " +
+                $"Source Prob.={probability:F1}%; Min odds=1.60";
+            eligible.Add(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", offer.League,
+                offer.KickoffUtc, candidate, odds!.Value, odds.Value,
+                probability, consensus.MatchingVotes, consensus.TotalVotes, evidence));
+        }
+
+        var picks = eligible
+            .OrderByDescending(p => p.SourceProbability >= 55)
+            .ThenByDescending(p => p.SourceProbability)
+            .ThenByDescending(p => p.Odds >= 1.8)
+            .ThenByDescending(p => p.Odds)
+            .ThenByDescending(p => p.Agreement)
+            .Take(count)
+            .ToList();
+        return new(picks, rejections, unique.Count, paired.Count - unique.Count,
+            eligible.Count, 0);
+    }
+
     public static DailyTicketDecision Select(Match match, BookmakerMatch offer)
     {
         var snapshots = CalibrationAnalyzer.LatestPerSource(match);
@@ -182,4 +259,6 @@ public static class DailyTicketSelector
             .ThenBy(p => p.Fixture, StringComparer.Ordinal);
 
     private static bool ValidOdds(double? odds) => odds.HasValue && double.IsFinite(odds.Value) && odds > 1;
+    private static bool ValidFixedOdds(double? odds) =>
+        odds.HasValue && double.IsFinite(odds.Value) && odds.Value >= 1.60;
 }

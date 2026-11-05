@@ -101,6 +101,11 @@ public partial class ProductionConsensusAggregator
             { "az", "az alkmaar" },
 
             { "psg", "paris saint germain" },
+            { "sl benfica", "benfica" },
+            { "slb benfica", "benfica" },
+            { "sport lisboa e benfica", "benfica" },
+            { "sport lisbon benfica", "benfica" },
+            { "benfica lisbon", "benfica" },
 
             { "inter milan", "inter" },
             { "internazionale", "inter" },

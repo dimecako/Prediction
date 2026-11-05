@@ -231,7 +231,11 @@ namespace Prediction.Services
                 new("daily-ticket", ["daily-ticket", target, size]),
                 new("daily-ticket-league", ["daily-ticket-league", target, size]),
                 new("ticket-1-3p3+", ["ticket-1-3p3+", target, size]),
-                new("ticket-1-3p3+ safe", ["ticket-1-3p3+", target, size, "safe"])
+                new("ticket-1-3p3+ safe", ["ticket-1-3p3+", target, size, "safe"]),
+                new("fixed 1 selection", ["daily-fixed-1", target]),
+                new("fixed 2 selections", ["daily-fixed-2", target]),
+                new("AI fixed 1 selection", ["daily-ai-fixed-1", target]),
+                new("AI fixed 2 selections", ["daily-ai-fixed-2", target])
             };
             steps.AddRange(ticketSteps);
             steps.Add(new("Target ticket report", ["ticket-report", target, target],

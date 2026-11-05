@@ -117,6 +117,8 @@ public partial class Program
              args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase) ||
              args[0].Equals("daily-ticket", StringComparison.OrdinalIgnoreCase) ||
              args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase) ||
+             args[0].StartsWith("daily-fixed-", StringComparison.OrdinalIgnoreCase) ||
+             args[0].StartsWith("daily-ai-fixed-", StringComparison.OrdinalIgnoreCase) ||
              args[0].Equals("ai-rank", StringComparison.OrdinalIgnoreCase)))
         {
             await RunTicketAsync(args);

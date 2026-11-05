@@ -13,6 +13,12 @@ public partial class Program
 
     private static async Task RunTicketAsync(string[] args)
     {
+        if (args[0].StartsWith("daily-fixed-", StringComparison.OrdinalIgnoreCase) ||
+            args[0].StartsWith("daily-ai-fixed-", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunDailyFixedAsync(args);
+            return;
+        }
         if (args[0].Equals("daily-ticket", StringComparison.OrdinalIgnoreCase) ||
             args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase))
         {
@@ -565,6 +571,101 @@ public partial class Program
         tracking.Cell(7, 1).Value = $"Results and ROI: ticket-report {date:yyyy-MM-dd} {date:yyyy-MM-dd}";
         tracking.Columns().AdjustToContents();
         workbook.SaveAs(path);
+    }
+
+    private static async Task RunDailyFixedAsync(string[] args)
+    {
+        if (args.Length < 2 || !DateOnly.TryParseExact(args[1], "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+        {
+            Console.Error.WriteLine("[FIXED] Invalid arguments. Use: daily-fixed-1|daily-fixed-2 yyyy-MM-dd");
+            CommandExecution.Fail();
+            return;
+        }
+        bool ai = args[0].StartsWith("daily-ai-fixed-", StringComparison.OrdinalIgnoreCase);
+        int count = args[0].EndsWith("-2", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
+        string connection = Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb") ?? "";
+        if (string.IsNullOrWhiteSpace(connection))
+            throw new InvalidOperationException("ConnectionStrings__FootballDb environment variable is not configured.");
+
+        var options = new DbContextOptionsBuilder<FootballDbContext>().UseNpgsql(connection).Options;
+        await using var db = new FootballDbContext(options);
+        var matches = await db.Matches.AsNoTracking().Where(m => m.MatchDate == date)
+            .Include(m => m.PredictionSnapshots).ToListAsync();
+        if (matches.Count == 0)
+        {
+            Console.Error.WriteLine("[FIXED] No predictions collected for " + date.ToString("yyyy-MM-dd") + ".");
+            CommandExecution.Fail();
+            return;
+        }
+        IReadOnlyList<BookmakerMatch> offers;
+        try
+        {
+            offers = await MaxbetOddsProvider.FetchAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            Console.Error.WriteLine("[FIXED] Maxbet odds unavailable: " + ex.Message);
+            CommandExecution.Fail();
+            return;
+        }
+
+        var selection = DailyTicketSelector.BuildFixed(matches, offers, date, DateTime.UtcNow, count);
+        IReadOnlyList<DailyTicketPick> finalPicks = selection.Picks;
+        if (ai)
+        {
+            var history = await db.Matches.AsNoTracking()
+                .Where(m => m.MatchDate < date && m.Result != null)
+                .Include(m => m.Result).Include(m => m.PredictionSnapshots).ToListAsync();
+            var ranker = MlMatchRanker.TrainFromHistory(history);
+            if (ranker == null)
+            {
+                Console.Error.WriteLine("[FIXED-AI] Not enough historical results for ML ranking.");
+                CommandExecution.Fail();
+                return;
+            }
+            var matchById = matches.ToDictionary(m => m.Id);
+            finalPicks = selection.Picks
+                .Select(p =>
+                {
+                    if (!matchById.TryGetValue(p.MatchId, out var match))
+                        return (Pick: p, MlProbability: 0.0);
+                    double? ml = ranker.Predict(match)?.GetCandidateProbability(p.Candidate);
+                    return (Pick: p, MlProbability: ml is double value ? value : 0.0);
+                })
+                .Where(x => x.MlProbability >= 0.55)
+                .OrderByDescending(x =>
+                    (x.MlProbability * 100.0 + (x.Pick.SourceProbability ?? 0.0)) / 2.0)
+                .ThenByDescending(x => x.Pick.Odds)
+                .Take(count)
+                .Select(x => x.Pick with
+                {
+                    Evidence = x.Pick.Evidence +
+                        $" AI 1X2={x.Pick.Candidate.Pick} {x.MlProbability:P1}; " +
+                        $"Combined={((x.MlProbability * 100.0 + (x.Pick.SourceProbability ?? 0.0)) / 2.0):F1}%"
+                })
+                .ToList();
+        }
+        foreach (var pick in finalPicks)
+            Console.WriteLine($"[FIXED] {pick.Fixture} | {pick.Candidate.DisplayPick} | Odds={pick.Odds:F2} | " +
+                $"Source Prob={pick.SourceProbability:F1}% | Evidence={pick.Evidence}");
+        if (finalPicks.Count < count)
+        {
+            Console.Error.WriteLine($"[FIXED] Only {finalPicks.Count}/{count} selections meet odds >=1.60 and confidence >=55%; no synthetic selections.");
+            foreach (var rejection in selection.Rejections.Take(10))
+                Console.WriteLine("[FIXED-REJECTED] " + rejection);
+            if (finalPicks.Count == 0)
+                CommandExecution.Fail();
+        }
+        if (finalPicks.Count == 0)
+            return;
+
+        if (!CommandExecution.IsAutomation)
+            await db.Database.MigrateAsync();
+        var ticket = TicketLedger.CreateFixed(date, finalPicks, DateTime.UtcNow, count, ai);
+        var saved = await TicketLedger.SaveAsync(db, ticket);
+        Console.WriteLine($"[FIXED] #{saved.Ticket.Id} | {(saved.Created ? "Saved" : "Already saved")} | " +
+            $"Mode=fixed-{count} | Selections={saved.Ticket.Selections.Count}");
     }
 
     private sealed record TicketPick(
