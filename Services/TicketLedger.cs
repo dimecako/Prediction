@@ -26,7 +26,7 @@ public static class TicketLedger
     }
 
     public static bool IsDailyMode(string mode) =>
-        mode is "daily" or "daily-league" or "fixed-1" or "fixed-2" or "ai-fixed-1" or "ai-fixed-2";
+        mode is "daily" or "daily-league" or "fixed-auto" or "fixed-1" or "fixed-2" or "ai-fixed-1" or "ai-fixed-2";
 
     public static SimulatedTicket CreateDaily(
         DateOnly date, IEnumerable<DailyTicketPick> picks, DateTime createdAtUtc, bool leagueOnly) =>
@@ -49,6 +49,17 @@ public static class TicketLedger
             Odds = Convert.ToDecimal(p.Odds), BaseOdds = Convert.ToDecimal(p.BaseOdds),
             Evidence = p.Evidence
         }), createdAtUtc, ai ? $"ai-fixed-{count}" : $"fixed-{count}");
+
+    public static SimulatedTicket CreateFixedAuto(
+        DateOnly date, IEnumerable<DailyTicketPick> picks, DateTime createdAtUtc) =>
+        Create(date, false, picks.Select((p, i) => new SimulatedTicketSelection
+        {
+            Position = i + 1, MatchId = p.MatchId, Fixture = p.Fixture, League = p.League,
+            KickoffUtc = p.KickoffUtc, Market = "1X2", Pick = p.Candidate.Pick,
+            CalibrationKey = "DAILY|1X2|" + p.Candidate.Pick,
+            Odds = Convert.ToDecimal(p.Odds), BaseOdds = Convert.ToDecimal(p.BaseOdds),
+            Evidence = p.Evidence
+        }), createdAtUtc, "fixed-auto");
 
     public static SimulatedTicket Create(
         DateOnly date, bool safe, IEnumerable<SimulatedTicketSelection> selections, DateTime createdAtUtc,
@@ -83,7 +94,7 @@ public static class TicketLedger
         if (ticket.Stake <= 0 || ticket.Selections.Count == 0 ||
             ticket.Mode is not ("safe" or "value" or "1-3p3+" or "1-3p3+-safe" or "ml" or "ml-safe" or
                 "ml-league" or "ml-league-safe" or "daily-league-safe" or "daily" or "daily-league" or
-                "fixed-1" or "fixed-2" or "ai-fixed-1" or "ai-fixed-2") ||
+                "fixed-auto" or "fixed-1" or "fixed-2" or "ai-fixed-1" or "ai-fixed-2") ||
             ticket.CreatedAtUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("A simulation needs a positive stake, selections, a valid mode and a UTC timestamp.");
         if (ticket.Selections.Select(x => x.MatchId).Distinct().Count() != ticket.Selections.Count)

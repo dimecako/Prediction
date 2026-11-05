@@ -19,6 +19,21 @@ public partial class Program
             await RunDailyFixedAsync(args);
             return;
         }
+        if (args[0].Equals("ticket", StringComparison.OrdinalIgnoreCase) ||
+            args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase) ||
+            args[0].Equals("daily-ticket", StringComparison.OrdinalIgnoreCase) ||
+            args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase) ||
+            args[0].Equals("ai-rank", StringComparison.OrdinalIgnoreCase))
+        {
+            if (args.Length < 2)
+            {
+                Console.Error.WriteLine("[SMART] Invalid arguments. Use: <ticket-command> yyyy-MM-dd");
+                CommandExecution.Fail();
+                return;
+            }
+            await RunDailyFixedAsync(["daily-fixed-auto", args[1]]);
+            return;
+        }
         if (args[0].Equals("daily-ticket", StringComparison.OrdinalIgnoreCase) ||
             args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase))
         {
@@ -578,12 +593,13 @@ public partial class Program
         if (args.Length < 2 || !DateOnly.TryParseExact(args[1], "yyyy-MM-dd",
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
         {
-            Console.Error.WriteLine("[FIXED] Invalid arguments. Use: daily-fixed-1|daily-fixed-2 yyyy-MM-dd");
+            Console.Error.WriteLine("[FIXED] Invalid arguments. Use: daily-fixed-auto yyyy-MM-dd");
             CommandExecution.Fail();
             return;
         }
+        bool auto = args[0].Equals("daily-fixed-auto", StringComparison.OrdinalIgnoreCase);
         bool ai = args[0].StartsWith("daily-ai-fixed-", StringComparison.OrdinalIgnoreCase);
-        int count = args[0].EndsWith("-2", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
+        int count = auto ? 2 : args[0].EndsWith("-2", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
         string connection = Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb") ?? "";
         if (string.IsNullOrWhiteSpace(connection))
             throw new InvalidOperationException("ConnectionStrings__FootballDb environment variable is not configured.");
@@ -612,7 +628,7 @@ public partial class Program
 
         var selection = DailyTicketSelector.BuildFixed(matches, offers, date, DateTime.UtcNow, count);
         IReadOnlyList<DailyTicketPick> finalPicks = selection.Picks;
-        if (ai)
+        if (ai || auto)
         {
             var history = await db.Matches.AsNoTracking()
                 .Where(m => m.MatchDate < date && m.Result != null)
@@ -662,10 +678,12 @@ public partial class Program
 
         if (!CommandExecution.IsAutomation)
             await db.Database.MigrateAsync();
-        var ticket = TicketLedger.CreateFixed(date, finalPicks, DateTime.UtcNow, count, ai);
+        var ticket = auto
+            ? TicketLedger.CreateFixedAuto(date, finalPicks, DateTime.UtcNow)
+            : TicketLedger.CreateFixed(date, finalPicks, DateTime.UtcNow, count, ai);
         var saved = await TicketLedger.SaveAsync(db, ticket);
         Console.WriteLine($"[FIXED] #{saved.Ticket.Id} | {(saved.Created ? "Saved" : "Already saved")} | " +
-            $"Mode=fixed-{count} | Selections={saved.Ticket.Selections.Count}");
+            $"Mode={(auto ? "fixed-auto" : ai ? $"ai-fixed-{count}" : $"fixed-{count}")} | Selections={saved.Ticket.Selections.Count}");
     }
 
     private sealed record TicketPick(

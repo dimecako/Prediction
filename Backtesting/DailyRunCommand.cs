@@ -169,6 +169,7 @@ namespace Prediction.Services
             "daily-ticket-league" => "daily-league",
             "ticket-1-3p3+" => "1-3p3+",
             "ticket-1-3p3+ safe" => "1-3p3+-safe",
+            "fixed auto source and AI" => "fixed-auto",
             _ => null
         };
 
@@ -223,19 +224,7 @@ namespace Prediction.Services
             steps.Add(collectPredictions);
             var ticketSteps = new DailyRunStep[]
             {
-                new("ticket", ["ticket", target, size]),
-                new("ticket safe", ["ticket", target, size, "safe"]),
-                new("ai-rank", ["ai-rank", target, size]),
-                new("ai-rank safe", ["ai-rank", target, size, "safe"]),
-                new("ai-rank safe league", ["ai-rank", target, size, "safe", "league"]),
-                new("daily-ticket", ["daily-ticket", target, size]),
-                new("daily-ticket-league", ["daily-ticket-league", target, size]),
-                new("ticket-1-3p3+", ["ticket-1-3p3+", target, size]),
-                new("ticket-1-3p3+ safe", ["ticket-1-3p3+", target, size, "safe"]),
-                new("fixed 1 selection", ["daily-fixed-1", target]),
-                new("fixed 2 selections", ["daily-fixed-2", target]),
-                new("AI fixed 1 selection", ["daily-ai-fixed-1", target]),
-                new("AI fixed 2 selections", ["daily-ai-fixed-2", target])
+                new("fixed auto source and AI", ["daily-fixed-auto", target])
             };
             steps.AddRange(ticketSteps);
             steps.Add(new("Target ticket report", ["ticket-report", target, target],
