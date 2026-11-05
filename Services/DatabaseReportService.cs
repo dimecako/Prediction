@@ -21,7 +21,8 @@ public sealed class DatabaseReportService(FootballDbContext db) : IDatabaseRepor
 {
     public static IReadOnlyList<string> TicketModes { get; } =
     [
-        "fixed-auto"
+        "value", "safe", "ml", "ml-safe", "ml-league-safe", "daily", "daily-league",
+        "daily-league-safe", "1-3p3+", "1-3p3+-safe", "fixed-auto"
     ];
 
     public async Task<string> PredictionsAsync(DateOnly date, int page, UiLanguage language, CancellationToken ct,
@@ -41,7 +42,8 @@ public sealed class DatabaseReportService(FootballDbContext db) : IDatabaseRepor
         if (!string.IsNullOrWhiteSpace(mode))
             query = query.Where(x => x.Mode == mode);
         int total = await query.CountAsync(ct);
-        var modes = TicketModes.Distinct().Order().ToArray();
+        var storedModes = await db.SimulatedTickets.AsNoTracking().Select(x => x.Mode).Distinct().ToListAsync(ct);
+        var modes = TicketModes.Concat(storedModes).Distinct().Order().ToArray();
         var tickets = await query.OrderByDescending(x => x.MatchDate).ThenByDescending(x => x.Id)
             .Skip((page - 1) * 50).Take(50).Include(x => x.Selections).AsSplitQuery().ToListAsync(ct);
         var results = await ResultsAsync(tickets, ct);

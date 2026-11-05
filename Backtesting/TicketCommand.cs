@@ -19,21 +19,6 @@ public partial class Program
             await RunDailyFixedAsync(args);
             return;
         }
-        if (args[0].Equals("ticket", StringComparison.OrdinalIgnoreCase) ||
-            args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase) ||
-            args[0].Equals("daily-ticket", StringComparison.OrdinalIgnoreCase) ||
-            args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase) ||
-            args[0].Equals("ai-rank", StringComparison.OrdinalIgnoreCase))
-        {
-            if (args.Length < 2)
-            {
-                Console.Error.WriteLine("[SMART] Invalid arguments. Use: <ticket-command> yyyy-MM-dd");
-                CommandExecution.Fail();
-                return;
-            }
-            await RunDailyFixedAsync(["daily-fixed-auto", args[1]]);
-            return;
-        }
         if (args[0].Equals("daily-ticket", StringComparison.OrdinalIgnoreCase) ||
             args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase))
         {
