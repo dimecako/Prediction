@@ -8,6 +8,15 @@ namespace Prediction.Tests;
 
 public sealed class DatabaseReportPagesTests
 {
+    [Fact]
+    public void TicketDropdownIncludesFixedAndAiFixedModes()
+    {
+        Assert.Contains("fixed-1", DatabaseReportService.TicketModes);
+        Assert.Contains("fixed-2", DatabaseReportService.TicketModes);
+        Assert.Contains("ai-fixed-1", DatabaseReportService.TicketModes);
+        Assert.Contains("ai-fixed-2", DatabaseReportService.TicketModes);
+    }
+
     [Theory]
     [InlineData(UiLanguage.English, "Consensus", "Source details")]
     [InlineData(UiLanguage.Macedonian, "Консензус", "Детали по извор")]
