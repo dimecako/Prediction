@@ -8,6 +8,16 @@ namespace Prediction.Tests;
 
 public sealed class DatabaseReportPagesTests
 {
+    [Theory]
+    [InlineData(null, UiLanguage.Macedonian)]
+    [InlineData("", UiLanguage.Macedonian)]
+    [InlineData("mk", UiLanguage.Macedonian)]
+    [InlineData("en", UiLanguage.English)]
+    public void LanguageDefaultsToMacedonian(string? value, UiLanguage expected)
+    {
+        Assert.Equal(expected, DatabaseReportPages.ParseLanguage(value));
+    }
+
     [Fact]
     public void TicketDropdownIncludesOnlyFourGeneratedModes()
     {

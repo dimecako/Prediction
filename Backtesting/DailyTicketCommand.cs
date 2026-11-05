@@ -6,6 +6,7 @@ using Prediction.Entities;
 using Prediction.Services;
 using Prediction.Infrastructure;
 using Prediction.Reporting;
+using Prediction.ML;
 
 public partial class Program
 {
@@ -56,7 +57,13 @@ public partial class Program
             return;
         }
         var now = DateTime.UtcNow;
-        var selection = DailyTicketSelector.Build(matches, offers, date, now, count, leagueOnly);
+        var history = await db.Matches.AsNoTracking()
+            .Where(m => m.MatchDate < date && m.Result != null)
+            .Include(m => m.Result).Include(m => m.PredictionSnapshots).ToListAsync();
+        var mlRanker = MlMatchRanker.TrainFromHistory(history);
+        if (mlRanker == null)
+            Console.WriteLine("[DAILY] Nema dovolno istorija za ML; source consensus i kalibracija ostanuvaat.");
+        var selection = DailyTicketSelector.Build(matches, offers, date, now, count, leagueOnly, mlRanker);
         Console.WriteLine($"[DAILY] {command} | Datum={date:yyyy-MM-dd} | Sobrani zapisi={matches.Count} | " +
             $"Sparteni razlicni mecevi={selection.Matched} | Spoeni duplikati={selection.Duplicates}");
         Console.WriteLine("[DAILY] SAMO dnevni prognozi + tekovni kvoti. Bez istorija, kalibracija ili ML-treniranje. " +

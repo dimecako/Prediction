@@ -14,7 +14,10 @@ public static class DatabaseReportPages
         WebUtility.HtmlEncode(Convert.ToString(value, CultureInfo.InvariantCulture) ?? "");
 
     public static UiLanguage ParseLanguage(string? value) =>
-        string.Equals(value, "mk", StringComparison.OrdinalIgnoreCase) ? UiLanguage.Macedonian : UiLanguage.English;
+        string.IsNullOrWhiteSpace(value) ||
+        string.Equals(value, "mk", StringComparison.OrdinalIgnoreCase)
+            ? UiLanguage.Macedonian
+            : UiLanguage.English;
 
     public static string Text(UiLanguage language, string english) =>
         language == UiLanguage.English ? english : english switch

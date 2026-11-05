@@ -1,13 +1,17 @@
 using Prediction.Entities;
+using Prediction.ML;
 
 namespace Prediction.Services;
 
 public sealed record DailyTicketPick(
     long MatchId, string Fixture, string? League, DateTime KickoffUtc,
     TicketCandidate Candidate, double Odds, double BaseOdds,
-    double? SourceProbability, int MatchingVotes, int TotalVotes, string Evidence)
+    double? SourceProbability, int MatchingVotes, int TotalVotes, string Evidence,
+    double? MlProbability = null)
 {
     public double Agreement => TotalVotes == 0 ? 0 : (double)MatchingVotes / TotalVotes;
+    public double CombinedConfidence =>
+        (Agreement * 100.0 + (MlProbability.HasValue ? MlProbability.Value * 100.0 : SourceProbability ?? 0.0)) / 2.0;
 }
 
 public sealed record DailyTicketDecision(DailyTicketPick? Pick, string Reason);
@@ -99,7 +103,7 @@ public static class DailyTicketSelector
             eligible.Count, 0);
     }
 
-    public static DailyTicketDecision Select(Match match, BookmakerMatch offer)
+    public static DailyTicketDecision Select(Match match, BookmakerMatch offer, MlMatchRanker? mlRanker = null)
     {
         var snapshots = CalibrationAnalyzer.LatestPerSource(match);
         var consensus = CalibrationAnalyzer.BuildResultConsensus(snapshots);
@@ -160,17 +164,20 @@ public static class DailyTicketSelector
         string BinaryEvidence(TicketCandidate? signal) => signal == null ? "n/a" :
             $"{signal.Pick} {TicketMarkets.SourceAgreement(match, signal).MatchingVotes}/" +
             $"{TicketMarkets.SourceAgreement(match, signal).TotalVotes}";
+        double? mlProbability = mlRanker?.Predict(match)?.GetCandidateProbability(chosen);
         string evidence = $"1X2={consensus.Pick} {consensus.MatchingVotes}/{consensus.TotalVotes}; " +
             $"Source Prob.={probability}; {consensus.Level}; " +
-            $"BTTS={BinaryEvidence(btts)}; Goals={BinaryEvidence(goals)}";
+            $"BTTS={BinaryEvidence(btts)}; Goals={BinaryEvidence(goals)}" +
+            (mlProbability.HasValue ? $"; ML={mlProbability.Value:P1}" : "");
         return new(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", offer.League,
             offer.KickoffUtc, chosen, odds!.Value, baseOdds!.Value,
-            consensus.AverageProbability, consensus.MatchingVotes, consensus.TotalVotes, evidence), "");
+            consensus.AverageProbability, consensus.MatchingVotes, consensus.TotalVotes, evidence, mlProbability), "");
     }
 
     public static DailyTicketSelection Build(
         IReadOnlyList<Match> matches, IReadOnlyList<BookmakerMatch> offers,
-        DateOnly date, DateTime nowUtc, int count, bool leagueOnly)
+        DateOnly date, DateTime nowUtc, int count, bool leagueOnly,
+        MlMatchRanker? mlRanker = null)
     {
         if (count < 1 || nowUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("Daily selection needs a positive count and UTC clock.");
@@ -214,7 +221,7 @@ public static class DailyTicketSelector
                 LeagueTicketSelector.Classify(offer.League) != LeagueEligibility.Missing;
             evaluatedValidFixture |= validFixture;
             invalidFixtureData |= !validFixture;
-            var decision = Select(match, offer);
+            var decision = Select(match, offer, mlRanker);
             if (decision.Pick != null)
                 eligible.Add(decision.Pick);
             else
@@ -253,6 +260,7 @@ public static class DailyTicketSelector
     private static IOrderedEnumerable<DailyTicketPick> Rank(IEnumerable<DailyTicketPick> picks) =>
         picks.OrderByDescending(p => p.SourceProbability.HasValue)
             .ThenByDescending(p => p.SourceProbability)
+            .ThenByDescending(p => p.CombinedConfidence)
             .ThenByDescending(p => p.Agreement)
             .ThenByDescending(p => p.MatchingVotes)
             .ThenBy(p => p.Odds)

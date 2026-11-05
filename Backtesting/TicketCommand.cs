@@ -284,10 +284,11 @@ public partial class Program
         var picks = prioritizeLeagues
             ? LeagueTicketSelector.Select(best, count, x => x.League,
                 x => x.AgreementShare, x => x.AgreementVotes, x => x.RankSafe,
-                x => x.MlProbability ?? x.Accuracy, x => x.Accuracy, x => x.SignalPriority).ToList()
+                x => x.CombinedConfidence / 100.0, x => x.Accuracy, x => x.SignalPriority).ToList()
             : best
                 .OrderByDescending(x => !rankBySafety && x.HasValue)
                 .ThenByDescending(x => rankBySafety ? x.RankSafe : x.RankSafe * x.Odds!.Value)
+                .ThenByDescending(x => x.CombinedConfidence)
                 .ThenByDescending(x => x.MlProbability ?? x.Accuracy)
                 .ThenByDescending(x => x.Accuracy)
                 .ThenByDescending(x => x.SignalPriority)
@@ -302,6 +303,7 @@ public partial class Program
         }
         var suggested = proposals
             .OrderByDescending(x => x.RankSafe)
+            .ThenByDescending(x => x.CombinedConfidence)
             .ThenByDescending(x => x.MlProbability ?? x.Accuracy)
             .ThenByDescending(x => x.Accuracy)
             .ThenByDescending(x => x.SignalPriority)
@@ -688,6 +690,9 @@ public partial class Program
     {
         public bool HasValue => Odds.HasValue && Accuracy * Odds.Value > 1.0;
         public double RankSafe => MlProbability.HasValue ? (Safe + MlProbability.Value) / 2.0 : Safe;
+        public double SourceAgreementShare => AgreementTotal == 0 ? 0 : (double)AgreementVotes / AgreementTotal;
+        public double CombinedConfidence =>
+            (SourceAgreementShare * 100.0 + (MlProbability ?? Accuracy) * 100.0) / 2.0;
         public int AgreementVotes { get; init; }
         public int AgreementTotal { get; init; }
         public double AgreementShare => AgreementTotal == 0 ? 0 : (double)AgreementVotes / AgreementTotal;
