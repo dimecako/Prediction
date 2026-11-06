@@ -13,10 +13,9 @@ on:
         required: true
         type: string
   schedule:
-    - cron: "0 6 * * *"
-    - cron: "0 7 * * *"
-    - cron: "0 8 * * *"
-    - cron: "0 9 * * *"
+    - cron: "7 7 * * *"
+    - cron: "7 8 * * *"
+    - cron: "7 9 * * *"
 
 permissions:
   contents: read
@@ -45,7 +44,7 @@ jobs:
         id: source
         run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Select 08:00-10:00 Skopje attempt unless this date already succeeded
+      - name: Select 07:07-09:07 UTC attempt unless this date already succeeded
         id: schedule
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -120,7 +119,7 @@ jobs:
           echo "::error::FlareSolverr did not become healthy."
           exit 1
 
-      - name: Collect, check yesterday and optional day before, save all nine ticket variants and report
+      - name: Collect, check yesterday and optional day before, save ticket variants and report
         if: steps.schedule.outputs.run == 'true'
         timeout-minutes: 150
         env:
