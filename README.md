@@ -50,7 +50,7 @@ The daily workflow runs the `daily-run` command, not the Windows-only
 `tickets.ps1`. It collects predictions for the current Europe/Skopje date,
 collects results for the previous day, and checks one additional day back only
 if that date has unresolved ticket selections. Older pending dates are not
-scanned. It then runs three ticket variants: daily, daily-league and
+scanned. It then runs four ticket variants: daily, daily-league, FT combinations and
 fixed-auto. Confirmed results are not overwritten. ML-ranked variants
 already train their ranking models from history; a separate `train` command is
 not needed. Build happens before execution, and Excel imports are not needed
@@ -215,22 +215,37 @@ remaining places with unconfirmed, unpriced or below-threshold selections.
 
 ### Ticket selection rules
 
-All generation commands now use `exact-market-v1`:
+All generation commands now use `exact-market-v2`:
 
 - `ticket-1-3p3+` and the `1-3p3+` flag are retired and return an explicit error
   before collection or database access. They are removed from daily cloud and
   Windows automation. Historical modes, imports and settlement are preserved.
 - No new selection may depend on half-time: HalfGoals, HT/FT, first-half goals
   and goals-in-both-halves combinations are excluded from all selectors.
-- A selection requires at least three source votes and >=60% agreement for its
-  actual market (minimum component coverage for combinations).
+- Strict-market selections require at least three source votes and >=60%
+  agreement for their actual market. Winner & FT goals uses the restored
+  previous eligibility rules described below, not the new coverage/return gates.
 - Exact-event history must have >=100 graded cases for singles or >=50 for
   combinations, >=55% measured accuracy, accuracy * current odds >=1.05, AND
   Wilson 95% lower bound * odds >=1.00. These are conservative eligibility
-  rules, not a statistically proven profit guarantee.
+  rules, not a statistically proven profit guarantee. They apply to straight
+  wins, standalone BTTS/Goals and BTTS & 3+, not the restored winner & FT goals baseline.
+- **Winner & FT goals baseline restored pending separate validation:** at least
+  50 exact-event cases and either measured accuracy >=55% OR historical return
+  >=1.05, with actual odds >=1.70. The winner must have >=100 cases and >=55%
+  accuracy; 2-5/2-6 goal-range combinations also need a majority Over/Under
+  signal with >=100 cases and >=60% accuracy. Team 2+ does not use a total-goals
+  proxy. The old three-source-independent eligibility and OR gate are restored;
+  the new three-source and Wilson-return requirements do not apply here.
+  Baseline calibration is kept under `FT-BASELINE|` keys, separate from the
+  strict challenger. Prematch/pre-date timestamp filtering, duplicate/conflict
+  exclusions, no half-time markets and no unpriced filler remain in place.
+  This restores eligibility, not the old dataset or a guaranteed 67.7% hit rate.
+  Do not promote the challenger based only on the already-analyzed period;
+  compare each exact type on a new chronological period before changing live rules.
 - Fixed selections retain minimum odds 1.60; other fixes/alternatives use 1.70
   and standalone BTTS uses 1.65. A strong 1X2 or Over signal cannot replace a
-  combination's own historical sample and return checks. Unknown odds cannot
+  combination's own historical qualification. Unknown odds cannot
   qualify. If nothing qualifies with otherwise valid data, `NO_SELECTION` is
   explicit and no empty ticket is saved.
 - Historical preparation uses only earlier match dates, results collected before
@@ -265,9 +280,10 @@ All generation commands now use `exact-market-v1`:
 
 - Straight win, standalone BTTS and standalone 3+ selections need **>=55% measured
   historical accuracy with >=100 graded cases**. Composite (`Combo`)
-  selections need **>=50 graded cases**, **>=55% historical accuracy** AND
-  **expected return >=1.05 (EV >= +5%)** at the actual Maxbet price, as well as the
-  conservative-return gate above. Win and
+  selections need **>=50 graded cases**. BTTS & 3+ requires **>=55% historical
+  accuracy** AND **expected return >=1.05** and the conservative-return gate.
+  Winner & FT goals instead retains the prior **accuracy >=55% OR return >=1.05**
+  eligibility. Win and
   winner-combination selections additionally require the win signal to meet `>=55%`
   (`n>=100`). Above 2.00, standalone BTTS/goal selections do not require the win
   signal's historical accuracy.
@@ -310,6 +326,23 @@ the most sources is kept). Team names tolerate Maxbet's initials ("Bayern M." =
 starts with it, so "Real Madrid C" never equals "Real Madrid".
 
 `nodc` remains accepted for compatibility but no longer changes the allowed markets.
+
+### Winner & full-time goals only
+
+```powershell
+dotnet run --no-build -- ticket-ft-combos 2026-11-07 15
+dotnet run --no-build -- ticket-ft-combos 2026-11-07 15 why
+```
+
+This separate ticket considers only `1/2 & 2-5 golovi`, `1/2 & 2-6 golovi`,
+`1 & T1 2+` and `2 & T2 2+`. It never selects a standalone fix, BTTS,
+BTTS & 3+, standalone goals or a half-time market. Unlike the general ticket's
+base-price bands, it evaluates these winner combinations at every valid base
+win price, using the restored FT baseline qualification above. Ranking uses
+historical safety first. It accepts 1-15 selections, defaults to 15, and never
+fills a shortfall. Mode `ft-combos` is stored and graded separately, appears in
+the web ticket filter, and reuses the first frozen date/mode ticket.
+Both `daily-run` and `tickets.ps1` include this command.
 
 Winner combinations use the corresponding 1X2 consensus and probability bucket;
 they are calibrated against the **whole combination**, not by multiplying component
@@ -628,9 +661,9 @@ date minus one, including when an explicit date is supplied.
 
 The script builds, archives/verifies existing previous-day and target-day ticket
 workbooks, collects previous-day results, prints their grading, and collects
-target-day predictions. It then runs seven distinct variants (up to 15 qualified picks
+target-day predictions. It then runs eight distinct variants (up to 15 qualified picks
 each by default): `ticket`, `ticket safe`, `ai-rank`, `ai-rank safe`,
-`ai-rank safe league`, `daily-ticket`, and `daily-ticket-league`.
+`ai-rank safe league`, `daily-ticket`, `daily-ticket-league`, and `ticket-ft-combos`.
 New date/mode tickets fetch current odds; existing date/mode tickets are reused. These
 are not guaranteed identical across variants. ML ticket commands perform their
 existing historical training. A final target-date report prints the available

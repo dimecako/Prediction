@@ -21,7 +21,7 @@ public sealed class DatabaseReportService(FootballDbContext db) : IDatabaseRepor
 {
     public static IReadOnlyList<string> TicketModes { get; } =
     [
-        "daily", "daily-league", "1-3p3+", "fixed-auto"
+        "daily", "daily-league", "1-3p3+", "fixed-auto", "ft-combos"
     ];
 
     public async Task<string> PredictionsAsync(DateOnly date, int page, UiLanguage language, CancellationToken ct,

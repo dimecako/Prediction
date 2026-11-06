@@ -94,13 +94,16 @@ public static class TicketLedger
         if (ticket.Stake <= 0 || ticket.Selections.Count == 0 ||
             ticket.Mode is not ("safe" or "value" or "1-3p3+" or "1-3p3+-safe" or "ml" or "ml-safe" or
                 "ml-league" or "ml-league-safe" or "daily-league-safe" or "daily" or "daily-league" or
-                "fixed-auto" or "fixed-1" or "fixed-2" or "ai-fixed-1" or "ai-fixed-2") ||
+                "fixed-auto" or "fixed-1" or "fixed-2" or "ai-fixed-1" or "ai-fixed-2" or "ft-combos") ||
             ticket.CreatedAtUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("A simulation needs a positive stake, selections, a valid mode and a UTC timestamp.");
         if (ticket.Selections.Select(x => x.MatchId).Distinct().Count() != ticket.Selections.Count)
             throw new ArgumentException("A simulated ticket cannot contain the same match twice.");
         foreach (var pick in ticket.Selections)
         {
+            if (ticket.Mode == "ft-combos" && !TicketQualityPolicy.IsWinnerGoals(
+                    new(pick.Market, pick.Pick, pick.CalibrationKey, "")))
+                throw new ArgumentException("The ft-combos mode accepts only winner & full-time goal combinations.");
             if (pick.MatchId <= 0 || pick.Odds <= 1 || pick.BaseOdds <= 1 ||
                 pick.KickoffUtc.Kind != DateTimeKind.Utc || pick.KickoffUtc <= ticket.CreatedAtUtc ||
                 string.IsNullOrWhiteSpace(pick.Fixture) || string.IsNullOrWhiteSpace(pick.Market) ||

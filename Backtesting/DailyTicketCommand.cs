@@ -71,6 +71,7 @@ public partial class Program
         Console.WriteLine($"[DAILY] {command} | Datum={date:yyyy-MM-dd} | Sobrani zapisi={matches.Count} | " +
             $"Sparteni razlicni mecevi={selection.Matched} | Spoeni duplikati={selection.Duplicates}");
         Console.WriteLine($"[DAILY] {TicketQualityPolicy.Version}: exact-market pre-date historical qualification. " +
+            "Winner & FT goals retains previous eligibility pending separate validation. " +
             "Source agreement and raw ML are not calibrated win probabilities. No half-time markets.");
         Console.WriteLine(leagueOnly
             ? "[DAILY] Samo prioritetnite ligi; prvo eden po liga, potoa slednite po istiot redosled do baraniot broj."
@@ -183,7 +184,7 @@ public partial class Program
         info.Cell(6, 1).Value = $"Policy={TicketQualityPolicy.Version}; exact-market historical quality gates, confirmed odds.";
         info.Cell(7, 1).Value = "Source Prob. e prosecna prognoza za 1X2, NE verojatnost na kombinacijata.";
         info.Cell(8, 1).Value = "Rank: exact-market Wilson lower bound, historical accuracy/sample, source agreement. No guarantee.";
-        info.Cell(9, 1).Value = "Alternatives need their own sample, accuracy and expected return. No half-time markets.";
+        info.Cell(9, 1).Value = "Winner & FT goals: previous eligibility baseline (accuracy OR return); other alternatives: strict gates. No half-time markets.";
         info.Columns().AdjustToContents();
         var tracking = workbook.Worksheets.Add("Simulation");
         tracking.Cell(1, 1).Value = "SIMULATION ONLY - not an actual bet";

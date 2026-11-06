@@ -79,11 +79,11 @@ public sealed class TicketSelectorTests
     }
 
     [Theory]
-    [InlineData(27, 50, 2.5, false)]
+    [InlineData(27, 50, 2.5, true)]
     [InlineData(40, 49, 1.8, false)]
-    [InlineData(28, 50, 1.8, false)]
+    [InlineData(28, 50, 1.8, true)]
     [InlineData(40, 50, 1.8, true)]
-    public void WholeCombinationNeedsItsOwnHistoryNotOnlyComponentSignal(
+    public void FtBaselineRestoresPreviousSampleAndAccuracyOrReturnEligibility(
         int correct, int total, double odds, bool accepted)
     {
         var match = Fixture();
@@ -131,8 +131,77 @@ public sealed class TicketSelectorTests
             c.Pick == "1 & T1 2+" ? 1.8 : null;
         Assert.Null(TicketSelector.Select(match, tally, Odds, true, true).Confirmed);
         var key = TicketMarkets.BuildCandidates(match, true).Single(c => c.Pick == "1 & T1 2+").Key;
-        for (int i = 0; i < 100; i++) tally.Add(key, i < 80);
+        for (int i = 0; i < 100; i++) tally.Add(TicketQualityPolicy.FtBaselinePrefix + key, i < 80);
         Assert.Equal("1 & T1 2+", TicketSelector.Select(match, tally, Odds, true, true).Confirmed!.Candidate.Pick);
+    }
+
+    [Theory]
+    [InlineData("1", "1 & 2-5 golovi", 1.3)]
+    [InlineData("1", "1 & 2-6 golovi", 1.8)]
+    [InlineData("1", "1 & T1 2+", 2.4)]
+    [InlineData("2", "2 & 2-5 golovi", 1.3)]
+    [InlineData("2", "2 & 2-6 golovi", 1.8)]
+    [InlineData("2", "2 & T2 2+", 2.4)]
+    public void FtOnlyCommandCanSelectEveryAllowedCombinationAcrossBasePriceBands(
+        string side, string pick, double baseOdds)
+    {
+        var match = Fixture(side);
+        var tally = Calibrate(match);
+        var candidate = TicketMarkets.BuildCandidates(match, true).Single(c => c.Pick == pick);
+        for (int i = 0; i < 100; i++)
+            tally.Add(TicketQualityPolicy.FtBaselinePrefix + candidate.Key, i < 80);
+        var decision = TicketSelector.Select(match, tally,
+            c => c.Market == "1X2" ? baseOdds : c.Pick == pick ? 1.8 : null,
+            true, includeTeamGoals: true, winnerGoalsOnly: true);
+        Assert.Equal(pick, decision.Confirmed!.Candidate.Pick);
+        Assert.StartsWith(TicketQualityPolicy.FtBaselinePrefix, decision.Confirmed.Candidate.Key);
+        Assert.Contains("previous eligibility baseline", TicketQualityPolicy.Evidence(decision.Confirmed));
+    }
+
+    [Theory]
+    [InlineData("1X2", "1")]
+    [InlineData("BTTS", "YES")]
+    [InlineData("Goals", "O2.5")]
+    [InlineData("Combo", "BTTS & 3+")]
+    [InlineData("Combo", "1-1")]
+    [InlineData("HalfGoals", "1-3 prvo & 3+")]
+    public void FtOnlyNeverFallsBackToOtherMarkets(string market, string pick)
+    {
+        var match = Fixture();
+        var decision = TicketSelector.Select(match, Calibrate(match),
+            c => c.Market == "1X2" ? 1.8 : c.Market == market && c.Pick == pick ? 2 : null,
+            true, includeTeamGoals: true, winnerGoalsOnly: true);
+        Assert.Null(decision.Confirmed);
+        Assert.Null(decision.Proposal);
+    }
+
+    [Fact]
+    public void RestoredFtBaselineDoesNotRequireNewThreeSourceOrConservativeReturnGates()
+    {
+        var match = Fixture(sources: 2);
+        var tally = Calibrate(match, comboCorrect: 28, comboTotal: 50);
+        var decision = TicketSelector.Select(match, tally,
+            c => c.Market == "1X2" ? 1.4 : c.Pick == "1 & 2-5 golovi" ? 1.8 : null, true);
+        var score = Assert.IsType<ScoredTicketCandidate>(decision.Confirmed);
+        Assert.True(TicketQualityPolicy.PassesFtBaseline(score));
+        Assert.False(TicketQualityPolicy.Passes(score, 1.7));
+        Assert.False(TicketQualityPolicy.HasCoverage(match, score.Candidate));
+    }
+
+    [Fact]
+    public void FtOnlyStillRequiresPreviousWinnerAndUsedGoalSignalHistory()
+    {
+        var match = Fixture();
+        var tally = new Tally();
+        var candidate = TicketMarkets.BuildCandidates(match).Single(c => c.Pick == "1 & 2-5 golovi");
+        for (int i = 0; i < 100; i++)
+            tally.Add(TicketQualityPolicy.FtBaselinePrefix + candidate.Key, true);
+        Assert.Null(TicketSelector.Select(match, tally,
+            c => c.Market == "1X2" ? 2.4 : 1.8, true, true, true).Confirmed);
+        for (int i = 0; i < 100; i++)
+            tally.Add(TicketQualityPolicy.FtBaselinePrefix + "1X2|1|70+", i < 80);
+        Assert.Null(TicketSelector.Select(match, tally,
+            c => c.Market == "1X2" ? 2.4 : 1.8, true, true, true).Confirmed);
     }
 
     internal static Match Fixture(string side = "1", int sources = 3) => new()
@@ -152,7 +221,11 @@ public sealed class TicketSelectorTests
             int n = candidate.Market == "Combo" ? comboTotal : total;
             int wins = candidate.Market == "Combo" ? comboCorrect : correct;
             if (candidate.Pick.Contains("T1") || candidate.Pick.Contains("T2")) continue;
-            for (int i = 0; i < n; i++) tally.Add(candidate.Key, i < wins);
+            for (int i = 0; i < n; i++)
+            {
+                tally.Add(candidate.Key, i < wins);
+                tally.Add(TicketQualityPolicy.FtBaselinePrefix + candidate.Key, i < wins);
+            }
         }
         return tally;
     }

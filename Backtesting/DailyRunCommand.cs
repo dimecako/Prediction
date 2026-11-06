@@ -167,6 +167,7 @@ namespace Prediction.Services
             "ai-rank safe league" => "ml-league-safe",
             "daily-ticket" => "daily",
             "daily-ticket-league" => "daily-league",
+            "ticket-ft-combos" => "ft-combos",
             "ticket-1-3p3+" => "1-3p3+",
             "ticket-1-3p3+ safe" => "1-3p3+-safe",
             "fixed auto source and AI" => "fixed-auto",
@@ -226,7 +227,8 @@ namespace Prediction.Services
             {
                 new("daily-ticket", ["daily-ticket", target, size]),
                 new("daily-ticket-league", ["daily-ticket-league", target, size]),
-                new("fixed auto source and AI", ["daily-fixed-auto", target, count.ToString(CultureInfo.InvariantCulture)])
+                new("fixed auto source and AI", ["daily-fixed-auto", target, count.ToString(CultureInfo.InvariantCulture)]),
+                new("ticket-ft-combos", ["ticket-ft-combos", target, size])
             };
             steps.AddRange(ticketSteps);
             steps.Add(new("Target ticket report", ["ticket-report", target, target],

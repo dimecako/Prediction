@@ -50,12 +50,14 @@ an attempt before setup/build; local CLI runs keep their manifest under
 `.automation/daily-checkpoints`. Failed and deferred work is retried, not successful
 work. Ticket commands are independent of collection success and use available
 stored predictions, pre-date exact-market history and current odds; insufficient
-data must not fabricate picks. The three generation modes are `daily`,
-`daily-league` and `fixed-auto`, with at most 15 qualified picks each and no forced
+data must not fabricate picks. The four generation modes are `daily`,
+`daily-league`, `fixed-auto` and `ft-combos`, with at most 15 qualified picks each and no forced
 filling. `1-3p3+` is retired; no new ticket can contain a half-time-dependent market.
-All modes require exact-event history, source coverage and conservative-return
-qualification; raw AI output is not calibrated confidence. See the README's
-`exact-market-v1` selection rules.
+Strict markets require exact-event history, source coverage and conservative-return
+qualification; winner & FT goals retains its prior eligibility baseline pending
+separate validation. `ticket-ft-combos` contains only winner & 2-5/2-6 goals
+or winner scores 2+, never a straight win or BTTS. Raw AI output is not calibrated
+confidence. See the README's `exact-market-v2` selection rules.
 Reports still run against stored data when prerequisites fail, with an explicit
 partial-data warning. A partial report is not checkpointed as complete; reports
 refresh after their prerequisite work changes on a retry. Under the daily database lock, an

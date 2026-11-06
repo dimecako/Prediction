@@ -45,8 +45,9 @@ try {
         $text = (& $runner -PlanOnly 6>&1 | Out-String)
         Assert-True ($text -match "TICKETS: $($case[1])") "Incorrect target at $($case[0])."
         $variants = [regex]::Matches($text,
-            "(?m)^dotnet run --no-build -- (?:ticket |ai-rank |daily-ticket |daily-ticket-league |ticket-1-3p3\+ )").Count
-        Assert-True ($variants -eq 7) "Expected exactly seven ticket variants without retired markets."
+            "(?m)^dotnet run --no-build -- (?:ticket |ai-rank |daily-ticket |daily-ticket-league |ticket-ft-combos |ticket-1-3p3\+ )").Count
+        Assert-True ($variants -eq 8) "Expected exactly eight ticket variants without retired markets."
+        Assert-True ($text -match "(?m)^dotnet run --no-build -- ticket-ft-combos $($case[1]) 15") "Missing FT-only combination command."
         Assert-True ($text -notmatch "(?m)^dotnet run --no-build -- ticket-1-3p3") "Retired ticket still scheduled."
         Assert-True ($text -notmatch "delete|cleanup") "PlanOnly still advertises automatic deletion."
     }
@@ -85,7 +86,7 @@ try {
     $global:TicketScriptTest.Fail = ""
     & $runner -Date 2026-10-27 -SkipCleanup 6>&1 | Out-Null
     Assert-True (Test-Path -LiteralPath (Join-Path $sandbox $names[1])) "SkipCleanup was ignored."
-    Write-Output "PASS: date boundaries, seven variants without retired markets, explicit date/count, plan-only, grading order, Excel preservation, failure preservation and skip switches."
+    Write-Output "PASS: date boundaries, eight variants including FT-only combinations, explicit date/count, plan-only, grading order, Excel preservation, failure preservation and skip switches."
 }
 finally {
     Set-Location $originalLocation

@@ -162,6 +162,20 @@ public sealed class TicketQualityPolicyTests
         Assert.False(TicketQualityPolicy.IsAllowed(new("Goals", "U2.5", "", "")));
     }
 
+    [Fact]
+    public void BaselineAndStrictChallengerHistoryAreSeparateAndNeverSilentlySubstituted()
+    {
+        var match = Historical();
+        match.PredictionSnapshots.Remove(match.PredictionSnapshots.Last());
+        var tally = TicketQualityPolicy.Calibrate([match]);
+        var candidate = TicketMarkets.BuildCandidates(match).Single(c => c.Pick == "1 & 2-5 golovi");
+        Assert.Equal((0, 0), tally.Get(candidate.Key));
+        Assert.Equal((1, 1), tally.Get(TicketQualityPolicy.FtBaselinePrefix + candidate.Key));
+        Assert.Equal(0, TicketQualityPolicy.Score(candidate, tally, 1.8).Sample);
+        Assert.Equal(1, TicketQualityPolicy.ScoreForGeneration(candidate, tally, 1.8).Sample);
+        Assert.Equal((0, 0), tally.Get(TicketQualityPolicy.FtBaselinePrefix + "HALFGOALS|1-3 prvo & 3+"));
+    }
+
     [Theory]
     [InlineData("HalfGoals", "1-3 prvo & 3+")]
     [InlineData("Combo", "1-1")]

@@ -42,6 +42,7 @@ $steps += @(
     @{ Name = "ai-rank safe league"; Args = @("ai-rank", $Date, "$Count", "safe", "league") },
     @{ Name = "daily-ticket"; Args = @("daily-ticket", $Date, "$Count") },
     @{ Name = "daily-ticket-league"; Args = @("daily-ticket-league", $Date, "$Count") },
+    @{ Name = "ticket-ft-combos"; Args = @("ticket-ft-combos", $Date, "$Count") },
     @{ Name = "Target ticket report"; Args = @("ticket-report", $Date, $Date) }
 )
 Write-Host "`n=== TICKETS: $Date | Previous: $previous | Local clock: $now ===" -ForegroundColor Cyan

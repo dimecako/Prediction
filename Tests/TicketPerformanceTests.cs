@@ -40,6 +40,37 @@ public sealed class TicketPerformanceTests
     }
 
     [Fact]
+    public void FtCombinationModeIsDistinctAndSettlesWithoutHalfTime()
+    {
+        var pick = Pick(1);
+        pick.Position = 1;
+        pick.Market = "Combo";
+        pick.Pick = "1 & 2-5 golovi";
+        pick.CalibrationKey = TicketQualityPolicy.FtBaselinePrefix + "COMBO|1 & 2-5 golovi|70+";
+        var ticket = TicketLedger.Create(DateOnly.FromDateTime(Created), true, [pick], Created, "ft-combos");
+        Assert.Equal("ft-combos", ticket.Mode);
+        Assert.NotEqual(ticket.Fingerprint, TicketLedger.Create(ticket.MatchDate, true, [pick], Created).Fingerprint);
+        Assert.Equal(SimulatedTicketStatus.Won,
+            TicketPerformanceAnalyzer.Settle(ticket, Results((1, 2, 0))).Status);
+    }
+
+    [Theory]
+    [InlineData("1X2", "1")]
+    [InlineData("BTTS", "YES")]
+    [InlineData("Goals", "O2.5")]
+    [InlineData("Combo", "BTTS & 3+")]
+    [InlineData("Combo", "1-1")]
+    public void FtCombinationLedgerRejectsOtherMarkets(string market, string selection)
+    {
+        var pick = Pick(1);
+        pick.Position = 1;
+        pick.Market = market;
+        pick.Pick = selection;
+        Assert.Throws<ArgumentException>(() =>
+            TicketLedger.Create(DateOnly.FromDateTime(Created), true, [pick], Created, "ft-combos"));
+    }
+
+    [Fact]
     public void IdentityIgnoresEnumerationOrderAndCaptureTimeButIncludesModeAndPrices()
     {
         var first = Create(Pick(1, 1.85m), Pick(2, 1.90m));

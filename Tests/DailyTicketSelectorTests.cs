@@ -82,7 +82,7 @@ public sealed class DailyTicketSelectorTests
         Assert.Equal("1", decision.Pick!.Candidate.Pick);
         Assert.Equal(.8, decision.Pick.HistoricalAccuracy);
         Assert.Equal(100, decision.Pick.HistoricalSample);
-        Assert.Contains("Policy=exact-market-v1", decision.Pick.Evidence);
+        Assert.Contains("Policy=exact-market-v2", decision.Pick.Evidence);
         Assert.Null(match.Result);
     }
 

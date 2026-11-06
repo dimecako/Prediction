@@ -27,6 +27,7 @@ public partial class Program
         }
         bool only1To3P3Plus = args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase);
         bool useMlRanking = args[0].Equals("ai-rank", StringComparison.OrdinalIgnoreCase);
+        bool winnerGoalsOnly = args[0].Equals("ticket-ft-combos", StringComparison.OrdinalIgnoreCase);
         var flags = args.Skip(2)
             .Where(x => x.Equals("nodc", StringComparison.OrdinalIgnoreCase) ||
                         x.Equals("safe", StringComparison.OrdinalIgnoreCase) ||
@@ -45,7 +46,7 @@ public partial class Program
         }
         bool prioritizeLeagues = flags.Contains("league");
         useMlRanking |= flags.Contains("ml") || prioritizeLeagues;
-        bool rankBySafety = flags.Contains("safe");
+        bool rankBySafety = winnerGoalsOnly || flags.Contains("safe");
         string? countArg = args.Skip(2).FirstOrDefault(x => !flags.Contains(x.ToLowerInvariant()));
         int count = TicketDefaultCount;
 
@@ -58,7 +59,7 @@ public partial class Program
                 out var date) ||
             (countArg != null && (!int.TryParse(countArg, out count) || count is < 1 or > TicketQualityPolicy.MaximumSelections)))
         {
-            Console.Error.WriteLine("[TICKET] Use: ticket|ai-rank yyyy-MM-dd [count 1-15] [nodc] [safe] [ml] [league] [why]");
+            Console.Error.WriteLine("[TICKET] Use: ticket|ai-rank|ticket-ft-combos yyyy-MM-dd [count 1-15] [nodc] [safe] [ml] [league] [why]");
             CommandExecution.Fail();
             return;
         }
@@ -73,7 +74,7 @@ public partial class Program
             .Options;
 
         await using var db = new FootballDbContext(dbOptions);
-        string requestedMode = prioritizeLeagues ? (rankBySafety ? "ml-league-safe" : "ml-league")
+        string requestedMode = winnerGoalsOnly ? "ft-combos" : prioritizeLeagues ? (rankBySafety ? "ml-league-safe" : "ml-league")
             : useMlRanking ? (rankBySafety ? "ml-safe" : "ml") : rankBySafety ? "safe" : "value";
         if (await ReuseFrozenTicketAsync(db, date, requestedMode))
             return;
@@ -171,7 +172,8 @@ public partial class Program
                 ? TicketSelector.SelectFirstHalf1To3And3Plus(match, calibration,
                     c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick))
                 : TicketSelector.Select(match, calibration,
-                    c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), rankBySafety);
+                    c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), rankBySafety,
+                    includeTeamGoals: true, winnerGoalsOnly: winnerGoalsOnly);
             bool validFixture = TicketSelector.HasRequiredData(match,
                     c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick)) &&
                 LeagueTicketSelector.Classify(match.League) != LeagueEligibility.Missing;
@@ -267,7 +269,11 @@ public partial class Program
         Console.WriteLine(
             $"[TIKET] {TicketQualityPolicy.Version}: no half-time markets; exact-market accuracy >=55%, " +
             "n>=100 singles / n>=50 combos; historical return >=1.05 and Wilson lower return >=1.00. " +
-            "At least 3 source votes and 60% agreement; no forced filling.");
+            "At least 3 source votes and 60% agreement for strict markets; no forced filling. " +
+            "EXCEPTION: winner & FT goals uses previous eligibility (n>=50; accuracy>=55% OR return>=1.05), " +
+            "with previous winner/goal-signal gates. Strict FT challenger not promoted.");
+        if (winnerGoalsOnly)
+            Console.WriteLine("[TIKET] FT-COMBOS ONLY: win & 2-5/2-6 total goals or winner scores 2+. No straight wins, BTTS or standalone goals; all base price bands considered.");
         if (prioritizeLeagues)
             Console.WriteLine("[TIKET] Liga-rezim: prvo po eden izbor od ligite po prioritet; ako se pod 15, " +
                 "dozvolen e vtor izbor po liga. Primarno se rangira exact-market istoriskata sigurnost.");
@@ -303,7 +309,7 @@ public partial class Program
         SimulatedTicket? simulation = null;
         if (picks.Count > 0)
         {
-            string ticketMode = only1To3P3Plus
+            string ticketMode = winnerGoalsOnly ? "ft-combos" : only1To3P3Plus
                 ? (rankBySafety ? "1-3p3+-safe" : "1-3p3+")
                 : prioritizeLeagues
                     ? (rankBySafety ? "ml-league-safe" : "ml-league")
@@ -416,7 +422,7 @@ public partial class Program
         Console.WriteLine(
             "[TIKET] Ocekuvaniot povrat se bazira na minata tocnost; ne e garancija, a kvotite se menuvaat.");
 
-        string modePrefix = only1To3P3Plus ? "ticket-1-3p3+" : "ticket";
+        string modePrefix = winnerGoalsOnly ? "ticket-ft-combos" : only1To3P3Plus ? "ticket-1-3p3+" : "ticket";
         string aiPrefix = useMlRanking ? "-AI" : "";
         string safeSuffix = rankBySafety ? "-safe" : "";
         string dcSuffix = flags.Contains("nodc") ? "-nodc" : "";

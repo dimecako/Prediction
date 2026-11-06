@@ -5,8 +5,25 @@ namespace Prediction.Services;
 
 public static class TicketQualityPolicy
 {
-    public const string Version = "exact-market-v1";
+    public const string Version = "exact-market-v2";
+    public const string FtBaselinePrefix = "FT-BASELINE|";
     public const int MaximumSelections = 15;
+
+    public static bool IsWinnerGoals(TicketCandidate candidate) =>
+        candidate.Market == "Combo" && candidate.Pick is
+            "1 & T1 2+" or "2 & T2 2+" or "1 & 2-5 golovi" or "2 & 2-5 golovi" or
+            "1 & 2-6 golovi" or "2 & 2-6 golovi";
+
+    public static bool PassesFtBaseline(ScoredTicketCandidate candidate) =>
+        IsWinnerGoals(candidate.Candidate) && candidate.Sample >= TicketSelector.MinComboHistory &&
+        double.IsFinite(candidate.Accuracy) && candidate.Accuracy is >= 0 and <= 1 &&
+        candidate.Odds is double odds && double.IsFinite(odds) && odds >= TicketSelector.MinFinalOdds &&
+        (candidate.Accuracy >= TicketSelector.MinAccuracy ||
+            candidate.Accuracy * odds >= TicketSelector.MinComboExpectedReturn);
+
+    public static ScoredTicketCandidate ScoreForGeneration(TicketCandidate candidate, Tally history, double? odds) =>
+        Score(IsWinnerGoals(candidate) ? candidate with { Key = FtBaselinePrefix + candidate.Key } : candidate,
+            history, odds);
 
     public static bool IsAllowed(TicketCandidate candidate) => candidate.Market switch
     {
@@ -57,7 +74,7 @@ public static class TicketQualityPolicy
     }
 
     public static string Evidence(ScoredTicketCandidate score) => string.Create(CultureInfo.InvariantCulture,
-        $"Policy={Version}; Exact history={score.Accuracy:P1} (n={score.Sample}); Wilson95 lower={score.Safe:P1}; Historical return={score.Accuracy * score.Odds:F3}; historical estimates, not guaranteed probabilities");
+        $"Policy={Version}; FT policy={(score.Candidate.Key.StartsWith(FtBaselinePrefix, StringComparison.Ordinal) ? "previous eligibility baseline; strict challenger not promoted" : "strict exact-market")}; Exact history={score.Accuracy:P1} (n={score.Sample}); Wilson95 lower={score.Safe:P1}; Historical return={score.Accuracy * score.Odds:F3}; historical estimates, not guaranteed probabilities");
 
     public static List<Match> PrepareHistory(IEnumerable<Match> matches, DateOnly target, Action<string> log)
     {
@@ -111,11 +128,17 @@ public static class TicketQualityPolicy
         var tally = new Tally();
         foreach (var match in history)
             foreach (var candidate in TicketMarkets.BuildCalibrationCandidates(match, includeTeamGoals: true)
-                         .Where(c => (IsAllowed(c) || c.Market == "Goals" &&
-                             c.Key.StartsWith("SIGNAL|Goals|", StringComparison.Ordinal)) &&
-                             HasCoverage(match, c)).DistinctBy(c => c.Key))
+                         .Where(c => IsAllowed(c) || c.Key.StartsWith("SIGNAL|Goals|", StringComparison.Ordinal))
+                         .DistinctBy(c => c.Key))
                 if (match.Result != null && TicketMarkets.IsCorrect(candidate, match.Result) is bool correct)
-                    tally.Add(candidate.Key, correct);
+                {
+                    if (IsWinnerGoals(candidate) || candidate.Market == "1X2" ||
+                        candidate.Key.StartsWith("SIGNAL|Goals|", StringComparison.Ordinal))
+                        tally.Add(FtBaselinePrefix + candidate.Key, correct);
+                    if ((IsAllowed(candidate) || candidate.Key.StartsWith("SIGNAL|Goals|", StringComparison.Ordinal)) &&
+                        HasCoverage(match, candidate))
+                        tally.Add(candidate.Key, correct);
+                }
         return tally;
     }
 }
