@@ -344,6 +344,55 @@ fills a shortfall. Mode `ft-combos` is stored and graded separately, appears in
 the web ticket filter, and reuses the first frozen date/mode ticket.
 Both `daily-run` and `tickets.ps1` include this command.
 
+### Prospective paired FT comparison (simulation only)
+
+```powershell
+dotnet run --no-build -- ticket-ft-shadow 2026-11-07 15
+dotnet run --no-build -- ticket-ft-shadow-report
+dotnet run --no-build -- ticket-ft-shadow-report 2026-11-07 2026-12-07
+```
+
+`ft-paired-v1` compares the restored live FT eligibility baseline
+(`ft-baseline-exact-market-v2`) with the strict challenger
+(`ft-strict-exact-market-v1`). Both arms see the **same matched upcoming fixtures,
+as-of source snapshots and actual prices**, with the same one-pick-per-fixture,
+historical-safety-first ranking and maximum requested count (1-15, default 15).
+This is a paired eligibility experiment, not an AI on/off test. Its deterministic
+match-ID tie break need not reproduce a separately captured live ticket exactly.
+Active tickets and their rules are unchanged; there is **no automatic promotion**.
+
+The challenger additionally requires source coverage (at least three valid
+votes and 60% agreement), coverage-qualified component/exact-event calibration,
+and both accuracy and conservative-return gates. Baseline uses the restored
+FT criteria documented above. Both use only pre-date, prematch history with
+results known at capture time. Draw/tied signals abstain; missing alternative
+prices are frozen rejections, not invented selections.
+
+Only current/future Skopje dates can be newly captured; started fixtures and
+known results are excluded. There is no retrospective backfill. The first valid
+capture is saved atomically in `ft_shadow_runs`, once per experiment/match date,
+including valid zero-selection evaluations. Retries reuse it before fetching
+odds, even if the requested count changes. Missing/invalid input fails explicitly
+without saving a misleading empty run. Frozen offers retain eligibility,
+rejection reasons, historical scores and each arm's selected positions.
+
+The cumulative report shows each exact combination type and totals: offered,
+qualified, selected, coverage, wins/losses/Pending, accuracy with descriptive
+Wilson intervals, shared/arm-only selections and hypothetical flat-one-unit
+**singles** profit/ROI (not accumulator ROI). It grades frozen exact picks using
+stored regulation FT results; missing results remain Pending. Thirty captured
+dates and 100 graded selections **per arm/type** are only a manual-review floor,
+not proof or a significance test. Arms/types overlap and outcomes are correlated.
+Changes to experimental rules require a new experiment version, not rewriting
+previous decisions.
+
+Both automation entry points capture and report the comparison. Automatic result
+collection remains limited to yesterday and pending day-before-yesterday;
+older unresolved dates need manual `collect-results yyyy-MM-dd`, followed by the
+shadow report. Apply the additive `AddFtShadowRuns` migration before deploying
+automation: `daily-run` never migrates. Standalone shadow commands follow existing
+CLI migration behavior.
+
 Winner combinations use the corresponding 1X2 consensus and probability bucket;
 they are calibrated against the **whole combination**, not by multiplying component
 accuracies. There is no separate half-time prediction model. BTTS & 3+ requires

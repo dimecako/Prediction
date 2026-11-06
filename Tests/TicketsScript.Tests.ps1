@@ -48,6 +48,8 @@ try {
             "(?m)^dotnet run --no-build -- (?:ticket |ai-rank |daily-ticket |daily-ticket-league |ticket-ft-combos |ticket-1-3p3\+ )").Count
         Assert-True ($variants -eq 8) "Expected exactly eight ticket variants without retired markets."
         Assert-True ($text -match "(?m)^dotnet run --no-build -- ticket-ft-combos $($case[1]) 15") "Missing FT-only combination command."
+        Assert-True ($text -match "(?m)^dotnet run --no-build -- ticket-ft-shadow $($case[1]) 15") "Missing paired shadow capture."
+        Assert-True ($text -match "(?m)^dotnet run --no-build -- ticket-ft-shadow-report") "Missing paired shadow report."
         Assert-True ($text -notmatch "(?m)^dotnet run --no-build -- ticket-1-3p3") "Retired ticket still scheduled."
         Assert-True ($text -notmatch "delete|cleanup") "PlanOnly still advertises automatic deletion."
     }
@@ -55,6 +57,7 @@ try {
     $text = (& $runner -PlanOnly -Date 2030-01-02 -Count 5 -SkipCollection -SkipCleanup 6>&1 | Out-String)
     Assert-True ($text -match "TICKETS: 2030-01-02") "Explicit date was ignored."
     Assert-True ($text -match "daily-ticket 2030-01-02 5") "Count was ignored."
+    Assert-True ($text -match "ticket-ft-shadow 2030-01-02 5") "Shadow date/count was ignored."
     Assert-True ($text -notmatch "(?m)^dotnet run --no-build -- 2030-01-02") "SkipCollection was ignored."
     $invalidFailed = $false
     try { & $runner -Date "invalid" -PlanOnly | Out-Null } catch { $invalidFailed = $true }
@@ -71,10 +74,13 @@ try {
     Assert-True ($calls[0] -eq "build") "Build must run first."
     Assert-True ($calls[1] -eq "run --no-build -- ticket-import 2026-10-26") "Archive must precede generation."
     Assert-True ($calls[$calls.Count - 1] -eq "run --no-build -- ticket-report 2026-10-27 2026-10-27") "Target report must run last."
+    $shadowIndex = $calls.IndexOf("run --no-build -- ticket-ft-shadow 2026-10-27 15")
+    Assert-True ($shadowIndex -gt $calls.IndexOf("run --no-build -- ticket-ft-combos 2026-10-27 15")) "Shadow must follow live FT generation."
+    Assert-True ($calls[$shadowIndex + 1] -eq "run --no-build -- ticket-ft-shadow-report") "Shadow report must follow capture."
     Assert-True (($calls | Where-Object { $_ -eq "run --no-build -- ticket-import 2026-10-26" }).Count -eq 1) "Previous tickets must be archived once, without cleanup verification."
     Assert-True (($calls | Where-Object { $_ -eq "run --no-build -- ticket-report 2026-10-26 2026-10-26" }).Count -eq 1) "Previous tickets were not graded."
 
-    foreach ($failure in @("*ai-rank 2026-10-27 15 safe", "*ticket-import 2026-10-26", "build")) {
+    foreach ($failure in @("*ai-rank 2026-10-27 15 safe", "*ticket-ft-shadow 2026-10-27 15", "*ticket-import 2026-10-26", "build")) {
         New-Item -ItemType File -Path (Join-Path $sandbox $names[1]) -Force | Out-Null
         $global:TicketScriptTest.Calls.Clear()
         $global:TicketScriptTest.Fail = $failure

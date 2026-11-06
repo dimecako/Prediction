@@ -33,7 +33,7 @@ public sealed class DailyAutomationTests
             steps.Take(4).Select(s => s.Args[0]));
         Assert.Equal(Target.AddDays(-1).ToString("yyyy-MM-dd"), steps[0].Args[1]);
         Assert.Equal(Target.AddDays(-2).ToString("yyyy-MM-dd"), steps[2].Args[1]);
-        Assert.Equal(10, steps.Count);
+        Assert.Equal(12, steps.Count);
         Assert.Equal([Target.ToString("yyyy-MM-dd")], steps[4].Args);
         Assert.Equal([
             "daily-ticket 2026-11-01 15",
@@ -41,7 +41,9 @@ public sealed class DailyAutomationTests
             "daily-fixed-auto 2026-11-01 15",
             "ticket-ft-combos 2026-11-01 15"
         ], steps.Skip(5).Take(4).Select(s => string.Join(" ", s.Args)));
-        Assert.Equal("ticket-report", steps[^1].Args[0]);
+        Assert.Equal("ticket-ft-shadow-report", steps[^1].Args[0]);
+        Assert.True(steps[^1].IsReport);
+        Assert.Contains(steps, s => s.Args.SequenceEqual(["ticket-ft-shadow", "2026-11-01", "15"]));
         Assert.DoesNotContain(steps, s => s.Args[0] is "ticket-import" or "train" or "build");
         Assert.Contains(steps[0].CheckpointKey, steps[1].Dependencies);
         Assert.All(steps.Skip(5).Take(4),
@@ -52,7 +54,11 @@ public sealed class DailyAutomationTests
         }, steps.Skip(5).Take(4).Select(DailyRunPlan.TicketMode));
         Assert.DoesNotContain(steps, s => s.Args[0] == "ticket-1-3p3+");
         Assert.Equal(steps.Skip(4).Take(5).Select(step => step.CheckpointKey).Order(),
-            steps[^1].Dependencies.Order());
+            steps.Single(s => s.Name == "Target ticket report").Dependencies.Order());
+        Assert.Contains(steps.Single(s => s.Args[0] == "ticket-ft-shadow").CheckpointKey,
+            steps[^1].Dependencies);
+        Assert.All(steps.Where(s => s.Args[0] == "collect-results"),
+            s => Assert.Contains(s.CheckpointKey, steps[^1].Dependencies));
     }
 
     [Theory]
@@ -78,7 +84,7 @@ public sealed class DailyAutomationTests
         var yesterday = Target.AddDays(-1).ToString("yyyy-MM-dd");
         Assert.Equal([yesterday], steps.Where(s => s.Args[0] == "collect-results").Select(s => s.Args[1]));
         Assert.Equal(["ticket-report", yesterday, yesterday], steps[1].Args);
-        Assert.Equal(8, steps.Count);
+        Assert.Equal(10, steps.Count);
     }
 
     [Fact]
@@ -224,15 +230,21 @@ public sealed class DailyAutomationTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ReportsRunStoredDataAfterFailuresAndRefreshAfterPrerequisiteRecovery(bool targetReport)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task ReportsRunStoredDataAfterFailuresAndRefreshAfterPrerequisiteRecovery(int reportKind)
     {
         string path = Path.Combine(".automation", "test-checkpoints", Guid.NewGuid().ToString("N"), "checkpoint.json");
         try
         {
             var steps = DailyRunPlan.Build(Target, 15, []);
-            var report = targetReport ? steps[^1] : steps[1];
+            var report = reportKind switch
+            {
+                0 => steps[1],
+                1 => steps.Single(s => s.Name == "Target ticket report"),
+                _ => steps[^1]
+            };
             var prerequisites = steps.Where(step => report.Dependencies.Contains(step.CheckpointKey)).ToArray();
             var checkpoint = await DailyRunCheckpoint.LoadAsync(path, Target, 15, "revision", _ => { });
             var warnings = new List<string>();

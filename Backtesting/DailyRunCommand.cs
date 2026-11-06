@@ -55,10 +55,16 @@ public partial class Program
             var tickets = await db.SimulatedTickets.AsNoTracking()
                 .Where(x => x.MatchDate >= oldestResultDate && x.MatchDate < date)
                 .Include(x => x.Selections).ToListAsync();
-            var matchIds = tickets.SelectMany(x => x.Selections).Select(x => x.MatchId).Distinct().ToList();
+            var shadowRuns = (await db.FtShadowRuns.AsNoTracking()
+                .Where(r => r.Experiment == FtShadowEvaluation.Experiment &&
+                    r.MatchDate >= oldestResultDate && r.MatchDate < date).ToListAsync())
+                .Select(FtShadowEvaluation.Read).ToList();
+            var matchIds = tickets.SelectMany(x => x.Selections).Select(x => x.MatchId)
+                .Concat(shadowRuns.SelectMany(r => r.Fixtures).Select(f => f.MatchId)).Distinct().ToList();
             var results = await db.MatchResults.AsNoTracking()
                 .Where(x => matchIds.Contains(x.MatchId)).ToDictionaryAsync(x => x.MatchId);
-            pendingDates = DailyRunPlan.PendingDates(tickets, results, date);
+            pendingDates = DailyRunPlan.PendingDates(tickets, results, date)
+                .Concat(DailyRunPlan.PendingShadowDates(shadowRuns, results, date)).Distinct().Order().ToList();
         }
         catch (Exception ex)
         {
@@ -111,7 +117,7 @@ namespace Prediction.Services
     {
         public DailyRunStep(string name, string[] args) : this(name, args, []) { }
 
-        public bool IsReport => Args.Length > 0 && Args[0] == "ticket-report";
+        public bool IsReport => Args.Length > 0 && Args[0] is "ticket-report" or "ticket-ft-shadow-report";
         public string? ReportPrerequisiteState { get; init; }
         public string CheckpointKey => string.Join("\u001f", new[] { Name }.Concat(Args)) +
             (ReportPrerequisiteState == null ? "" : $"\u001freport-prerequisites:{ReportPrerequisiteState}");
@@ -202,6 +208,12 @@ namespace Prediction.Services
                     result, allowFinalOnlyLoss: true).HasValue))
                 .Select(t => t.MatchDate).Distinct().Order().ToList();
 
+        public static IReadOnlyList<DateOnly> PendingShadowDates(IEnumerable<FtShadowCapture> captures,
+            IReadOnlyDictionary<long, MatchResult> results, DateOnly target) =>
+            captures.Where(r => r.Date >= target.AddDays(-2) && r.Date < target &&
+                r.Fixtures.Any(f => f.Offers.Count > 0 && !results.ContainsKey(f.MatchId)))
+                .Select(r => r.Date).Distinct().Order().ToList();
+
         public static IReadOnlyList<DailyRunStep> Build(DateOnly date, int count,
             IEnumerable<DateOnly> pendingDates)
         {
@@ -231,8 +243,13 @@ namespace Prediction.Services
                 new("ticket-ft-combos", ["ticket-ft-combos", target, size])
             };
             steps.AddRange(ticketSteps);
+            var shadow = new DailyRunStep("Capture paired FT shadow", ["ticket-ft-shadow", target, size]);
+            steps.Add(shadow);
             steps.Add(new("Target ticket report", ["ticket-report", target, target],
                 ticketSteps.Select(step => step.CheckpointKey).Prepend(collectPredictions.CheckpointKey).ToArray()));
+            steps.Add(new("Report paired FT shadow", ["ticket-ft-shadow-report"],
+                steps.Where(s => s.Args[0] == "collect-results").Select(s => s.CheckpointKey)
+                    .Append(shadow.CheckpointKey).ToArray()));
             return steps;
         }
     }

@@ -22,6 +22,40 @@ namespace Prediction.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Prediction.Entities.FtShadowRun", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CapturedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Experiment")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("FrozenJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateOnly>("MatchDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("RequestedCount")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Experiment", "MatchDate")
+                        .IsUnique();
+
+                    b.ToTable("ft_shadow_runs", (string)null);
+                });
+
             modelBuilder.Entity("Prediction.Entities.Match", b =>
                 {
                     b.Property<long>("Id")

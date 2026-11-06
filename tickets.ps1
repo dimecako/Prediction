@@ -43,6 +43,8 @@ $steps += @(
     @{ Name = "daily-ticket"; Args = @("daily-ticket", $Date, "$Count") },
     @{ Name = "daily-ticket-league"; Args = @("daily-ticket-league", $Date, "$Count") },
     @{ Name = "ticket-ft-combos"; Args = @("ticket-ft-combos", $Date, "$Count") },
+    @{ Name = "Capture paired FT shadow"; Args = @("ticket-ft-shadow", $Date, "$Count") },
+    @{ Name = "Report paired FT shadow"; Args = @("ticket-ft-shadow-report") },
     @{ Name = "Target ticket report"; Args = @("ticket-report", $Date, $Date) }
 )
 Write-Host "`n=== TICKETS: $Date | Previous: $previous | Local clock: $now ===" -ForegroundColor Cyan

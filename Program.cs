@@ -72,6 +72,16 @@ public partial class Program
 
     private static async Task ExecuteCommandAsync(string[] args)
     {
+        if (args.Length > 0 && args[0].Equals("ticket-ft-shadow", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunFtShadowAsync(args);
+            return;
+        }
+        if (args.Length > 0 && args[0].Equals("ticket-ft-shadow-report", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunFtShadowReportAsync(args);
+            return;
+        }
         if (args.Length > 0 && args[0].Equals("daily-run", StringComparison.OrdinalIgnoreCase))
         {
             await RunDailyAutomationAsync(args);

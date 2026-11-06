@@ -16,9 +16,18 @@ public sealed class FootballDbContext : DbContext
     => Set<PredictionSnapshot>();
 
     public DbSet<SimulatedTicket> SimulatedTickets => Set<SimulatedTicket>();
+    public DbSet<FtShadowRun> FtShadowRuns => Set<FtShadowRun>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<FtShadowRun>(entity =>
+        {
+            entity.ToTable("ft_shadow_runs");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Experiment).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.FrozenJson).IsRequired();
+            entity.HasIndex(x => new { x.Experiment, x.MatchDate }).IsUnique();
+        });
         modelBuilder.Entity<Match>(entity =>
         {
             entity.ToTable("matches");

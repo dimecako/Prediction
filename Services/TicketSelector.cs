@@ -39,8 +39,10 @@ public static class TicketSelector
 
     public static TicketDecision Select(
         Match match, Tally calibration, Func<TicketCandidate, double?> getOdds, bool safe,
-        bool includeTeamGoals = false, bool winnerGoalsOnly = false)
+        bool includeTeamGoals = false, bool winnerGoalsOnly = false, bool strictFt = false)
     {
+        if (strictFt && !winnerGoalsOnly)
+            throw new ArgumentException("The strict FT challenger is only available for FT-only shadow evaluation.");
         if (!HasRequiredData(match, getOdds))
             return new(null, null, null, "Missing or invalid source votes, probabilities or base prices.");
         var candidates = TicketMarkets.BuildCandidates(match, includeTeamGoals)
@@ -61,12 +63,13 @@ public static class TicketSelector
             double? odds = getOdds(c);
             if (odds.HasValue && (!double.IsFinite(odds.Value) || odds <= 1))
                 throw new InvalidOperationException($"Invalid odds for {c.DisplayPick}.");
-            return TicketQualityPolicy.ScoreForGeneration(c, calibration, odds);
+            return strictFt ? TicketQualityPolicy.Score(c, calibration, odds) :
+                TicketQualityPolicy.ScoreForGeneration(c, calibration, odds);
         }
         bool highOdds = baseOdds > MaxFixOdds;
         if ((winnerGoalsOnly || baseOdds < KeepFixOdds) &&
-            !Reliable(fix, MinAccuracy, ftBaseline: true))
-            return new(null, null, baseOdds, "FT baseline winner needs >=55% accuracy and 100+ cases.");
+            !Reliable(fix, MinAccuracy, ftBaseline: !strictFt))
+            return new(null, null, baseOdds, "FT winner needs >=55% accuracy and 100+ cases.");
         if (!winnerGoalsOnly && !highOdds && baseOdds >= KeepFixOdds && !Reliable(fix, MinAccuracy))
             return new(null, null, baseOdds, "Pobedata nema >=55% tocnost i 100+ primeri.");
         if (!winnerGoalsOnly && baseOdds >= KeepFixOdds && baseOdds <= MaxFixOdds)
@@ -79,7 +82,7 @@ public static class TicketSelector
         var goals = TicketMarkets.BinarySignal(match, "Goals");
         bool bttsYes = btts is { Pick: "YES" } && Reliable(btts, MinBttsSignalAccuracy);
         bool goalsReliable = goals != null && Reliable(goals, MinSignalAccuracy);
-        bool ftGoalsReliable = goals != null && Reliable(goals, MinSignalAccuracy, ftBaseline: true);
+        bool ftGoalsReliable = goals != null && Reliable(goals, MinSignalAccuracy, ftBaseline: !strictFt);
         bool over = goals is { Pick: "O2.5" } && goalsReliable;
         bool SignalsAllow(TicketCandidate c)
         {
@@ -96,7 +99,7 @@ public static class TicketSelector
         }
         bool CandidatePassesThreshold(ScoredTicketCandidate x)
         {
-            return TicketQualityPolicy.IsWinnerGoals(x.Candidate) ? TicketQualityPolicy.PassesFtBaseline(x) :
+            return TicketQualityPolicy.IsWinnerGoals(x.Candidate) && !strictFt ? TicketQualityPolicy.PassesFtBaseline(x) :
                 TicketQualityPolicy.HasCoverage(match, x.Candidate) &&
                 TicketQualityPolicy.Passes(x, x.Candidate.Market == "BTTS" ? MinBttsOdds : MinFinalOdds);
         }

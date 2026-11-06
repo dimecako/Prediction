@@ -58,6 +58,22 @@ qualification; winner & FT goals retains its prior eligibility baseline pending
 separate validation. `ticket-ft-combos` contains only winner & 2-5/2-6 goals
 or winner scores 2+, never a straight win or BTTS. Raw AI output is not calibrated
 confidence. See the README's `exact-market-v2` selection rules.
+
+The job also runs `ticket-ft-shadow target-date count` and cumulative
+`ticket-ft-shadow-report`. These are **paired simulations, not additional live
+tickets**: baseline and strict challenger use the same frozen offers, prices and
+as-of snapshots, with no active rule changes or automatic promotion. Apply the
+additive `AddFtShadowRuns` migration **before** deploying this revision; a missing
+`ft_shadow_runs` table is an explicit failure, not a skipped experiment. The
+unique experiment/date index preserves the first valid capture, even with zero
+qualified picks; retries do not refetch prices or revise it. New past-date
+captures are prohibited, while existing captures remain reportable/reusable.
+The cumulative report depends on shadow capture and all scheduled result
+collection steps, and reports exact-type accuracy, coverage, Pending and singles
+ROI. Thirty dates and 100 graded selections per arm/type are only a manual-review
+floor, not evidence of improvement. The two-day collection window also applies
+to shadow fixtures; collect older unresolved dates manually before reporting.
+
 Reports still run against stored data when prerequisites fail, with an explicit
 partial-data warning. A partial report is not checkpointed as complete; reports
 refresh after their prerequisite work changes on a retry. Under the daily database lock, an
