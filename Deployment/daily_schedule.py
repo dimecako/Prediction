@@ -2,7 +2,7 @@
 import json
 import os
 import sys
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -17,13 +17,7 @@ def should_run(event_name, schedule, now):
         return True
     if event_name != "schedule":
         return False
-    local = now.astimezone(LOCAL_ZONE)
-    for hour in range(8, 11):
-        planned = datetime.combine(local.date(), time(hour), LOCAL_ZONE)
-        expected = f"0 {planned.astimezone(timezone.utc).hour} * * *"
-        if schedule == expected:
-            return True
-    return False
+    return schedule in {f"7 {hour} * * *" for hour in range(7, 10)}
 
 
 def target_date(value, now):

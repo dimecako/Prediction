@@ -2,6 +2,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import runpy
 import tempfile
 import unittest
@@ -20,26 +21,26 @@ spec.loader.exec_module(module)
 
 
 class DailyScheduleTests(unittest.TestCase):
-    def check(self, timestamp, first_hour):
+    def check(self, timestamp):
         now = datetime.fromisoformat(timestamp).replace(tzinfo=timezone.utc)
         for hour in range(24):
             with self.subTest(hour=hour):
                 self.assertEqual(
-                    first_hour <= hour <= first_hour + 2,
-                    module.should_run("schedule", f"0 {hour} * * *", now),
+                    7 <= hour <= 9,
+                    module.should_run("schedule", f"7 {hour} * * *", now),
                 )
 
     def test_winter_with_hours_of_delay(self):
-        self.check("2026-11-01T13:42:00", 7)
+        self.check("2026-11-01T13:42:00")
 
     def test_summer_with_hours_of_delay(self):
-        self.check("2026-07-15T16:10:00", 6)
+        self.check("2026-07-15T16:10:00")
 
     def test_spring_transition_day_even_before_transition(self):
-        self.check("2026-03-29T00:10:00", 6)
+        self.check("2026-03-29T00:10:00")
 
     def test_autumn_transition_day_even_before_transition(self):
-        self.check("2026-10-25T00:10:00", 7)
+        self.check("2026-10-25T00:10:00")
 
     def test_manual_is_eligible_outside_scheduled_hours(self):
         self.assertTrue(module.should_run("workflow_dispatch", "", datetime.now(timezone.utc)))
@@ -48,6 +49,15 @@ class DailyScheduleTests(unittest.TestCase):
         now = datetime.now(timezone.utc)
         self.assertFalse(module.should_run("push", "", now))
         self.assertFalse(module.should_run("schedule", "0 11 * * *", now))
+        self.assertFalse(module.should_run("schedule", "0 7 * * *", now))
+
+    def test_workflow_crons_match_all_three_utc_attempts(self):
+        workflow = (Path(__file__).parents[1] / ".github" / "workflows" /
+                    "daily-run.yml").read_text(encoding="utf-8")
+        crons = re.findall(r'cron: "([^"]+)"', workflow)
+        self.assertEqual(["7 7 * * *", "7 8 * * *", "7 9 * * *"], crons)
+        delayed = datetime.fromisoformat("2026-11-06T16:37:00+00:00")
+        self.assertTrue(all(module.should_run("schedule", cron, delayed) for cron in crons))
 
     def test_default_target_uses_skopje_and_manual_target_is_preserved(self):
         now = datetime.fromisoformat("2026-11-02T23:30:00+00:00")
@@ -57,7 +67,7 @@ class DailyScheduleTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 module.target_date(invalid, now)
 
-    def plan(self, event="schedule", schedule="0 7 * * *", requested="", artifacts=None,
+    def plan(self, event="schedule", schedule="7 7 * * *", requested="", artifacts=None,
              status="completed", conclusion="success", path=".github/workflows/daily-run.yml"):
         calls = []
 
@@ -84,12 +94,12 @@ class DailyScheduleTests(unittest.TestCase):
     def test_each_of_three_attempts_is_eligible_without_a_success_record(self):
         for hour in range(7, 10):
             with self.subTest(hour=hour):
-                (run, target, _), _ = self.plan(schedule=f"0 {hour} * * *")
+                (run, target, _), _ = self.plan(schedule=f"7 {hour} * * *")
                 self.assertTrue(run)
                 self.assertEqual("2026-11-02", target)
 
     def test_successful_manual_or_scheduled_execution_blocks_all_later_attempts(self):
-        for event, schedule in [("schedule", f"0 {hour} * * *") for hour in range(7, 10)] + [
+        for event, schedule in [("schedule", f"7 {hour} * * *") for hour in range(7, 10)] + [
                 ("workflow_dispatch", "")]:
             with self.subTest(event=event, schedule=schedule):
                 (run, _, message), _ = self.plan(
@@ -122,7 +132,7 @@ class DailyScheduleTests(unittest.TestCase):
         self.assertEqual("2026-10-31", target)
 
     def test_inactive_occurrence_does_not_query_success_records(self):
-        (run, _, _), calls = self.plan(schedule="0 6 * * *")
+        (run, _, _), calls = self.plan(schedule="7 6 * * *")
         self.assertFalse(run)
         self.assertEqual([], calls)
 
@@ -278,7 +288,7 @@ class DailyScheduleTests(unittest.TestCase):
 
         with self.assertRaises(HTTPError):
             module.plan_run(
-                "schedule", "0 7 * * *", "", datetime.fromisoformat("2026-11-02T07:00:00+00:00"),
+                "schedule", "7 7 * * *", "", datetime.fromisoformat("2026-11-02T07:07:00+00:00"),
                 "owner/repo", "test-token", "https://api.github.com", request,
             )
 

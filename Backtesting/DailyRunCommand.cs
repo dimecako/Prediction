@@ -227,7 +227,7 @@ namespace Prediction.Services
                 new("daily-ticket", ["daily-ticket", target, size]),
                 new("daily-ticket-league", ["daily-ticket-league", target, size]),
                 new("ticket-1-3p3+", ["ticket-1-3p3+", target, size]),
-                new("fixed auto source and AI", ["daily-fixed-auto", target])
+                new("fixed auto source and AI", ["daily-fixed-auto", target, count.ToString(CultureInfo.InvariantCulture)])
             };
             steps.AddRange(ticketSteps);
             steps.Add(new("Target ticket report", ["ticket-report", target, target],

@@ -39,7 +39,7 @@ public sealed class DailyAutomationTests
             "daily-ticket 2026-11-01 15",
             "daily-ticket-league 2026-11-01 15",
             "ticket-1-3p3+ 2026-11-01 15",
-            "daily-fixed-auto 2026-11-01"
+            "daily-fixed-auto 2026-11-01 15"
         ], steps.Skip(5).Take(4).Select(s => string.Join(" ", s.Args)));
         Assert.Equal("ticket-report", steps[^1].Args[0]);
         Assert.DoesNotContain(steps, s => s.Args[0] is "ticket-import" or "train" or "build");
@@ -52,6 +52,17 @@ public sealed class DailyAutomationTests
         }, steps.Skip(5).Take(4).Select(DailyRunPlan.TicketMode));
         Assert.Equal(steps.Skip(4).Take(5).Select(step => step.CheckpointKey).Order(),
             steps[^1].Dependencies.Order());
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(15)]
+    [InlineData(100)]
+    public void FixedAutoReceivesRequestedDailyCount(int count)
+    {
+        var step = Assert.Single(DailyRunPlan.Build(Target, count, []),
+            step => DailyRunPlan.TicketMode(step) == "fixed-auto");
+        Assert.Equal(["daily-fixed-auto", "2026-11-01", count.ToString()], step.Args);
     }
 
     [Theory]

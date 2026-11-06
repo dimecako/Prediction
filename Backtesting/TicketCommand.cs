@@ -577,16 +577,18 @@ public partial class Program
 
     private static async Task RunDailyFixedAsync(string[] args)
     {
-        if (args.Length < 2 || !DateOnly.TryParseExact(args[1], "yyyy-MM-dd",
-                CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+        bool auto = args[0].Equals("daily-fixed-auto", StringComparison.OrdinalIgnoreCase);
+        bool ai = args[0].StartsWith("daily-ai-fixed-", StringComparison.OrdinalIgnoreCase);
+        int count = auto ? TicketDefaultCount : args[0].EndsWith("-2", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
+        if (args.Length < 2 || args.Length > (auto ? 3 : 2) ||
+            !DateOnly.TryParseExact(args[1], "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ||
+            (auto && args.Length == 3 && (!int.TryParse(args[2], out count) || count is < 1 or > 100)))
         {
-            Console.Error.WriteLine("[FIXED] Invalid arguments. Use: daily-fixed-auto yyyy-MM-dd");
+            Console.Error.WriteLine("[FIXED] Invalid arguments. Use: daily-fixed-auto yyyy-MM-dd [count 1-100] (default 15), or daily-[ai-]fixed-1|2 yyyy-MM-dd");
             CommandExecution.Fail();
             return;
         }
-        bool auto = args[0].Equals("daily-fixed-auto", StringComparison.OrdinalIgnoreCase);
-        bool ai = args[0].StartsWith("daily-ai-fixed-", StringComparison.OrdinalIgnoreCase);
-        int count = auto ? 2 : args[0].EndsWith("-2", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
         string connection = Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb") ?? "";
         if (string.IsNullOrWhiteSpace(connection))
             throw new InvalidOperationException("ConnectionStrings__FootballDb environment variable is not configured.");
@@ -613,42 +615,24 @@ public partial class Program
             return;
         }
 
-        var selection = DailyTicketSelector.BuildFixed(matches, offers, date, DateTime.UtcNow, count);
-        IReadOnlyList<DailyTicketPick> finalPicks = selection.Picks;
+        MlMatchRanker? ranker = null;
         if (ai || auto)
         {
             var history = await db.Matches.AsNoTracking()
                 .Where(m => m.MatchDate < date && m.Result != null)
                 .Include(m => m.Result).Include(m => m.PredictionSnapshots).ToListAsync();
-            var ranker = MlMatchRanker.TrainFromHistory(history);
+            ranker = MlMatchRanker.TrainFromHistory(history);
             if (ranker == null)
             {
                 Console.Error.WriteLine("[FIXED-AI] Not enough historical results for ML ranking.");
                 CommandExecution.Fail();
                 return;
             }
-            var matchById = matches.ToDictionary(m => m.Id);
-            finalPicks = selection.Picks
-                .Select(p =>
-                {
-                    if (!matchById.TryGetValue(p.MatchId, out var match))
-                        return (Pick: p, MlProbability: 0.0);
-                    double? ml = ranker.Predict(match)?.GetCandidateProbability(p.Candidate);
-                    return (Pick: p, MlProbability: ml is double value ? value : 0.0);
-                })
-                .Where(x => x.MlProbability >= 0.55)
-                .OrderByDescending(x =>
-                    (x.MlProbability * 100.0 + (x.Pick.SourceProbability ?? 0.0)) / 2.0)
-                .ThenByDescending(x => x.Pick.Odds)
-                .Take(count)
-                .Select(x => x.Pick with
-                {
-                    Evidence = x.Pick.Evidence +
-                        $" AI 1X2={x.Pick.Candidate.Pick} {x.MlProbability:P1}; " +
-                        $"Combined={((x.MlProbability * 100.0 + (x.Pick.SourceProbability ?? 0.0)) / 2.0):F1}%"
-                })
-                .ToList();
         }
+        var selection = DailyTicketSelector.BuildFixed(matches, offers, date, DateTime.UtcNow, count,
+            ranker == null ? null : (match, candidate) => ranker.Predict(match)?.GetCandidateProbability(candidate));
+        IReadOnlyList<DailyTicketPick> finalPicks = selection.Picks;
+        Console.WriteLine($"[FIXED] Requested={count} | Eligible={selection.Eligible} | Selected={finalPicks.Count}");
         foreach (var pick in finalPicks)
             Console.WriteLine($"[FIXED] {pick.Fixture} | {pick.Candidate.DisplayPick} | Odds={pick.Odds:F2} | " +
                 $"Source Prob={pick.SourceProbability:F1}% | Evidence={pick.Evidence}");

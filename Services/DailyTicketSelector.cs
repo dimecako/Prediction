@@ -28,10 +28,11 @@ public static class DailyTicketSelector
 {
     public static DailyTicketSelection BuildFixed(
         IReadOnlyList<Match> matches, IReadOnlyList<BookmakerMatch> offers,
-        DateOnly date, DateTime nowUtc, int count)
+        DateOnly date, DateTime nowUtc, int count,
+        Func<Match, TicketCandidate, double?>? predict = null)
     {
-        if (count is not (1 or 2))
-            throw new ArgumentOutOfRangeException(nameof(count), "Fixed ticket count must be 1 or 2.");
+        if (count is < 1 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(count), "Fixed ticket count must be between 1 and 100.");
         if (nowUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("Fixed ticket selection needs a UTC clock.");
 
@@ -86,13 +87,27 @@ public static class DailyTicketSelector
 
             var evidence = $"FIX 1X2={consensus.Pick} {consensus.MatchingVotes}/{consensus.TotalVotes}; " +
                 $"Source Prob.={probability:F1}%; Min odds=1.60";
+            double? ml = null;
+            if (predict != null)
+            {
+                ml = predict(match, candidate);
+                if (ml is not double value || !double.IsFinite(value) || value is < 0.55 or > 1)
+                {
+                    rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: AI confidence below 55% or unavailable.");
+                    continue;
+                }
+                evidence += $" AI 1X2={candidate.Pick} {ml.Value:P1}; " +
+                    $"Combined={((ml.Value * 100.0 + probability) / 2.0):F1}%";
+            }
             eligible.Add(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", offer.League,
                 offer.KickoffUtc, candidate, odds!.Value, odds.Value,
-                probability, consensus.MatchingVotes, consensus.TotalVotes, evidence));
+                probability, consensus.MatchingVotes, consensus.TotalVotes, evidence, ml));
         }
 
         var picks = eligible
-            .OrderByDescending(p => p.SourceProbability >= 55)
+            .OrderByDescending(p => predict != null
+                ? (p.MlProbability!.Value * 100.0 + p.SourceProbability!.Value) / 2.0
+                : p.SourceProbability!.Value)
             .ThenByDescending(p => p.SourceProbability)
             .ThenByDescending(p => p.Odds >= 1.8)
             .ThenByDescending(p => p.Odds)

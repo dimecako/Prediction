@@ -50,13 +50,16 @@ The daily workflow runs the `daily-run` command, not the Windows-only
 `tickets.ps1`. It collects predictions for the current Europe/Skopje date,
 collects results for the previous day, and checks one additional day back only
 if that date has unresolved ticket selections. Older pending dates are not
-scanned. It then runs the same nine ticket variants. Confirmed results are not overwritten. ML-ranked variants
+scanned. It then runs four ticket variants: daily, daily-league, 1-3p3+ and
+fixed-auto. Confirmed results are not overwritten. ML-ranked variants
 already train their ranking models from history; a separate `train` command is
 not needed. Build happens before execution, and Excel imports are not needed
 because selections are stored in PostgreSQL.
 
-Scheduling starts at 08:00 Europe/Skopje, with up to two hourly retries
-at 09:00 and 10:00, using the appropriate winter/summer UTC offset.
+Scheduling starts at 07:07 UTC year-round, with up to two hourly retries
+at 08:07 and 09:07 UTC. The first attempt is at 08:07 Europe/Skopje in winter
+and 09:07 in summer. Avoiding minute zero reduces peak-hour scheduling load,
+but GitHub can still delay or drop scheduled occurrences; this is not an exact-time guarantee.
 The three-attempt budget and completed steps survive retries, revision changes
 and ticket-count changes. Existing date/mode tickets are reused rather than regenerated.
 Once a manual or scheduled execution succeeds for the target date, subsequent
@@ -67,6 +70,17 @@ branch; scheduled runs and manual runs from `main` check out the deployed
 `prediction-api` branch. Manual runs from other branches use the selected revision. Use the
 Actions tab for manual runs, failure details and reruns. Check the first real
 run before relying on unattended operation.
+
+`daily-fixed-auto yyyy-MM-dd [count]` defaults to 15 selections (allowed range
+1-100); `daily-run` passes its requested count to this mode too. Fixed-auto uses
+only straight 1/2 picks, confirmed odds >=1.60 (preferably >=1.80), source-average
+probability >=55% and AI probability >=55%. All source-qualified candidates are
+AI-filtered and ranked by the mean of source and AI probability before taking
+the requested count. If fewer qualify, it explicitly reports the shortfall;
+thresholds are never lowered and picks are not fabricated. These figures are
+estimates, not guaranteed win probabilities. Existing frozen tickets, including
+older one-selection fixed-auto tickets, are not replaced on retries.
+The legacy `daily-fixed-1|2` and `daily-ai-fixed-1|2` commands retain their counts.
 
 Set `Exports__Excel=false` for hosted execution; local Excel exports remain
 enabled by default. Existing workbooks and model ZIPs are not deleted.

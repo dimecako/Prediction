@@ -179,6 +179,91 @@ public sealed class DailyTicketSelectorTests
         Assert.Equal(80, pick.SourceProbability);
     }
 
+    [Fact]
+    public void FixedAiChecksAllCandidatesBeforeTakingFifteen()
+    {
+        var matches = Enumerable.Range(1, 20).Select(i => Fixture(i, .9 - i * .01)).ToList();
+        var evaluated = new List<long>();
+        var result = DailyTicketSelector.BuildFixed(matches, matches.Select(m => Offer(m)).ToList(),
+            Date, Now, 15, (match, _) =>
+            {
+                evaluated.Add(match.Id);
+                return match.Id <= 3 ? .54 : .65;
+            });
+
+        Assert.Equal(20, evaluated.Count);
+        Assert.Equal(17, result.Eligible);
+        Assert.Equal(Enumerable.Range(4, 15).Select(i => (long)i), result.Picks.Select(p => p.MatchId));
+        Assert.All(result.Picks, p =>
+        {
+            Assert.Equal("1X2", p.Candidate.Market);
+            Assert.Equal("1", p.Candidate.Pick);
+            Assert.Equal(.65, p.MlProbability);
+            Assert.Contains("AI 1X2=1", p.Evidence);
+        });
+        Assert.Equal(3, result.Rejections.Count);
+        var ticket = TicketLedger.CreateFixedAuto(Date, result.Picks, Now);
+        Assert.Equal("fixed-auto", ticket.Mode);
+        Assert.Equal(15, ticket.Selections.Count);
+    }
+
+    [Fact]
+    public void FixedAiRanksCombinedConfidenceBeforeTruncation()
+    {
+        var matches = new[] { Fixture(1, .9), Fixture(2, .8), Fixture(3, .7) };
+        var result = DailyTicketSelector.BuildFixed(matches, matches.Select(m => Offer(m)).ToList(),
+            Date, Now, 1, (match, _) => match.Id == 3 ? .99 : .55);
+        Assert.Equal(3, Assert.Single(result.Picks).MatchId);
+    }
+
+    [Fact]
+    public void FixedSelectionDoesNotRelaxThresholdsToReachFifteen()
+    {
+        var matches = new[] { Fixture(1, .55), Fixture(2, .549), Fixture(3, .8), Fixture(4, .8) };
+        var offers = new[] { Offer(matches[0], baseOdds: 1.6), Offer(matches[1]),
+            Offer(matches[2], baseOdds: 1.59), Offer(matches[3]) };
+        var result = DailyTicketSelector.BuildFixed(matches, offers, Date, Now, 15,
+            (match, _) => match.Id == 4 ? .549 : .55);
+        Assert.Equal(1, Assert.Single(result.Picks).MatchId);
+        Assert.Equal(3, result.Rejections.Count);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(1.01)]
+    public void FixedAiRejectsUnknownOrInvalidProbabilities(double? probability)
+    {
+        var match = Fixture(1);
+        var result = DailyTicketSelector.BuildFixed([match], [Offer(match)], Date, Now, 15,
+            (_, _) => probability);
+        Assert.Empty(result.Picks);
+        Assert.Contains("AI confidence", Assert.Single(result.Rejections));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(15)]
+    [InlineData(100)]
+    public void SourceOnlyFixedSelectionPreservesRequestedCount(int count)
+    {
+        var matches = Enumerable.Range(1, 105).Select(i =>
+        {
+            var match = Fixture(i);
+            string name = new string((char)('a' + i / 26), 12) +
+                new string((char)('a' + i % 26), 12);
+            match.HomeTeam = name + " Home";
+            match.AwayTeam = name + " Away";
+            return match;
+        }).ToList();
+        var result = DailyTicketSelector.BuildFixed(matches, matches.Select(m => Offer(m)).ToList(),
+            Date, Now, count);
+        Assert.Equal(count, result.Picks.Count);
+        Assert.All(result.Picks, p => Assert.Null(p.MlProbability));
+    }
+
     private static DailyTicketSelection Build(
         IReadOnlyList<Match> matches, IReadOnlyList<BookmakerMatch> offers, int count, bool leagueOnly) =>
         DailyTicketSelector.Build(matches, offers, Date, Now, count, leagueOnly);
