@@ -16,7 +16,7 @@ public sealed class DailyLeagueNoSelectionTests
         string? league, LeagueEligibility expected)
     {
         var match = Fixture(1);
-        var selection = DailyTicketSelector.Build([match], [Offer(match, league)], Date, Now, 15, true);
+        var selection = Build([match], [Offer(match, league)], Date, Now, 15, true);
         Assert.Empty(selection.Picks);
         Assert.True(selection.NoSelection);
         Assert.Equal(1, selection.Eligible);
@@ -29,7 +29,7 @@ public sealed class DailyLeagueNoSelectionTests
         var valid = Fixture(1);
         var missing = Fixture(2);
         missing.PredictionSnapshots.Clear();
-        var selection = DailyTicketSelector.Build([valid, missing],
+        var selection = Build([valid, missing],
             [Offer(valid, "UEFA Youth League"), Offer(missing, "ENGLAND 1")], Date, Now, 15, true);
         Assert.Empty(selection.Picks);
         Assert.True(selection.NoSelection);
@@ -43,7 +43,7 @@ public sealed class DailyLeagueNoSelectionTests
     {
         var excluded = Fixture(1);
         var missing = Fixture(2);
-        var selection = DailyTicketSelector.Build([excluded, missing],
+        var selection = Build([excluded, missing],
             [Offer(excluded, "FA Cup"), Offer(missing, league)], Date, Now, 15, true);
         Assert.Empty(selection.Picks);
         Assert.False(selection.NoSelection);
@@ -54,20 +54,20 @@ public sealed class DailyLeagueNoSelectionTests
     public void MissingBookmakerDataAndAbsentQualifiedCandidatesAreNotNoSelectionSuccess()
     {
         var match = Fixture(1);
-        Assert.False(DailyTicketSelector.Build([match], [], Date, Now, 15, true).NoSelection);
-        Assert.False(DailyTicketSelector.Build([], [Offer(match, "FA Cup")], Date, Now, 15, true).NoSelection);
+        Assert.False(Build([match], [], Date, Now, 15, true).NoSelection);
+        Assert.False(Build([], [Offer(match, "FA Cup")], Date, Now, 15, true).NoSelection);
         var unpriced = Offer(match, "FA Cup") with { Odds = new Dictionary<string, double>() };
-        Assert.False(DailyTicketSelector.Build([match], [unpriced], Date, Now, 15, true).NoSelection);
+        Assert.False(Build([match], [unpriced], Date, Now, 15, true).NoSelection);
     }
 
     [Fact]
     public void EligibleCandidateStillProducesTicketAndAllLeagueModeDoesNotReportNoSelection()
     {
         var match = Fixture(1);
-        var eligible = DailyTicketSelector.Build([match], [Offer(match, "ENGLAND 1")], Date, Now, 15, true);
+        var eligible = Build([match], [Offer(match, "ENGLAND 1")], Date, Now, 15, true);
         Assert.Single(eligible.Picks);
         Assert.False(eligible.NoSelection);
-        var all = DailyTicketSelector.Build([match], [Offer(match, "FA Cup")], Date, Now, 15, false);
+        var all = Build([match], [Offer(match, "FA Cup")], Date, Now, 15, false);
         Assert.Single(all.Picks);
         Assert.False(all.NoSelection);
     }
@@ -80,11 +80,11 @@ public sealed class DailyLeagueNoSelectionTests
         {
             Odds = new Dictionary<string, double> { ["1"] = 1.4 }
         };
-        var selection = DailyTicketSelector.Build([match], [offer], Date, Now, 15, true);
+        var selection = Build([match], [offer], Date, Now, 15, true);
         Assert.Empty(selection.Picks);
         Assert.Equal(0, selection.Eligible);
         Assert.True(selection.NoSelection);
-        Assert.False(DailyTicketSelector.Build([match], [offer], Date, Now, 15, false).NoSelection);
+        Assert.True(Build([match], [offer], Date, Now, 15, false).NoSelection);
     }
 
     [Theory]
@@ -99,7 +99,7 @@ public sealed class DailyLeagueNoSelectionTests
         {
             Odds = new Dictionary<string, double> { ["1"] = invalidOdds }
         };
-        var selection = DailyTicketSelector.Build([excluded, invalid],
+        var selection = Build([excluded, invalid],
             [Offer(excluded, "FA Cup"), badOffer], Date, Now, 15, true);
         Assert.Empty(selection.Picks);
         Assert.True(selection.NoSelection);
@@ -110,7 +110,7 @@ public sealed class DailyLeagueNoSelectionTests
     {
         var excluded = Fixture(1);
         var unmatched = Fixture(2);
-        var selection = DailyTicketSelector.Build([excluded, unmatched],
+        var selection = Build([excluded, unmatched],
             [Offer(excluded, "FA Cup")], Date, Now, 15, true);
         Assert.Empty(selection.Picks);
         Assert.True(selection.NoSelection);
@@ -132,7 +132,7 @@ public sealed class DailyLeagueNoSelectionTests
         {
             Odds = new Dictionary<string, double> { ["1"] = invalidOdds }
         };
-        var selection = DailyTicketSelector.Build([valid, invalid],
+        var selection = Build([valid, invalid],
             [thresholdOffer, invalidOffer], Date, Now, 15, true);
         Assert.Empty(selection.Picks);
         Assert.Equal(0, selection.Eligible);
@@ -142,11 +142,16 @@ public sealed class DailyLeagueNoSelectionTests
     private static Match Fixture(long id) => new()
     {
         Id = id, MatchDate = Date, HomeTeam = $"Home {id}", AwayTeam = $"Away {id}",
-        PredictionSnapshots =
-        [
-            new() { Source = "Source", PredictedResult = "1", Confidence = .75, CapturedAtUtc = Now }
-        ]
+        PredictionSnapshots = Enumerable.Range(1, 3).Select(i => new PredictionSnapshot
+        {
+            Source = $"Source{i}", PredictedResult = "1", Confidence = .75, CapturedAtUtc = Now
+        }).ToList()
     };
+
+    private static DailyTicketSelection Build(IReadOnlyList<Match> matches,
+        IReadOnlyList<BookmakerMatch> offers, DateOnly date, DateTime now, int count, bool leagueOnly) =>
+        DailyTicketSelector.Build(matches, offers, date, now, count, leagueOnly,
+            calibration: matches.Count == 0 ? new Tally() : TicketSelectorTests.Calibrate(matches[0]));
 
     private static BookmakerMatch Offer(Match match, string? league) =>
         new(match.HomeTeam, match.AwayTeam, Now.AddHours(5),

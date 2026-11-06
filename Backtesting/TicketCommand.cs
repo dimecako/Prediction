@@ -37,6 +37,12 @@ public partial class Program
             .Select(x => x.ToLowerInvariant())
             .ToHashSet();
         only1To3P3Plus |= flags.Contains("1-3p3+");
+        if (only1To3P3Plus)
+        {
+            Console.Error.WriteLine("[TICKET] Retired: ticket-1-3p3+ and half-time selections are disabled. Historical tickets are preserved.");
+            CommandExecution.Fail();
+            return;
+        }
         bool prioritizeLeagues = flags.Contains("league");
         useMlRanking |= flags.Contains("ml") || prioritizeLeagues;
         bool rankBySafety = flags.Contains("safe");
@@ -50,9 +56,9 @@ public partial class Program
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
                 out var date) ||
-            (countArg != null && (!int.TryParse(countArg, out count) || count < 1)))
+            (countArg != null && (!int.TryParse(countArg, out count) || count is < 1 or > TicketQualityPolicy.MaximumSelections)))
         {
-            Console.Error.WriteLine("[TICKET] Invalid arguments. Use: ticket|ticket-1-3p3+|ai-rank yyyy-MM-dd [count] [nodc] [safe] [ml] [league] [why]");
+            Console.Error.WriteLine("[TICKET] Use: ticket|ai-rank yyyy-MM-dd [count 1-15] [nodc] [safe] [ml] [league] [why]");
             CommandExecution.Fail();
             return;
         }
@@ -67,6 +73,10 @@ public partial class Program
             .Options;
 
         await using var db = new FootballDbContext(dbOptions);
+        string requestedMode = prioritizeLeagues ? (rankBySafety ? "ml-league-safe" : "ml-league")
+            : useMlRanking ? (rankBySafety ? "ml-safe" : "ml") : rankBySafety ? "safe" : "value";
+        if (await ReuseFrozenTicketAsync(db, date, requestedMode))
+            return;
         if (!CommandExecution.IsAutomation)
             await db.Database.MigrateAsync();
 
@@ -78,15 +88,8 @@ public partial class Program
             .Include(x => x.PredictionSnapshots)
             .ToListAsync();
 
-        var calibration = new Tally();
-        foreach (var match in history)
-        {
-            foreach (var candidate in TicketMarkets.BuildCalibrationCandidates(match))
-            {
-                if (TicketMarkets.IsCorrect(candidate, match.Result!) is bool correct)
-                    calibration.Add(candidate.Key, correct);
-            }
-        }
+        history = TicketQualityPolicy.PrepareHistory(history, date, Console.WriteLine);
+        var calibration = TicketQualityPolicy.Calibrate(history);
         var mlRanker = useMlRanking ? MlMatchRanker.TrainFromHistory(history) : null;
         if (useMlRanking && mlRanker == null)
             Console.WriteLine("[TIKET] Nema dovolno istorija za ML; rangiranjeto koristi samo istoriska kalibracija.");
@@ -209,10 +212,11 @@ public partial class Program
                 double? mlProb = mlProbs?.GetCandidateProbability(c.Candidate);
                 var agreement = TicketMarkets.SourceAgreement(match, c.Candidate);
                 string evidence = mlProb.HasValue
-                    ? $"{baseEvidence}; ML={mlProb.Value:P1}; Sovpagjanje={agreement.MatchingVotes}/{agreement.TotalVotes}"
-                    : c.Candidate.Pick is "1 & T1 2+" or "2 & T2 2+"
-                    ? $"{baseEvidence}; ML=n/a (nema model za timski golovi); Sovpagjanje={agreement.MatchingVotes}/{agreement.TotalVotes}"
+                    ? $"{baseEvidence}; ML={mlProb.Value:P1} (raw, uncalibrated); Sovpagjanje={agreement.MatchingVotes}/{agreement.TotalVotes}"
+                    : c.Candidate.Market == "Combo"
+                    ? $"{baseEvidence}; ML=n/a (no exact-market model); Sovpagjanje={agreement.MatchingVotes}/{agreement.TotalVotes}"
                     : $"{baseEvidence}; Sovpagjanje={agreement.MatchingVotes}/{agreement.TotalVotes}";
+                evidence += "; " + TicketQualityPolicy.Evidence(c);
                 return new(
                     match.Id, match.League, offer.KickoffUtc,
                     $"{match.HomeTeam} vs {match.AwayTeam}", c.Candidate, c.Accuracy,
@@ -249,12 +253,6 @@ public partial class Program
             $"Vekje zapocnati (preskoknati): {started}");
         if (flags.Contains("why"))
         {
-            foreach (string pick in TicketMarkets.HalfGoalPicks)
-            {
-                var stat = calibration.Get($"HALFGOALS|{pick}");
-                Console.WriteLine($"[ISTORIJA] {pick}: " +
-                    (stat.Total == 0 ? "n/a" : $"{(double)stat.Correct / stat.Total:P1} (n={stat.Total})"));
-            }
             foreach (var detail in rejectedDetails)
                 Console.WriteLine($"[ODBIEN] {detail}");
             foreach (var offer in bookmaker
@@ -263,33 +261,26 @@ public partial class Program
                 .OrderBy(b => b.KickoffUtc))
                 Console.WriteLine($"[BEZ-PAR] Maxbet ponuda bez nas natprevar: {offer.Home} vs {offer.Away}");
         }
-        int halfTimeHistory = history.Count(x =>
-            x.Result!.HalfTimeHomeGoals.HasValue && x.Result.HalfTimeAwayGoals.HasValue);
-        Console.WriteLine($"[TIKET] Istorija so poluvreme: {halfTimeHistory}/{history.Count}. " +
-            "Nepoznato poluvreme ne se ocenuva; tipovite bez 100+ primeri se preskoknuvaat.");
         if (flags.Contains("nodc"))
             Console.WriteLine("[TIKET] nodc e zadrzan za kompatibilnost; site novi tiketi se bez dvojna sansa.");
-        Console.WriteLine("[TIKET] Nepotvrdenite kombinacii se ODVOENI predlozi, ne izbori vo tiketot.");
+        Console.WriteLine("[TIKET] Unpriced or below-threshold alternatives are rejected, not used as filler.");
         Console.WriteLine(
-            "[TIKET] Osnovna kvota <1.40: PK/PK & 2+ ili pobeda & golovi; 1.40-<1.70: pobeda & golovi; " +
-            "1.70-2.00: samo fix; >2.00: BTTS (>=1.65), 3+, BTTS & 3+ ili golovi po poluvreme. " +
-            "Drugite alternativi baraat kvota >=1.70. Fix/BTTS/3+: tocnost >=55% (n>=100); " +
-            "kombinacii: >=55% ili EV>=+5% (n>=50). Signal BTTS >=55%, Goals >=60% (n>=100).");
+            $"[TIKET] {TicketQualityPolicy.Version}: no half-time markets; exact-market accuracy >=55%, " +
+            "n>=100 singles / n>=50 combos; historical return >=1.05 and Wilson lower return >=1.00. " +
+            "At least 3 source votes and 60% agreement; no forced filling.");
         if (prioritizeLeagues)
             Console.WriteLine("[TIKET] Liga-rezim: prvo po eden izbor od ligite po prioritet; ako se pod 15, " +
-                "dozvolen e vtor izbor po liga. Primarno se rangira soglasuvanjeto na izvorite, pa AI-safe.");
+                "dozvolen e vtor izbor po liga. Primarno se rangira exact-market istoriskata sigurnost.");
 
         foreach (var rejection in rejected.OrderByDescending(x => x.Value))
             Console.WriteLine($"[TIKET] Preskoknati {rejection.Value}: {rejection.Key}");
         var picks = prioritizeLeagues
             ? LeagueTicketSelector.Select(best, count, x => x.League,
                 x => x.AgreementShare, x => x.AgreementVotes, x => x.RankSafe,
-                x => x.CombinedConfidence / 100.0, x => x.Accuracy, x => x.SignalPriority).ToList()
+                x => x.Accuracy, x => x.Accuracy, x => x.SignalPriority, safetyFirst: true).ToList()
             : best
                 .OrderByDescending(x => !rankBySafety && x.HasValue)
                 .ThenByDescending(x => rankBySafety ? x.RankSafe : x.RankSafe * x.Odds!.Value)
-                .ThenByDescending(x => x.CombinedConfidence)
-                .ThenByDescending(x => x.MlProbability ?? x.Accuracy)
                 .ThenByDescending(x => x.Accuracy)
                 .ThenByDescending(x => x.SignalPriority)
                 .Take(count)
@@ -343,10 +334,11 @@ public partial class Program
             bool hasRequiredData = best.Count > 0
                 ? bookmaker.Count > 0 && best.All(pick => pick.AgreementTotal > 0)
                 : evaluatedValidFixture && !invalidFixtureData;
-            if (LeagueTicketSelector.IsNoSelection(prioritizeLeagues, picks.Count,
+            if ((evaluatedValidFixture && !invalidFixtureData) ||
+                LeagueTicketSelector.IsNoSelection(prioritizeLeagues, picks.Count,
                 best.Select(x => x.League), hasRequiredData &&
                     CommandExecution.ExitCode == 0, evaluatedValidFixture))
-                Console.WriteLine("[TIKET] NO_SELECTION: no eligible league candidate passed selection thresholds. No ticket saved or exported.");
+                Console.WriteLine("[TIKET] NO_SELECTION: no candidate passed exact-market quality thresholds. No ticket saved or exported.");
             else
             {
                 if (prioritizeLeagues && unique.Any(pair =>
@@ -387,7 +379,7 @@ public partial class Program
 
             Console.WriteLine(
                 $"[TIKET] {i + 1,2}. {p.Fixture,-44} {p.Candidate.Market,-5} {p.Candidate.DisplayPick,-30} | " +
-                $"Kvota={odds,5} | Istor.={p.Accuracy * 100:F1}% (n={p.Sample}, sigurno {p.Safe * 100:F1}%) | " +
+                $"Kvota={odds,5} | Istor.={p.Accuracy * 100:F1}% (n={p.Sample}, Wilson95 lower {p.Safe * 100:F1}%) | " +
                 $"EV={value,5} {flag}");
             Console.WriteLine($"[SIGNALI] Osnovna kvota={p.BaseOdds:F2}; {p.Evidence}");
         }
@@ -405,14 +397,14 @@ public partial class Program
 
         if (picks.Count > 0)
             Console.WriteLine(
-                $"[TIKET] Sansa da pominat SITE {picks.Count}: {combined * 100:F2}% " +
-                $"(konzervativno {combinedSafe * 100:F2}%; pretpostavka na nezavisnost).");
+                $"[TIKET] Historical product for {picks.Count} picks: {combined * 100:F2}% " +
+                $"(Wilson-product {combinedSafe * 100:F2}%). Independence illustration only, NOT a calibrated ticket probability or confidence bound.");
 
         if (picks.Count > 0 && allOdds)
         {
             Console.WriteLine(
-                $"[TIKET] Vkupna kvota: {combinedOdds:F2} | Ocekuvan povrat za 1 uplateno: {combined * combinedOdds:F2} " +
-                $"(konzervativno {combinedSafe * combinedOdds:F2}). Nad 1.00 znaci vrednost.");
+                $"[TIKET] Vkupna kvota: {combinedOdds:F2} | Illustrative historical return under independence: {combined * combinedOdds:F2} " +
+                $"(Wilson-product {combinedSafe * combinedOdds:F2}). Not a validated accumulator return.");
         }
         else if (picks.Count > 0)
         {
@@ -468,7 +460,7 @@ public partial class Program
         string[] headers =
         [
             "#", "Natprevar", "Pazar", "Izbor", "Kvota", "Istoriska tocnost %",
-            "Sigurna tocnost %", "Primerok (n)", "EV %", "Vrednost", "Osnovna kvota", "Signali", "Liga"
+            "Wilson95 lower %", "Primerok (n)", "Historical EV %", "Vrednost", "Osnovna kvota", "Signali", "Liga"
         ];
 
         for (int c = 0; c < headers.Length; c++)
@@ -510,11 +502,11 @@ public partial class Program
 
         int s = picks.Count + 3;
         sheet.Cell(s, 2).Value = $"Datum: {date:yyyy-MM-dd}";
-        sheet.Cell(s + 1, 2).Value = picks.Count == 0 ? "Nema potvrdeni izbori." : "Sansa da pominat site (%, nezavisnost)";
+        sheet.Cell(s + 1, 2).Value = picks.Count == 0 ? "Nema potvrdeni izbori." : "Historical product (%, independence illustration)";
         if (picks.Count > 0)
         {
             sheet.Cell(s + 1, 5).Value = Math.Round(combined * 100, 2);
-            sheet.Cell(s + 2, 2).Value = "Konzervativna sansa (%)";
+            sheet.Cell(s + 2, 2).Value = "Wilson-product %, not a joint confidence bound";
             sheet.Cell(s + 2, 5).Value = Math.Round(combinedSafe * 100, 2);
         }
 
@@ -522,11 +514,11 @@ public partial class Program
         {
             sheet.Cell(s + 3, 2).Value = "Vkupna kvota";
             sheet.Cell(s + 3, 5).Value = Math.Round(combinedOdds, 2);
-            sheet.Cell(s + 4, 2).Value = "Ocekuvan povrat za 1 uplateno";
+            sheet.Cell(s + 4, 2).Value = "Illustrative historical return, independence assumed";
             sheet.Cell(s + 4, 5).Value = Math.Round(combined * combinedOdds, 2);
         }
 
-        sheet.Cell(s + 6, 2).Value = "Ocekuvaniot povrat se bazira na minata tocnost; ne e garancija.";
+        sheet.Cell(s + 6, 2).Value = "Not calibrated ticket probabilities or validated accumulator returns; no guarantee.";
 
         sheet.SheetView.FreezeRows(1);
         sheet.Columns().AdjustToContents();
@@ -583,9 +575,9 @@ public partial class Program
         if (args.Length < 2 || args.Length > (auto ? 3 : 2) ||
             !DateOnly.TryParseExact(args[1], "yyyy-MM-dd",
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ||
-            (auto && args.Length == 3 && (!int.TryParse(args[2], out count) || count is < 1 or > 100)))
+            (auto && args.Length == 3 && (!int.TryParse(args[2], out count) || count is < 1 or > TicketQualityPolicy.MaximumSelections)))
         {
-            Console.Error.WriteLine("[FIXED] Invalid arguments. Use: daily-fixed-auto yyyy-MM-dd [count 1-100] (default 15), or daily-[ai-]fixed-1|2 yyyy-MM-dd");
+            Console.Error.WriteLine("[FIXED] Use: daily-fixed-auto yyyy-MM-dd [count 1-15] (default 15), or daily-[ai-]fixed-1|2 yyyy-MM-dd");
             CommandExecution.Fail();
             return;
         }
@@ -595,6 +587,8 @@ public partial class Program
 
         var options = new DbContextOptionsBuilder<FootballDbContext>().UseNpgsql(connection).Options;
         await using var db = new FootballDbContext(options);
+        if (await ReuseFrozenTicketAsync(db, date, auto ? "fixed-auto" : ai ? $"ai-fixed-{count}" : $"fixed-{count}"))
+            return;
         var matches = await db.Matches.AsNoTracking().Where(m => m.MatchDate == date)
             .Include(m => m.PredictionSnapshots).ToListAsync();
         if (matches.Count == 0)
@@ -615,22 +609,23 @@ public partial class Program
             return;
         }
 
+        var history = await db.Matches.AsNoTracking()
+            .Where(m => m.MatchDate < date && m.Result != null)
+            .Include(m => m.Result).Include(m => m.PredictionSnapshots).ToListAsync();
+        history = TicketQualityPolicy.PrepareHistory(history, date, Console.WriteLine);
+        var calibration = TicketQualityPolicy.Calibrate(history);
         MlMatchRanker? ranker = null;
         if (ai || auto)
         {
-            var history = await db.Matches.AsNoTracking()
-                .Where(m => m.MatchDate < date && m.Result != null)
-                .Include(m => m.Result).Include(m => m.PredictionSnapshots).ToListAsync();
             ranker = MlMatchRanker.TrainFromHistory(history);
             if (ranker == null)
             {
-                Console.Error.WriteLine("[FIXED-AI] Not enough historical results for ML ranking.");
-                CommandExecution.Fail();
-                return;
+                Console.WriteLine("[FIXED-AI] Insufficient prepared history for ML. AI-required picks cannot qualify.");
             }
         }
         var selection = DailyTicketSelector.BuildFixed(matches, offers, date, DateTime.UtcNow, count,
-            ranker == null ? null : (match, candidate) => ranker.Predict(match)?.GetCandidateProbability(candidate));
+            ai || auto ? (match, candidate) => ranker?.Predict(match)?.GetCandidateProbability(candidate) : null,
+            calibration);
         IReadOnlyList<DailyTicketPick> finalPicks = selection.Picks;
         Console.WriteLine($"[FIXED] Requested={count} | Eligible={selection.Eligible} | Selected={finalPicks.Count}");
         foreach (var pick in finalPicks)
@@ -638,11 +633,16 @@ public partial class Program
                 $"Source Prob={pick.SourceProbability:F1}% | Evidence={pick.Evidence}");
         if (finalPicks.Count < count)
         {
-            Console.Error.WriteLine($"[FIXED] Only {finalPicks.Count}/{count} selections meet odds >=1.60 and confidence >=55%; no synthetic selections.");
+            Console.Error.WriteLine($"[FIXED] Only {finalPicks.Count}/{count} selections pass exact-market history, coverage, return and odds >=1.60 gates; no synthetic selections.");
             foreach (var rejection in selection.Rejections.Take(10))
                 Console.WriteLine("[FIXED-REJECTED] " + rejection);
             if (finalPicks.Count == 0)
-                CommandExecution.Fail();
+            {
+                if (selection.NoSelection)
+                    Console.WriteLine("[FIXED] NO_SELECTION: no exact-market candidate qualified. No ticket saved.");
+                else
+                    CommandExecution.Fail();
+            }
         }
         if (finalPicks.Count == 0)
             return;
@@ -673,13 +673,23 @@ public partial class Program
         double? MlProbability = null)
     {
         public bool HasValue => Odds.HasValue && Accuracy * Odds.Value > 1.0;
-        public double RankSafe => MlProbability.HasValue ? (Safe + MlProbability.Value) / 2.0 : Safe;
+        public double RankSafe => Safe;
         public double SourceAgreementShare => AgreementTotal == 0 ? 0 : (double)AgreementVotes / AgreementTotal;
         public double CombinedConfidence =>
             (SourceAgreementShare * 100.0 + (MlProbability ?? Accuracy) * 100.0) / 2.0;
         public int AgreementVotes { get; init; }
         public int AgreementTotal { get; init; }
         public double AgreementShare => AgreementTotal == 0 ? 0 : (double)AgreementVotes / AgreementTotal;
+    }
+
+    private static async Task<bool> ReuseFrozenTicketAsync(FootballDbContext db, DateOnly date, string mode)
+    {
+        var existing = await TicketLedger.FindForDateModeAsync(db, date, mode);
+        if (existing == null)
+            return false;
+        Console.WriteLine($"[TICKET] Reusing frozen #{existing.Id}: {date:yyyy-MM-dd}/{mode}, " +
+            $"{existing.Selections.Count} selections. No new odds, selections or duplicate ticket.");
+        return true;
     }
 
 }

@@ -148,8 +148,8 @@ if __name__ == "__main__":
     checkpoint_artifact_name = ""
     if run:
         count = int(os.environ.get("TICKET_COUNT", "15"))
-        if count < 1 or count > 100:
-            raise ValueError("Ticket count must be between 1 and 100.")
+        if count < 1 or count > 15:
+            raise ValueError("Ticket count must be between 1 and 15.")
         checkpoint_run_id, checkpoint_artifact_name = latest_checkpoint(
             target, count, os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"],
             os.environ["GITHUB_API_URL"], current_run_id=os.environ.get("GITHUB_RUN_ID", ""))

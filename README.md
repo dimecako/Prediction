@@ -50,7 +50,7 @@ The daily workflow runs the `daily-run` command, not the Windows-only
 `tickets.ps1`. It collects predictions for the current Europe/Skopje date,
 collects results for the previous day, and checks one additional day back only
 if that date has unresolved ticket selections. Older pending dates are not
-scanned. It then runs four ticket variants: daily, daily-league, 1-3p3+ and
+scanned. It then runs three ticket variants: daily, daily-league and
 fixed-auto. Confirmed results are not overwritten. ML-ranked variants
 already train their ranking models from history; a separate `train` command is
 not needed. Build happens before execution, and Excel imports are not needed
@@ -72,15 +72,17 @@ Actions tab for manual runs, failure details and reruns. Check the first real
 run before relying on unattended operation.
 
 `daily-fixed-auto yyyy-MM-dd [count]` defaults to 15 selections (allowed range
-1-100); `daily-run` passes its requested count to this mode too. Fixed-auto uses
+1-15); `daily-run` passes its requested count to this mode too. Fixed-auto uses
 only straight 1/2 picks, confirmed odds >=1.60 (preferably >=1.80), source-average
 probability >=55% and AI probability >=55%. All source-qualified candidates are
-AI-filtered and ranked by the mean of source and AI probability before taking
+AI-filtered and ranked primarily by exact-market historical Wilson lower bound before taking
 the requested count. If fewer qualify, it explicitly reports the shortfall;
 thresholds are never lowered and picks are not fabricated. These figures are
 estimates, not guaranteed win probabilities. Existing frozen tickets, including
 older one-selection fixed-auto tickets, are not replaced on retries.
-The legacy `daily-fixed-1|2` and `daily-ai-fixed-1|2` commands retain their counts.
+The legacy `daily-fixed-1|2` and `daily-ai-fixed-1|2` commands retain their counts,
+but also require the shared exact-market historical quality gates below.
+Raw AI values are uncalibrated model signals, not measured win probabilities.
 
 Set `Exports__Excel=false` for hosted execution; local Excel exports remain
 enabled by default. Existing workbooks and model ZIPs are not deleted.
@@ -201,8 +203,6 @@ dotnet run --no-build -- ticket 2026-10-20 5
 dotnet run --no-build -- ticket 2026-10-20 15 nodc
 dotnet run --no-build -- ticket 2026-10-20 5 safe
 dotnet run --no-build -- ticket 2026-10-20 15 why
-dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15
-dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15 safe
 ```
 
 `calibration` (read-only) measures real accuracy of the 1X2 consensus grouped
@@ -210,10 +210,46 @@ by average source Prob., confidence label and source, plus BTTS/Goals source
 agreement. Groups under 30 matches are flagged; `Safe` is the 95% Wilson lower
 bound. The date-only command collects predictions and does **not** automatically
 build a ticket. Run `ticket` separately afterwards. It returns at most N distinct
-unfinished, not-yet-started matches (default 15), prioritizing confirmed selections
-and using remaining places for separately labelled unconfirmed proposals.
+unfinished, not-yet-started matches (default and maximum 15). It never fills
+remaining places with unconfirmed, unpriced or below-threshold selections.
 
 ### Ticket selection rules
+
+All generation commands now use `exact-market-v1`:
+
+- `ticket-1-3p3+` and the `1-3p3+` flag are retired and return an explicit error
+  before collection or database access. They are removed from daily cloud and
+  Windows automation. Historical modes, imports and settlement are preserved.
+- No new selection may depend on half-time: HalfGoals, HT/FT, first-half goals
+  and goals-in-both-halves combinations are excluded from all selectors.
+- A selection requires at least three source votes and >=60% agreement for its
+  actual market (minimum component coverage for combinations).
+- Exact-event history must have >=100 graded cases for singles or >=50 for
+  combinations, >=55% measured accuracy, accuracy * current odds >=1.05, AND
+  Wilson 95% lower bound * odds >=1.00. These are conservative eligibility
+  rules, not a statistically proven profit guarantee.
+- Fixed selections retain minimum odds 1.60; other fixes/alternatives use 1.70
+  and standalone BTTS uses 1.65. A strong 1X2 or Over signal cannot replace a
+  combination's own historical sample and return checks. Unknown odds cannot
+  qualify. If nothing qualifies with otherwise valid data, `NO_SELECTION` is
+  explicit and no empty ticket is saved.
+- Historical preparation uses only earlier match dates, results collected before
+  the target Skopje date, and snapshots captured strictly before the historical
+  kickoff. Unknown/midnight placeholder kickoffs use the start of the fixture
+  date as a conservative cutoff. Later snapshots are excluded, not substituted.
+  Exact-name/date duplicates count once; conflicting final-score groups are
+  excluded. Rejection/coverage counts are logged.
+- Straight 1X2/BTTS/Goals ML outputs remain raw, uncalibrated signals.
+  Composite/half-time ML probabilities are unavailable: averages of component
+  probabilities are no longer presented or ranked as a joint-event probability.
+  Exact-market history, not raw ML, is the primary ranking signal.
+- Evidence freezes the policy version, exact-market sample/hit rate, Wilson
+  lower bound and historical expected return. Existing date/mode tickets are
+  reused before fetching odds; old tickets are never regenerated or overwritten.
+- No source reweighting, league blacklist, or probability threshold is fitted to
+  the 15-day analysis. These changes still need a prospective, untouched-period
+  comparison, including coverage and rejected selections; a tiny or zero output
+  is preferable to silently relaxing gates.
 
 - A uniquely matched Maxbet offer on the requested local calendar date must have
   a valid actual price for the predicted home/away win. Unknown base odds are
@@ -223,80 +259,63 @@ and using remaining places for separately labelled unconfirmed proposals.
 
   | Base win odds | Allowed selections | Minimum final odds |
   |---|---|---|
-  | Below 1.40 | HT/FT `1-1` / `2-2` (with or without 2+ goals) or Win & Goals combinations | 1.70 |
-  | 1.40 to below 1.70 | Win with first-half goals, goals in both halves, or 2-5 / 2-6 total goals | 1.70 |
+  | Below 1.70 | Win & team 2+ or Win & 2-5 / 2-6 total goals | 1.70 |
   | 1.70 through 2.00 inclusive | Straight win only; no goals or HT/FT replacement | Base win price |
-  | Above 2.00 | BTTS YES, 3+ (Over 2.5), BTTS & 3+, or the three standalone half-goal selections below | 1.65 for BTTS; 1.70 otherwise |
+  | Above 2.00 | BTTS YES, 3+ (Over 2.5), BTTS & 3+ | 1.65 for BTTS; 1.70 otherwise |
 
 - Straight win, standalone BTTS and standalone 3+ selections need **>=55% measured
-  historical accuracy with >=100 graded cases**. Composite (`Combo` / `HalfGoals`)
-  selections need **>=50 graded cases** and either **>=55% historical accuracy**
-  or **expected return >=1.05 (EV >= +5%)** at the actual Maxbet price. Win and
+  historical accuracy with >=100 graded cases**. Composite (`Combo`)
+  selections need **>=50 graded cases**, **>=55% historical accuracy** AND
+  **expected return >=1.05 (EV >= +5%)** at the actual Maxbet price, as well as the
+  conservative-return gate above. Win and
   winner-combination selections additionally require the win signal to meet `>=55%`
   (`n>=100`). Above 2.00, standalone BTTS/goal selections do not require the win
   signal's historical accuracy.
 - If an alternative uses BTTS YES, its majority BTTS signal needs
   **>=55% measured accuracy with >=100 cases**. `BTTS & 3+` needs both BTTS YES
-  (`>=55%`) and Over 2.5 (`>=60%`, `n>=100`); standalone `3+` and standalone
-  half-goal markets require Over 2.5 (`>=60%`, `n>=100`).
-- Winner goal-range, first/second-half goal and HT/FT-with-goals selections require a
+  (`>=55%`) and Over 2.5 (`>=60%`, `n>=100`); standalone `3+`
+  requires Over 2.5 (`>=60%`, `n>=100`).
+- Winner goal-range selections require a
   reliable majority Over/Under 2.5 signal (>=60%, >=100 cases), plus the
   whole-selection threshold. An Under signal is evidence for calibration, not a
-  new permitted Under bet. Plain HT/FT uses only the winner and whole-selection
-  thresholds. No BTTS/Goals threshold is required when that component is unused.
-- Standalone half-goal markets use their own whole-selection historical hit rate,
-  across all historical matches with valid half-time scores, not the winner's
-  probability bucket. No generic BTTS/Over signal is imposed on these markets:
-  over 2.5 does not predict a specific distribution of goals between halves.
+  new permitted Under bet. Win & team 2+ uses the winner and whole-selection
+  thresholds; no unused BTTS/Goals component is required.
 - Missing, tied or insufficient binary signals do not pass. These percentages
   are historical hit rates, **not source agreement** or guaranteed match probabilities.
-- If no qualifying priced alternative exists, an otherwise eligible combination
-  with unknown odds may appear only as a proposal with `n/a`, outside the confirmed
-  ticket and its combined odds/return. Known odds below the applicable minimum are not treated as
-  unknown. There is no fallback to a low-priced straight win or a below-threshold pick.
+- If no qualifying priced alternative exists, the fixture is rejected.
+  There is no unpriced proposal, low-priced straight-win or below-threshold fallback.
 
 The allowed final selections, subject to the odds bands above, are:
 
 - `fix 1`, `fix 2`;
-- `1 & 1+ prvo`, `2 & 1+ prvo`;
-- `1 & 1+ prvo & 1+ vtoro`, `2 & 1+ prvo & 1+ vtoro`;
+- `1 & T1 2+`, `2 & T2 2+` (winner scores at least two goals);
 - `1 & 2-5 golovi`, `1 & 2-6 golovi`, `2 & 2-5 golovi`, `2 & 2-6 golovi`;
-- `BTTS`, `BTTS & 3+`, `3+`;
-- `1-1`, `2-2`, `1-1 & 2+`, `2-2 & 2+`;
-- `1-2 prvo & 1-2 vtoro`: 1-2 total goals in each half;
-- `1-3 prvo & 1-3 vtoro`: 1-3 total goals in each half;
-- `1-3 prvo & 3+`: 1-3 total goals in the first half and at least 3 in the match.
+- `BTTS`, `BTTS & 3+`, `3+`.
 
 `1-1` / `2-2` mean half-time/full-time home win / away win, **not exact scores**.
 `1+ prvo` / `1+ vtoro` require at least one total goal in the first / second half.
 `2+` / `3+` require at least two / three full-time goals; goal ranges are inclusive.
 Draws, double chance and BTTS NO are not ticket selections.
-Existing calibration commands can still grade their supported markets.
+Those half-time definitions apply only to historical tickets. Existing
+calibration commands can still grade their supported markets.
 
 The ticket can never hold more picks than Maxbet offers: its public football offer
 is capped at roughly 500 matches for the whole coming week (about 70 per day), so
 most of the day's predicted matches simply have no Maxbet price and are reported as
-`Nema spartena ponuda`. The `why` flag prints the history hit rate of the standalone
-half-goal markets, one `[ODBIEN]` line per matched fixture with its base odds, reason
+`Nema spartena ponuda`. The `why` flag prints one `[ODBIEN]` line per matched fixture with its base odds, reason
 and signals, and `[BEZ-PAR]` lines for Maxbet offers that no stored match was paired
 with. One Maxbet fixture stored under several spellings counts once (the record with
 the most sources is kept). Team names tolerate Maxbet's initials ("Bayern M." =
 "Bayern Munich"); an initial is expanded only when the other name has a word that
 starts with it, so "Real Madrid C" never equals "Real Madrid".
 
-The standalone half-goal markets use one global hit rate (about 29%, 47% and 47.5%)
-that cannot distinguish matches. Relaxing the 55% gate for them would select
-fixtures only because their price happens to be high; they need a match-specific
-signal before they can be treated as value bets.
 `nodc` remains accepted for compatibility but no longer changes the allowed markets.
 
-Each complete selection needs 100+ graded historical cases and >=55% accuracy for its signal.
 Winner combinations use the corresponding 1X2 consensus and probability bucket;
 they are calibrated against the **whole combination**, not by multiplying component
 accuracies. There is no separate half-time prediction model. BTTS & 3+ requires
-both BTTS YES and over-2.5/over-3.5 source signals. Missing half-time scores are
-ungraded rather than assumed to be 0-0. The ticket prints half-time history coverage;
-markets without enough history are skipped, so not every listed type will appear.
+both BTTS YES and Over 2.5 source signals. Historical missing half-time scores
+remain ungraded rather than assumed to be 0-0.
 
 `collect-results` now reads Forebet's explicit `Host_SC_HT` / `Guest_SC_HT` scores
 alongside final scores. Missing, incomplete or invalid half-time scores remain
@@ -315,7 +334,7 @@ HT/FT & 2+ uses 862/863; BTTS & 3+ uses 303; standalone half-goal combinations
 use 51428, 51568 and 55173 respectively. The `v` in Maxbet labels means OR;
 `&` means AND: `GGv3+` (536) is not `GG3+` (303).
 An offer must contain the exact mapped combined-market price; otherwise the
-selection is only an unconfirmed proposal. Component odds are never multiplied
+selection is rejected. Component odds are never multiplied
 to invent a combined-market price. The console and Excel include base odds and winner, BTTS YES/NO and Over/Under
 2.5 historical signal accuracy/sample sizes. Excel separates `Tiket` from
 `Predlozi - nepotvrdeni`; proposals do not contribute to combined odds or chance.
@@ -539,7 +558,7 @@ dotnet run --no-build -- ticket 2026-10-23 15 ml
   League simulations are saved as `ml-league` or `ml-league-safe`, separately
   from standard AI simulations, and included in `ticket-report`.
 
-### Daily tickets without historical filters
+### Daily tickets with exact-market historical filters
 
 ```powershell
 dotnet run --no-build -- 2026-10-26
@@ -548,12 +567,13 @@ dotnet run --no-build -- daily-ticket 2026-10-26 15
 ```
 
 Both commands read only matches dated on the requested day and their saved
-prediction snapshots (latest per source). They do not scrape prediction sites,
-read historical results, train/load ML models, or apply historical accuracy,
-sample-size or EV filters. They fetch current Maxbet prices, require unique
+prediction snapshots (latest per source). They do not scrape prediction sites.
+They prepare pre-date history, apply the shared exact-market accuracy, sample
+and return gates, and optionally train an ML ranker when sufficient history exists.
+They fetch current Maxbet prices, require unique
 fixture/date matching, merge duplicate stored fixtures, and exclude started
 matches. Nonempty tickets are now saved to the simulation ledger for subsequent
-grading, without using history to select or rank their picks.
+grading, with the historical quality evidence frozen for each pick.
 
 - `daily-ticket-league` accepts only the supported leagues listed above. It
   takes one candidate per league in priority order, then second choices, then
@@ -562,37 +582,35 @@ grading, without using history to select or rank their picks.
 - `daily-ticket` has no league filter, league priority or per-league cap. It
   ranks all eligible daily fixtures together.
 
-Ranking uses known average source probability for the majority 1/2 prediction
-first, then that probability descending, source agreement, supporting-source
-count and lower confirmed odds. Fixtures without source probabilities remain
-eligible but rank after those with known probabilities. Thus Inter at 70.7%
-ranks ahead of Milan at 56.7% when both have 10/10 agreement. These are
-**source forecasts**, not calibrated ML or whole-bet probabilities.
+Ranking uses the exact-market Wilson lower bound, measured accuracy and sample
+size before source agreement/probability tie-breaks. Source forecasts and raw ML
+are not calibrated whole-bet probabilities.
 
 Price bands are retained: 1.70-2.00 selects the consensus straight win.
 Below 1.70, confirmed winner combinations are considered, including `1 & T1 2+`
 and `2 & T2 2+` (winner scores at least two goals). Total-goal combinations need
 a daily Over 2.5 majority; the team-goal variant uses winner consensus only and
-does not pretend total goals predict team goals. Below 1.40, half-time/full-time
-is also allowed. Above 2.00, daily majority signals may allow BTTS, 3+, BTTS & 3+
-or half-goal combinations. BTTS requires odds >=1.65; other alternatives >=1.70.
-Among allowed alternatives the lowest confirmed qualifying price is selected.
+does not pretend total goals predict team goals. Above 2.00, qualified signals
+may allow BTTS, 3+, or BTTS & 3+. No half-time markets are allowed.
+BTTS requires odds >=1.65; other alternatives >=1.70.
+Among allowed alternatives historical safety/accuracy determines selection.
 No composite price is manufactured from component prices.
 
-The count defaults to 15. If there are insufficient unstarted fixtures with
-valid daily signals, confirmed prices and (for the league variant) supported
+The count defaults to 15 and accepts 1-15. If there are insufficient unstarted fixtures with
+valid signals, exact-market history, confirmed prices and (for the league variant) supported
 leagues, the output explicitly reports the shortfall. Add `why` to see
 rejections, for example `daily-ticket-league 2026-10-26 15 why`.
 Excel files are `daily-ticket-league-DATE-COUNT.xlsx` and
 `daily-ticket-DATE-COUNT.xlsx`, with daily source evidence and an Info sheet.
-They intentionally have no historical Accuracy, EV or whole-ticket win
-probability. Their separate ledger modes are `daily` and `daily-league`, with
+Historical sample, accuracy and return are frozen in the evidence; there is no
+claimed calibrated whole-ticket win probability. Separate ledger modes are `daily` and `daily-league`, with
 1 simulated unit for the whole ticket and frozen selections/prices. The existing
-non-null calibration fields use zero with sample size zero to mark **unavailable**
-calibration for these modes, never measured 0% accuracy; reports grade actual
+non-null numeric calibration fields retain zero with sample size zero for
+backward compatibility; read the quality evidence, never interpret this as
+measured 0% accuracy. Reports grade actual
 results instead. Excel includes a Simulation sheet and database match IDs.
 Older `daily-league-safe` simulations remain readable by `ticket-report`.
-`ai-rank` and other existing historical ticket commands retain their behavior.
+`ai-rank` and other ticket commands share the same strict quality policy.
 
 ### Running all tickets and grading automatically
 
@@ -610,10 +628,10 @@ date minus one, including when an explicit date is supplied.
 
 The script builds, archives/verifies existing previous-day and target-day ticket
 workbooks, collects previous-day results, prints their grading, and collects
-target-day predictions. It then runs all nine distinct variants (up to 15 picks
+target-day predictions. It then runs seven distinct variants (up to 15 qualified picks
 each by default): `ticket`, `ticket safe`, `ai-rank`, `ai-rank safe`,
-`ai-rank safe league`, `daily-ticket`, `daily-ticket-league`, `ticket-1-3p3+`,
-and `ticket-1-3p3+ safe`. Each command independently fetches current odds; these
+`ai-rank safe league`, `daily-ticket`, and `daily-ticket-league`.
+New date/mode tickets fetch current odds; existing date/mode tickets are reused. These
 are not guaranteed identical across variants. ML ticket commands perform their
 existing historical training. A final target-date report prints the available
 results, per-mode pick accuracy, ticket status and simulated ROI.

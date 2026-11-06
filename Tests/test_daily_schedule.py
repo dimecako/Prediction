@@ -293,8 +293,8 @@ class DailyScheduleTests(unittest.TestCase):
             )
 
     def test_entrypoint_writes_run_decision_and_frozen_target_to_github_output(self):
-        for already_succeeded in [False, True]:
-            with self.subTest(already_succeeded=already_succeeded), tempfile.TemporaryDirectory(
+        for already_succeeded, count in [(False, 1), (False, 15), (True, 15)]:
+            with self.subTest(already_succeeded=already_succeeded, count=count), tempfile.TemporaryDirectory(
                     dir=Path(__file__).parent) as temp:
                 output = Path(temp) / "github-output"
                 artifacts = [self.artifact(name="daily-success-2026-10-31")] if already_succeeded else []
@@ -307,7 +307,7 @@ class DailyScheduleTests(unittest.TestCase):
                 environment = {
                     "EVENT_NAME": "workflow_dispatch", "EVENT_SCHEDULE": "",
                     "TARGET_DATE": "2026-10-31", "GITHUB_REPOSITORY": "owner/repo",
-                    "TICKET_COUNT": "15",
+                    "TICKET_COUNT": str(count),
                     "GITHUB_TOKEN": "test-token", "GITHUB_API_URL": "https://api.github.com",
                     "GITHUB_OUTPUT": str(output),
                 }
@@ -322,6 +322,28 @@ class DailyScheduleTests(unittest.TestCase):
                     f"run={decision}\ntarget_date=2026-10-31\n"
                     "checkpoint_run_id=\ncheckpoint_artifact_name=\n",
                     output.read_text())
+
+    def test_entrypoint_rejects_count_outside_one_to_fifteen_before_checkpoint_lookup(self):
+        for count in ["0", "-1", "16", "100"]:
+            with self.subTest(count=count), tempfile.TemporaryDirectory(
+                    dir=Path(__file__).parent) as temp:
+                output = Path(temp) / "github-output"
+                environment = {
+                    "EVENT_NAME": "workflow_dispatch", "EVENT_SCHEDULE": "",
+                    "TARGET_DATE": "2026-10-31", "GITHUB_REPOSITORY": "owner/repo",
+                    "TICKET_COUNT": count,
+                    "GITHUB_TOKEN": "test-token", "GITHUB_API_URL": "https://api.github.com",
+                    "GITHUB_OUTPUT": str(output),
+                }
+                with patch.dict(os.environ, environment), patch(
+                        "urllib.request.urlopen",
+                        return_value=io.BytesIO(b'{"artifacts": []}')
+                ) as request, redirect_stdout(io.StringIO()), self.assertRaisesRegex(
+                        ValueError, "between 1 and 15"):
+                    runpy.run_path(str(Path(__file__).parents[1] / "Deployment" / "daily_schedule.py"),
+                                   run_name="__main__")
+                self.assertEqual(1, request.call_count)
+                self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

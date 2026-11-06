@@ -9,6 +9,9 @@ public sealed record DailyTicketPick(
     double? SourceProbability, int MatchingVotes, int TotalVotes, string Evidence,
     double? MlProbability = null)
 {
+    public double HistoricalAccuracy { get; init; }
+    public double HistoricalLower { get; init; }
+    public int HistoricalSample { get; init; }
     public double Agreement => TotalVotes == 0 ? 0 : (double)MatchingVotes / TotalVotes;
     public double CombinedConfidence =>
         (Agreement * 100.0 + (MlProbability.HasValue ? MlProbability.Value * 100.0 : SourceProbability ?? 0.0)) / 2.0;
@@ -29,10 +32,10 @@ public static class DailyTicketSelector
     public static DailyTicketSelection BuildFixed(
         IReadOnlyList<Match> matches, IReadOnlyList<BookmakerMatch> offers,
         DateOnly date, DateTime nowUtc, int count,
-        Func<Match, TicketCandidate, double?>? predict = null)
+        Func<Match, TicketCandidate, double?>? predict = null, Tally? calibration = null)
     {
-        if (count is < 1 or > 100)
-            throw new ArgumentOutOfRangeException(nameof(count), "Fixed ticket count must be between 1 and 100.");
+        if (count is < 1 or > TicketQualityPolicy.MaximumSelections)
+            throw new ArgumentOutOfRangeException(nameof(count), "Fixed ticket count must be between 1 and 15.");
         if (nowUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("Fixed ticket selection needs a UTC clock.");
 
@@ -53,11 +56,22 @@ public static class DailyTicketSelector
             .Select(g => g.OrderByDescending(x => CalibrationAnalyzer.LatestPerSource(x.Match).Count).First())
             .ToList();
         var eligible = new List<DailyTicketPick>();
+        bool validFixture = false;
+        bool invalidFixture = false;
         foreach (var (match, offer) in unique)
         {
             if (offer.KickoffUtc <= nowUtc)
             {
                 rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Natprevarot vekje zapocnal.");
+                continue;
+            }
+            bool valid = TicketSelector.HasRequiredData(match,
+                c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick));
+            validFixture |= valid;
+            invalidFixture |= !valid;
+            if (!valid)
+            {
+                rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Missing or invalid source votes, probabilities or base prices.");
                 continue;
             }
             var snapshots = CalibrationAnalyzer.LatestPerSource(match);
@@ -84,9 +98,15 @@ public static class DailyTicketSelector
                 rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Kvota pod 1.60 ili nevalidna.");
                 continue;
             }
+            var score = TicketQualityPolicy.Score(candidate, calibration ?? new Tally(), odds);
+            if (!TicketQualityPolicy.HasCoverage(match, candidate) || !TicketQualityPolicy.Passes(score, 1.60))
+            {
+                rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Exact-market quality/coverage threshold failed.");
+                continue;
+            }
 
             var evidence = $"FIX 1X2={consensus.Pick} {consensus.MatchingVotes}/{consensus.TotalVotes}; " +
-                $"Source Prob.={probability:F1}%; Min odds=1.60";
+                $"Source Prob.={probability:F1}%; Min odds=1.60; " + TicketQualityPolicy.Evidence(score);
             double? ml = null;
             if (predict != null)
             {
@@ -96,18 +116,19 @@ public static class DailyTicketSelector
                     rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: AI confidence below 55% or unavailable.");
                     continue;
                 }
-                evidence += $" AI 1X2={candidate.Pick} {ml.Value:P1}; " +
-                    $"Combined={((ml.Value * 100.0 + probability) / 2.0):F1}%";
+                evidence += $" AI 1X2={candidate.Pick} {ml.Value:P1}; raw uncalibrated model signal";
             }
             eligible.Add(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", offer.League,
                 offer.KickoffUtc, candidate, odds!.Value, odds.Value,
-                probability, consensus.MatchingVotes, consensus.TotalVotes, evidence, ml));
+                probability, consensus.MatchingVotes, consensus.TotalVotes, evidence, ml)
+            {
+                HistoricalAccuracy = score.Accuracy, HistoricalLower = score.Safe, HistoricalSample = score.Sample
+            });
         }
 
         var picks = eligible
-            .OrderByDescending(p => predict != null
-                ? (p.MlProbability!.Value * 100.0 + p.SourceProbability!.Value) / 2.0
-                : p.SourceProbability!.Value)
+            .OrderByDescending(p => p.HistoricalLower)
+            .ThenByDescending(p => p.HistoricalAccuracy)
             .ThenByDescending(p => p.SourceProbability)
             .ThenByDescending(p => p.Odds >= 1.8)
             .ThenByDescending(p => p.Odds)
@@ -115,10 +136,14 @@ public static class DailyTicketSelector
             .Take(count)
             .ToList();
         return new(picks, rejections, unique.Count, paired.Count - unique.Count,
-            eligible.Count, 0);
+            eligible.Count, 0)
+        {
+            NoSelection = picks.Count == 0 && validFixture && !invalidFixture && calibration != null
+        };
     }
 
-    public static DailyTicketDecision Select(Match match, BookmakerMatch offer, MlMatchRanker? mlRanker = null)
+    public static DailyTicketDecision Select(Match match, BookmakerMatch offer, MlMatchRanker? mlRanker = null,
+        Tally? calibration = null)
     {
         var snapshots = CalibrationAnalyzer.LatestPerSource(match);
         var consensus = CalibrationAnalyzer.BuildResultConsensus(snapshots);
@@ -127,53 +152,21 @@ public static class DailyTicketSelector
         if (consensus.AverageProbability is double sourceProb &&
             (!double.IsFinite(sourceProb) || sourceProb is < 0 or > 100))
             return new(null, "Nevalidna Source Prob. vo dnevnite prognozi.");
-        var candidates = TicketMarkets.BuildCandidates(match,
-            includeTeamGoals: true, requireProbability: false).ToList();
-        var fix = candidates.First(c => c.Market == "1X2");
+        var fix = TicketMarkets.BuildCandidates(match, requireProbability: false)
+            .First(c => c.Market == "1X2");
         double? baseOdds = MaxbetOddsProvider.GetOdds(offer, fix.Market, fix.Pick);
         if (!ValidOdds(baseOdds))
             return new(null, "Nema potvrdena osnovna Maxbet kvota.");
-
+        if (calibration == null)
+            return new(null, "Exact-market history is required; daily signals alone cannot qualify a selection.");
         var goals = TicketMarkets.BinarySignal(match, "Goals");
         var btts = TicketMarkets.BinarySignal(match, "BTTS");
-        bool over = goals is { Pick: "O2.5" };
-        bool bttsYes = btts is { Pick: "YES" };
-        bool highOdds = baseOdds > TicketSelector.MaxFixOdds;
-        bool Allowed(TicketCandidate c)
-        {
-            if (highOdds)
-                return (c.Market is "Goals" or "HalfGoals" && over) ||
-                    (c.Market == "BTTS" && bttsYes) ||
-                    (c.Pick == "BTTS & 3+" && bttsYes && over);
-            if (baseOdds < TicketSelector.MinBaseOdds && c.Pick == $"{fix.Pick}-{fix.Pick}")
-                return true;
-            if (baseOdds < TicketSelector.MinBaseOdds && c.Pick == $"{fix.Pick}-{fix.Pick} & 2+")
-                return over;
-            return c.Market == "Combo" &&
-                c.Pick.StartsWith($"{fix.Pick} & ", StringComparison.Ordinal) &&
-                (c.Pick == $"{fix.Pick} & T{fix.Pick} 2+" || over);
-        }
-
-        TicketCandidate? chosen;
-        double? odds;
-        if (baseOdds >= TicketSelector.KeepFixOdds && baseOdds <= TicketSelector.MaxFixOdds)
-        {
-            chosen = fix;
-            odds = baseOdds;
-        }
-        else
-        {
-            var alternatives = candidates.Where(Allowed)
-                .Select(c => (Candidate: c, Odds: MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick)))
-                .Where(x => ValidOdds(x.Odds) && x.Odds >=
-                    (x.Candidate.Market == "BTTS" ? TicketSelector.MinBttsOdds : TicketSelector.MinFinalOdds))
-                .OrderBy(x => x.Odds)
-                .ThenBy(x => x.Candidate.DisplayPick, StringComparer.Ordinal)
-                .ToList();
-            if (alternatives.Count == 0)
-                return new(null, "Nema dozvolen tip so dneven signal i potvrdena kvota nad minimumot.");
-            (chosen, odds) = alternatives[0];
-        }
+        var decision = TicketSelector.Select(match, calibration,
+            c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), safe: true, includeTeamGoals: true);
+        if (decision.Confirmed is not ScoredTicketCandidate score)
+            return new(null, decision.Reason);
+        var chosen = score.Candidate;
+        var odds = score.Odds;
 
         string probability = consensus.AverageProbability is double p ? $"{p:F1}%" : "n/a";
         string BinaryEvidence(TicketCandidate? signal) => signal == null ? "n/a" :
@@ -182,19 +175,23 @@ public static class DailyTicketSelector
         double? mlProbability = mlRanker?.Predict(match)?.GetCandidateProbability(chosen);
         string evidence = $"1X2={consensus.Pick} {consensus.MatchingVotes}/{consensus.TotalVotes}; " +
             $"Source Prob.={probability}; {consensus.Level}; " +
-            $"BTTS={BinaryEvidence(btts)}; Goals={BinaryEvidence(goals)}" +
-            (mlProbability.HasValue ? $"; ML={mlProbability.Value:P1}" : "");
+            $"BTTS={BinaryEvidence(btts)}; Goals={BinaryEvidence(goals)}; " +
+            TicketQualityPolicy.Evidence(score) +
+            (mlProbability.HasValue ? $"; ML={mlProbability.Value:P1} (raw, uncalibrated)" : "; ML=n/a for exact market");
         return new(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", offer.League,
             offer.KickoffUtc, chosen, odds!.Value, baseOdds!.Value,
-            consensus.AverageProbability, consensus.MatchingVotes, consensus.TotalVotes, evidence, mlProbability), "");
+            consensus.AverageProbability, consensus.MatchingVotes, consensus.TotalVotes, evidence, mlProbability)
+        {
+            HistoricalAccuracy = score.Accuracy, HistoricalLower = score.Safe, HistoricalSample = score.Sample
+        }, "");
     }
 
     public static DailyTicketSelection Build(
         IReadOnlyList<Match> matches, IReadOnlyList<BookmakerMatch> offers,
         DateOnly date, DateTime nowUtc, int count, bool leagueOnly,
-        MlMatchRanker? mlRanker = null)
+        MlMatchRanker? mlRanker = null, Tally? calibration = null)
     {
-        if (count < 1 || nowUtc.Kind != DateTimeKind.Utc)
+        if (count is < 1 or > TicketQualityPolicy.MaximumSelections || nowUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("Daily selection needs a positive count and UTC clock.");
         var rejections = new List<string>();
         var paired = new List<(Match Match, BookmakerMatch Offer)>();
@@ -224,19 +221,12 @@ public static class DailyTicketSelector
                 rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Natprevarot vekje zapocnal.");
                 continue;
             }
-            var snapshots = CalibrationAnalyzer.LatestPerSource(match);
-            var consensus = CalibrationAnalyzer.BuildResultConsensus(snapshots);
-            double? baseOdds = consensus is { Pick: "1" or "2" }
-                ? MaxbetOddsProvider.GetOdds(offer, "1X2", consensus.Pick)
-                : null;
-            bool validFixture = ValidOdds(baseOdds) &&
-                (consensus!.AverageProbability == null ||
-                    consensus.AverageProbability is double probability &&
-                    double.IsFinite(probability) && probability is >= 0 and <= 100) &&
+            bool validFixture = TicketSelector.HasRequiredData(match,
+                    c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick)) &&
                 LeagueTicketSelector.Classify(offer.League) != LeagueEligibility.Missing;
             evaluatedValidFixture |= validFixture;
             invalidFixtureData |= !validFixture;
-            var decision = Select(match, offer, mlRanker);
+            var decision = Select(match, offer, mlRanker, calibration);
             if (decision.Pick != null)
                 eligible.Add(decision.Pick);
             else
@@ -265,7 +255,8 @@ public static class DailyTicketSelector
         {
             LeagueDiagnoses = LeagueTicketSelector.Diagnose(unique
                 .Where(pair => pair.Offer.KickoffUtc > nowUtc).Select(pair => pair.Offer.League)),
-            NoSelection = LeagueTicketSelector.IsNoSelection(leagueOnly, picks.Count,
+            NoSelection = (picks.Count == 0 && calibration != null &&
+                evaluatedValidFixture && !invalidFixtureData) || LeagueTicketSelector.IsNoSelection(leagueOnly, picks.Count,
                 eligible.Select(p => p.League), offers.Count > 0 && (eligible.Count > 0
                     ? eligible.All(pick => pick.TotalVotes > 0)
                     : hasSourceData && !invalidFixtureData), evaluatedValidFixture)
@@ -273,9 +264,9 @@ public static class DailyTicketSelector
     }
 
     private static IOrderedEnumerable<DailyTicketPick> Rank(IEnumerable<DailyTicketPick> picks) =>
-        picks.OrderByDescending(p => p.SourceProbability.HasValue)
-            .ThenByDescending(p => p.SourceProbability)
-            .ThenByDescending(p => p.CombinedConfidence)
+        picks.OrderByDescending(p => p.HistoricalLower)
+            .ThenByDescending(p => p.HistoricalAccuracy)
+            .ThenByDescending(p => p.HistoricalSample)
             .ThenByDescending(p => p.Agreement)
             .ThenByDescending(p => p.MatchingVotes)
             .ThenBy(p => p.Odds)

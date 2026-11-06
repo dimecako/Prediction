@@ -3,7 +3,7 @@
 # .\tickets.ps1 -PlanOnly          # show commands without build or collection
 param(
     [string]$Date = "",
-    [ValidateRange(1, 100)]
+    [ValidateRange(1, 15)]
     [int]$Count = 15,
     [switch]$SkipCollection,
     [switch]$SkipCleanup, # Retained for compatibility; Excel files are never deleted.
@@ -42,8 +42,6 @@ $steps += @(
     @{ Name = "ai-rank safe league"; Args = @("ai-rank", $Date, "$Count", "safe", "league") },
     @{ Name = "daily-ticket"; Args = @("daily-ticket", $Date, "$Count") },
     @{ Name = "daily-ticket-league"; Args = @("daily-ticket-league", $Date, "$Count") },
-    @{ Name = "ticket-1-3p3+"; Args = @("ticket-1-3p3+", $Date, "$Count") },
-    @{ Name = "ticket-1-3p3+ safe"; Args = @("ticket-1-3p3+", $Date, "$Count", "safe") },
     @{ Name = "Target ticket report"; Args = @("ticket-report", $Date, $Date) }
 )
 Write-Host "`n=== TICKETS: $Date | Previous: $previous | Local clock: $now ===" -ForegroundColor Cyan

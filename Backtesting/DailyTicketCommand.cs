@@ -21,9 +21,9 @@ public partial class Program
             !DateOnly.TryParseExact(args[1], "yyyy-MM-dd", CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var date) ||
             countArgs.Count > 1 ||
-            (countArgs.Count == 1 && (!int.TryParse(countArgs[0], out count) || count < 1)))
+            (countArgs.Count == 1 && (!int.TryParse(countArgs[0], out count) || count is < 1 or > TicketQualityPolicy.MaximumSelections)))
         {
-            Console.Error.WriteLine($"[DAILY] Invalid arguments. Use: {command} yyyy-MM-dd [count] [why]");
+            Console.Error.WriteLine($"[DAILY] Invalid arguments. Use: {command} yyyy-MM-dd [count 1-15] [why]");
             CommandExecution.Fail();
             return;
         }
@@ -33,6 +33,8 @@ public partial class Program
             throw new InvalidOperationException("ConnectionStrings__FootballDb environment variable is not configured.");
         var options = new DbContextOptionsBuilder<FootballDbContext>().UseNpgsql(connection).Options;
         await using var db = new FootballDbContext(options);
+        if (await ReuseFrozenTicketAsync(db, date, leagueOnly ? "daily-league" : "daily"))
+            return;
         var matches = await db.Matches.AsNoTracking()
             .Where(m => m.MatchDate == date)
             .Include(m => m.PredictionSnapshots)
@@ -60,14 +62,16 @@ public partial class Program
         var history = await db.Matches.AsNoTracking()
             .Where(m => m.MatchDate < date && m.Result != null)
             .Include(m => m.Result).Include(m => m.PredictionSnapshots).ToListAsync();
+        history = TicketQualityPolicy.PrepareHistory(history, date, Console.WriteLine);
+        var calibration = TicketQualityPolicy.Calibrate(history);
         var mlRanker = MlMatchRanker.TrainFromHistory(history);
         if (mlRanker == null)
             Console.WriteLine("[DAILY] Nema dovolno istorija za ML; source consensus i kalibracija ostanuvaat.");
-        var selection = DailyTicketSelector.Build(matches, offers, date, now, count, leagueOnly, mlRanker);
+        var selection = DailyTicketSelector.Build(matches, offers, date, now, count, leagueOnly, mlRanker, calibration);
         Console.WriteLine($"[DAILY] {command} | Datum={date:yyyy-MM-dd} | Sobrani zapisi={matches.Count} | " +
             $"Sparteni razlicni mecevi={selection.Matched} | Spoeni duplikati={selection.Duplicates}");
-        Console.WriteLine("[DAILY] SAMO dnevni prognozi + tekovni kvoti. Bez istorija, kalibracija ili ML-treniranje. " +
-            "Source Prob. i soglasnost NE se kalibrirana verojatnost na izbraniot tip.");
+        Console.WriteLine($"[DAILY] {TicketQualityPolicy.Version}: exact-market pre-date historical qualification. " +
+            "Source agreement and raw ML are not calibrated win probabilities. No half-time markets.");
         Console.WriteLine(leagueOnly
             ? "[DAILY] Samo prioritetnite ligi; prvo eden po liga, potoa slednite po istiot redosled do baraniot broj."
             : "[DAILY] Site ligi, bez liga-filter ili ogranicuvanje po liga.");
@@ -92,7 +96,7 @@ public partial class Program
         if (selection.Picks.Count == 0)
         {
             if (selection.NoSelection && CommandExecution.ExitCode == 0)
-                Console.WriteLine("[DAILY] NO_SELECTION: no eligible league candidate passed selection thresholds. No ticket saved or exported.");
+                Console.WriteLine("[DAILY] NO_SELECTION: no eligible candidate passed exact-market quality thresholds. No ticket saved or exported.");
             else
             {
                 if (leagueOnly && selection.LeagueDiagnoses.Any(d => d.Eligibility == LeagueEligibility.Missing))
@@ -110,7 +114,7 @@ public partial class Program
             TicketLedger.CreateDaily(date, selection.Picks, now, leagueOnly));
         Console.WriteLine($"[SIMULATION] #{saved.Ticket.Id} | " +
             $"{(saved.Created ? "Saved" : "Already saved; not duplicated")} | Mode={saved.Ticket.Mode} | " +
-            "1 unit for the WHOLE ticket; not an actual bet. No historical Accuracy or EV.");
+            "1 unit for the WHOLE ticket; not an actual bet. Historical quality metrics are frozen in evidence.");
         if (!ExportSettings.ExcelEnabled)
         {
             Console.WriteLine("[DAILY] Excel export disabled; simulation remains saved in the database.");
@@ -176,10 +180,10 @@ public partial class Program
         info.Cell(4, 2).Value = $"{picks.Count}/{requested}";
         info.Cell(5, 1).Value = "Vkupna kvota";
         info.Cell(5, 2).Value = picks.Aggregate(1.0, (total, p) => total * p.Odds);
-        info.Cell(6, 1).Value = "Samo dnevnite izvori i tekovni Maxbet kvoti; bez istorija ili ML-treniranje.";
+        info.Cell(6, 1).Value = $"Policy={TicketQualityPolicy.Version}; exact-market historical quality gates, confirmed odds.";
         info.Cell(7, 1).Value = "Source Prob. e prosecna prognoza za 1X2, NE verojatnost na kombinacijata.";
-        info.Cell(8, 1).Value = "Rang: poznata Source Prob., povisoka Prob., soglasnost, broj izvori; ne garancija.";
-        info.Cell(9, 1).Value = "Alternativa: najniska potvrdena kvota nad minimumot megju dozvolenite tipovi.";
+        info.Cell(8, 1).Value = "Rank: exact-market Wilson lower bound, historical accuracy/sample, source agreement. No guarantee.";
+        info.Cell(9, 1).Value = "Alternatives need their own sample, accuracy and expected return. No half-time markets.";
         info.Columns().AdjustToContents();
         var tracking = workbook.Worksheets.Add("Simulation");
         tracking.Cell(1, 1).Value = "SIMULATION ONLY - not an actual bet";

@@ -20,13 +20,13 @@ Create repository Actions secret `FOOTBALL_DB_CONNECTION` containing the existin
 Neon **Npgsql connection string**, for example `Host=...;Database=...;Username=...;Password=...;SSL Mode=Require`.
 Do not paste a PostgreSQL URI or commit credentials. The database must already
 contain the current migrations. This job never migrates, imports Excel, rebuilds
-at runtime, or runs a separate ML training command; `ai-rank` trains from history.
+at runtime, or runs a separate ML training command; ticket commands may train
+their in-memory ML ranker from prepared history.
 
-The first attempt is at **08:00 Europe/Skopje**, with up to two additional
-attempts at **09:00 and 10:00** if no attempt has succeeded for that date.
-Four UTC schedules (06:00 through 09:00) cover both seasonal offsets; the guard
-selects only the three local hours. It compares `github.event.schedule` with the
-planned offset, not the runner's current hour, so same-day queue delays still
+The first attempt is at **07:07 UTC year-round**, with up to two additional
+attempts at **08:07 and 09:07 UTC** if no attempt has succeeded for that date.
+These are 08:07/09:07/10:07 in winter and 09:07/10:07/11:07 in summer in Skopje.
+The guard checks `github.event.schedule`, not the runner's current hour, so same-day queue delays still
 execute the intended occurrence. GitHub can delay, drop or coalesce queued cron
 jobs; these are retry opportunities, not a guaranteed exact-time scheduler.
 
@@ -49,7 +49,13 @@ the three-attempt budget survive revision or count changes. The workflow reserve
 an attempt before setup/build; local CLI runs keep their manifest under
 `.automation/daily-checkpoints`. Failed and deferred work is retried, not successful
 work. Ticket commands are independent of collection success and use available
-stored predictions and current odds; insufficient data must not fabricate picks.
+stored predictions, pre-date exact-market history and current odds; insufficient
+data must not fabricate picks. The three generation modes are `daily`,
+`daily-league` and `fixed-auto`, with at most 15 qualified picks each and no forced
+filling. `1-3p3+` is retired; no new ticket can contain a half-time-dependent market.
+All modes require exact-event history, source coverage and conservative-return
+qualification; raw AI output is not calibrated confidence. See the README's
+`exact-market-v1` selection rules.
 Reports still run against stored data when prerequisites fail, with an explicit
 partial-data warning. A partial report is not checkpointed as complete; reports
 refresh after their prerequisite work changes on a retry. Under the daily database lock, an
@@ -93,12 +99,14 @@ two-day window relative to the supplied date. Missing scores and required
 half-time scores remain Pending; confirmed scores are not overwritten.
 Failures are reported per step, remaining steps continue, and any failed step
 makes the job fail. A valid league-filter outcome with no eligible selections,
-or a fully validated league-mode evaluation with no picks passing the safety
+or a fully validated evaluation in any mode with no picks passing the quality
 thresholds, is reported as `NO_SELECTION`, without saving an empty ticket. Missing source data,
 invalid inputs and technical failures remain errors rather than fabricated success. Inspect job
 logs before retrying. Daily automation reuses the first saved ticket for each
-date/mode even when odds or selections change. Standalone ticket commands retain
-fingerprint-based simulation behavior and are not an automation retry mechanism.
+date/mode even when odds or selections change. Standalone ticket commands now
+also reuse the first saved date/mode ticket before fetching new odds. This is
+not an atomic concurrency guarantee for overlapping standalone commands; use the
+daily automation lock for that.
 No actionable 1/2 signal (including a draw or tied votes) is a normal abstention
 when the matched future fixture has valid source votes and bookmaker prices.
 Unmatched unrelated fixtures do not invalidate that evaluation. Missing source

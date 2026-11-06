@@ -10,6 +10,9 @@ public sealed class MlRankingTests
     [Theory]
     [InlineData("1 & T1 2+")]
     [InlineData("2 & T2 2+")]
+    [InlineData("1 & 2-5 golovi")]
+    [InlineData("BTTS & 3+")]
+    [InlineData("1-1")]
     public void TeamGoalsDoNotReuseUnrelatedTotalGoalsProbability(string pick)
     {
         var probabilities = new MlMatchProbabilities(
@@ -17,6 +20,7 @@ public sealed class MlRankingTests
             new Dictionary<string, double>(),
             new Dictionary<string, double> { ["O2.5"] = .9 });
         Assert.Null(probabilities.GetCandidateProbability(new("Combo", pick, "", "")));
+        Assert.Null(probabilities.GetCandidateProbability(new("HalfGoals", pick, "", "")));
     }
 
     private static readonly string[] AllSources =

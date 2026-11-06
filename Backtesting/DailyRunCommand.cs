@@ -14,9 +14,9 @@ public partial class Program
         if (args.Length > 3 ||
             (args.Length > 1 && !DateOnly.TryParseExact(args[1], "yyyy-MM-dd",
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out date)) ||
-            (args.Length > 2 && (!int.TryParse(args[2], out count) || count is < 1 or > 100)))
+            (args.Length > 2 && (!int.TryParse(args[2], out count) || count is < 1 or > TicketQualityPolicy.MaximumSelections)))
         {
-            Console.Error.WriteLine("[DAILY-RUN] Use: daily-run [yyyy-MM-dd] [count 1-100]. Default date: Europe/Skopje today.");
+            Console.Error.WriteLine("[DAILY-RUN] Use: daily-run [yyyy-MM-dd] [count 1-15]. Default date: Europe/Skopje today.");
             CommandExecution.Fail();
             return;
         }
@@ -226,7 +226,6 @@ namespace Prediction.Services
             {
                 new("daily-ticket", ["daily-ticket", target, size]),
                 new("daily-ticket-league", ["daily-ticket-league", target, size]),
-                new("ticket-1-3p3+", ["ticket-1-3p3+", target, size]),
                 new("fixed auto source and AI", ["daily-fixed-auto", target, count.ToString(CultureInfo.InvariantCulture)])
             };
             steps.AddRange(ticketSteps);
