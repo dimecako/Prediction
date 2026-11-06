@@ -8,7 +8,7 @@ on:
         required: false
         type: string
       count:
-        description: "Requested selections per ticket (1-100)"
+        description: "Maximum qualified selections per ticket (1-15; no forced filling)"
         default: "15"
         required: true
         type: string
