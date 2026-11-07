@@ -11,7 +11,6 @@ public sealed class DailyLeagueNoSelectionTests
 
     [Theory]
     [InlineData("UEFA Champions League", LeagueEligibility.IntentionallyExcluded)]
-    [InlineData("New Competition", LeagueEligibility.Unrecognized)]
     public void LeagueFilterCanProduceValidNoSelectionWithoutInventingTicket(
         string? league, LeagueEligibility expected)
     {
@@ -21,6 +20,18 @@ public sealed class DailyLeagueNoSelectionTests
         Assert.True(selection.NoSelection);
         Assert.Equal(1, selection.Eligible);
         Assert.Equal(expected, Assert.Single(selection.LeagueDiagnoses).Eligibility);
+    }
+
+    [Fact]
+    public void LeagueModeFallsBackToQualifiedUnrecognizedLeagueWhenPriorityLeagueHasNoPick()
+    {
+        var match = Fixture(1);
+        var selection = Build([match], [Offer(match, "New Competition")], Date, Now, 15, true);
+
+        Assert.Single(selection.Picks);
+        Assert.Equal(1, selection.Picks[0].MatchId);
+        Assert.False(selection.NoSelection);
+        Assert.Equal(LeagueEligibility.Unrecognized, Assert.Single(selection.LeagueDiagnoses).Eligibility);
     }
 
     [Fact]
@@ -61,15 +72,18 @@ public sealed class DailyLeagueNoSelectionTests
     }
 
     [Fact]
-    public void EligibleCandidateStillProducesTicketAndAllLeagueModeDoesNotReportNoSelection()
+    public void PriorityAndFallbackCandidatesCanProduceTicketsAndExcludedCupReportsNoSelection()
     {
         var match = Fixture(1);
         var eligible = Build([match], [Offer(match, "ENGLAND 1")], Date, Now, 15, true);
         Assert.Single(eligible.Picks);
         Assert.False(eligible.NoSelection);
-        var all = Build([match], [Offer(match, "FA Cup")], Date, Now, 15, false);
-        Assert.Single(all.Picks);
-        Assert.False(all.NoSelection);
+        var fallback = Build([match], [Offer(match, "New Competition")], Date, Now, 15, false);
+        Assert.Single(fallback.Picks);
+        Assert.False(fallback.NoSelection);
+        var cup = Build([match], [Offer(match, "FA Cup")], Date, Now, 15, false);
+        Assert.Empty(cup.Picks);
+        Assert.True(cup.NoSelection);
     }
 
     [Fact]

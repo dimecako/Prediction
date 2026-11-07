@@ -7,7 +7,7 @@ import runpy
 import tempfile
 import unittest
 from contextlib import redirect_stdout
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -25,8 +25,11 @@ class DailyScheduleTests(unittest.TestCase):
         now = datetime.fromisoformat(timestamp).replace(tzinfo=timezone.utc)
         for hour in range(24):
             with self.subTest(hour=hour):
+                scheduled = datetime.combine(now.date(), time(7, hour), timezone.utc)
+                expected = (hour in range(5, 9) and
+                            7 <= scheduled.astimezone(module.LOCAL_ZONE).hour <= 9)
                 self.assertEqual(
-                    7 <= hour <= 9,
+                    expected,
                     module.should_run("schedule", f"7 {hour} * * *", now),
                 )
 
@@ -51,13 +54,21 @@ class DailyScheduleTests(unittest.TestCase):
         self.assertFalse(module.should_run("schedule", "0 11 * * *", now))
         self.assertFalse(module.should_run("schedule", "0 7 * * *", now))
 
-    def test_workflow_crons_match_all_three_utc_attempts(self):
+    def test_workflow_crons_cover_local_attempts_in_both_seasons(self):
         workflow = (Path(__file__).parents[1] / ".github" / "workflows" /
                     "daily-run.yml").read_text(encoding="utf-8")
         crons = re.findall(r'cron: "([^"]+)"', workflow)
-        self.assertEqual(["7 7 * * *", "7 8 * * *", "7 9 * * *"], crons)
-        delayed = datetime.fromisoformat("2026-11-06T16:37:00+00:00")
-        self.assertTrue(all(module.should_run("schedule", cron, delayed) for cron in crons))
+        self.assertEqual([f"7 {hour} * * *" for hour in range(5, 9)], crons)
+        winter = datetime.fromisoformat("2026-11-06T16:37:00+00:00")
+        summer = datetime.fromisoformat("2026-07-15T16:37:00+00:00")
+        self.assertEqual(
+            [False, True, True, True],
+            [module.should_run("schedule", cron, winter) for cron in crons],
+        )
+        self.assertEqual(
+            [True, True, True, False],
+            [module.should_run("schedule", cron, summer) for cron in crons],
+        )
 
     def test_default_target_uses_skopje_and_manual_target_is_preserved(self):
         now = datetime.fromisoformat("2026-11-02T23:30:00+00:00")
@@ -92,14 +103,14 @@ class DailyScheduleTests(unittest.TestCase):
         return {"name": name, "expired": expired, "workflow_run": {"id": 123}}
 
     def test_each_of_three_attempts_is_eligible_without_a_success_record(self):
-        for hour in range(7, 10):
+        for hour in range(6, 9):
             with self.subTest(hour=hour):
                 (run, target, _), _ = self.plan(schedule=f"7 {hour} * * *")
                 self.assertTrue(run)
                 self.assertEqual("2026-11-02", target)
 
     def test_successful_manual_or_scheduled_execution_blocks_all_later_attempts(self):
-        for event, schedule in [("schedule", f"7 {hour} * * *") for hour in range(7, 10)] + [
+        for event, schedule in [("schedule", f"7 {hour} * * *") for hour in range(6, 9)] + [
                 ("workflow_dispatch", "")]:
             with self.subTest(event=event, schedule=schedule):
                 (run, _, message), _ = self.plan(
@@ -132,7 +143,7 @@ class DailyScheduleTests(unittest.TestCase):
         self.assertEqual("2026-10-31", target)
 
     def test_inactive_occurrence_does_not_query_success_records(self):
-        (run, _, _), calls = self.plan(schedule="7 6 * * *")
+        (run, _, _), calls = self.plan(schedule="7 5 * * *")
         self.assertFalse(run)
         self.assertEqual([], calls)
 

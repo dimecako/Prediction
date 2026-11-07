@@ -59,14 +59,14 @@ dotnet run --no-build -- ticket 2026-10-21 5                  // pomal i poreale
 dotnet run --no-build -- ticket 2026-10-21 15 safe            // do 15 natprevari rangirani ISKLUCIVO po najgolema sigurnost (Wilson dolna granica), bez brkanje visoka kvota
 dotnet run --no-build -- ticket 2026-10-21 5 safe             // 5 najsigurni natprevari za denot (najdobar izbor za realna proodnost na tiket)
 
-dotnet run --no-build -- daily-ticket-league 2026-10-26 15   // SAMO dnevni sobrani prognozi + Maxbet, bez istorija/ML-treniranje; po prioritetni ligi vo krugovi do 15
-dotnet run --no-build -- daily-ticket 2026-10-26 15          // SAMO dnevni sobrani prognozi + Maxbet, bez istorija/ML-treniranje; 15 od SITE ligi, rang po Source Prob. i soglasnost
+dotnet run --no-build -- daily-ticket-league 2026-10-26 15   // SAMO dnevni sobrani prognozi + Maxbet; prvo prioritetnite ligi vo krugovi, potoa fallback od drugi ligi
+dotnet run --no-build -- daily-ticket 2026-10-26 15          // Isti redosled na ligi kako daily-ticket-league; drug rezim na zacuvuvanje
 
 dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15          // do 15 natprevari SAMO so tip "1-3 prvo & 3+" (silen Over 2.5 signal + Maxbet kvota >= 1.70, bez razlika na 1/2 kvota)
 dotnet run --no-build -- ticket-1-3p3+ 2026-10-23 15 safe     // do 15 natprevari "1-3 prvo & 3+" rangirani po sigurnost i jacina na 3+ / BTTS signalot
 dotnet run --no-build -- ai-rank 2026-10-23 15                // do 15 natprevari rangirani so AI/ML verojatnost (site 11 izvori) + kalibracija i Maxbet kvota
 dotnet run --no-build -- ai-rank 2026-10-23 15 safe           // do 15 najsigurni natprevari rangirani po kombinirana Wilson sigurnost + AI/ML verojatnost
-dotnet run --no-build -- ai-rank 2026-10-23 15 safe league    // AI-safe tiket po prioritetni ligi i soglasuvanje na izvorite; najmnogu 2 izbora od ista liga
+dotnet run --no-build -- ai-rank 2026-10-23 15 safe league    // AI-safe tiket; prvo prioritetnite ligi, potoa fallback; poseben league rezim vo ledger
 dotnet run --no-build -- ai-rank 2026-10-23 5 safe            // 5 najsigurni natprevari rangirani po kombinirana Wilson sigurnost + ML verojatnost
                                                               // DUPLIKATI / ALIJASI (ne se posebni ticket rezimi):
                                                               // - bez broj: isto kako 15; ticket so ml: isto kako ai-rank za ist datum/broj/flagovi

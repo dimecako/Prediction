@@ -126,15 +126,15 @@ public static class DailyTicketSelector
             });
         }
 
-        var picks = eligible
+        var ranked = eligible
             .OrderByDescending(p => p.HistoricalLower)
             .ThenByDescending(p => p.HistoricalAccuracy)
             .ThenByDescending(p => p.SourceProbability)
             .ThenByDescending(p => p.Odds >= 1.8)
             .ThenByDescending(p => p.Odds)
             .ThenByDescending(p => p.Agreement)
-            .Take(count)
             .ToList();
+        var picks = LeagueTicketSelector.SelectPriorityFirst(ranked, count, p => p.League);
         return new(picks, rejections, unique.Count, paired.Count - unique.Count,
             eligible.Count, 0)
         {
@@ -233,20 +233,11 @@ public static class DailyTicketSelector
                 rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: {decision.Reason}");
         }
 
-        int excluded = leagueOnly ? eligible.Count(p => LeagueTicketSelector.GetPriority(p.League) < 0) : 0;
-        var ranked = Rank(eligible.Where(p => !leagueOnly || LeagueTicketSelector.GetPriority(p.League) >= 0));
-        IReadOnlyList<DailyTicketPick> picks;
-        if (leagueOnly)
-        {
-            var leagues = ranked.GroupBy(p => LeagueTicketSelector.GetPriority(p.League))
-                .OrderBy(g => g.Key).Select(g => g.ToList()).ToList();
-            // One per league first, then second choices, continuing until the requested count.
-            picks = Enumerable.Range(0, leagues.Count == 0 ? 0 : leagues.Max(g => g.Count))
-                .SelectMany(round => leagues.Where(g => g.Count > round).Select(g => g[round]))
-                .Take(count).ToList();
-        }
-        else
-            picks = ranked.Take(count).ToList();
+        int excluded = eligible.Count(p =>
+            LeagueTicketSelector.Classify(p.League) == LeagueEligibility.IntentionallyExcluded);
+        var ranked = Rank(eligible);
+        IReadOnlyList<DailyTicketPick> picks =
+            LeagueTicketSelector.SelectPriorityFirst(ranked, count, p => p.League);
         var targetMatches = matches.Where(match => match.MatchDate == date).ToList();
         bool hasSourceData = targetMatches.Count > 0 &&
             targetMatches.All(match => CalibrationAnalyzer.LatestPerSource(match)
@@ -256,7 +247,7 @@ public static class DailyTicketSelector
             LeagueDiagnoses = LeagueTicketSelector.Diagnose(unique
                 .Where(pair => pair.Offer.KickoffUtc > nowUtc).Select(pair => pair.Offer.League)),
             NoSelection = (picks.Count == 0 && calibration != null &&
-                evaluatedValidFixture && !invalidFixtureData) || LeagueTicketSelector.IsNoSelection(leagueOnly, picks.Count,
+                evaluatedValidFixture && !invalidFixtureData) || LeagueTicketSelector.IsNoSelection(true, picks.Count,
                 eligible.Select(p => p.League), offers.Count > 0 && (eligible.Count > 0
                     ? eligible.All(pick => pick.TotalVotes > 0)
                     : hasSourceData && !invalidFixtureData), evaluatedValidFixture)

@@ -13,9 +13,11 @@ on:
         required: true
         type: string
   schedule:
+    # GitHub cron is UTC; these cover Skopje 07:07, 08:07 and 09:07 year-round.
+    - cron: "7 5 * * *"
+    - cron: "7 6 * * *"
     - cron: "7 7 * * *"
     - cron: "7 8 * * *"
-    - cron: "7 9 * * *"
 
 permissions:
   contents: read
@@ -44,7 +46,7 @@ jobs:
         id: source
         run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Select 07:07-09:07 UTC attempt unless this date already succeeded
+      - name: Select 07:07-09:07 Europe/Skopje attempt unless this date already succeeded
         id: schedule
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -124,6 +126,7 @@ jobs:
         timeout-minutes: 150
         env:
           ConnectionStrings__FootballDb: ${{ secrets.FOOTBALL_DB_CONNECTION }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           FLARESOLVERR_URL: http://127.0.0.1:8191/v1
           TARGET_DATE: ${{ steps.schedule.outputs.target_date }}
           TICKET_COUNT: ${{ inputs.count || '15' }}

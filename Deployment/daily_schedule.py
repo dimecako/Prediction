@@ -10,6 +10,20 @@ from zoneinfo import ZoneInfo
 
 
 LOCAL_ZONE = ZoneInfo("Europe/Skopje")
+SCHEDULE_UTC_HOURS = range(5, 9)
+LOCAL_ATTEMPT_HOURS = range(7, 10)
+
+
+def scheduled_local_hour(schedule, now):
+    if schedule not in {f"7 {hour} * * *" for hour in SCHEDULE_UTC_HOURS}:
+        return None
+    utc_hour = int(schedule.split()[1])
+    scheduled_utc = datetime.combine(
+        now.astimezone(timezone.utc).date(),
+        datetime.min.time(),
+        tzinfo=timezone.utc,
+    ).replace(hour=utc_hour, minute=7)
+    return scheduled_utc.astimezone(LOCAL_ZONE).hour
 
 
 def should_run(event_name, schedule, now):
@@ -17,7 +31,8 @@ def should_run(event_name, schedule, now):
         return True
     if event_name != "schedule":
         return False
-    return schedule in {f"7 {hour} * * *" for hour in range(7, 10)}
+    local_hour = scheduled_local_hour(schedule, now)
+    return local_hour in LOCAL_ATTEMPT_HOURS
 
 
 def target_date(value, now):

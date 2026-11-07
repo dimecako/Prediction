@@ -159,6 +159,54 @@ public static class LeagueTicketSelector
         return selected;
     }
 
+    public static IReadOnlyList<T> SelectPriorityFirst<T>(
+        IEnumerable<T> rankedCandidates, int count, Func<T, string?> getLeague)
+    {
+        if (count <= 0)
+            return [];
+
+        var candidates = rankedCandidates
+            .Select((candidate, index) => (Candidate: candidate, Index: index,
+                League: getLeague(candidate)))
+            .Select(x => (x.Candidate, x.Index, x.League, Eligibility: Classify(x.League)))
+            .Where(x => x.Eligibility is LeagueEligibility.Eligible or LeagueEligibility.Unrecognized)
+            .ToList();
+
+        var priority = candidates.Where(x => x.Eligibility == LeagueEligibility.Eligible)
+            .GroupBy(x => GetPriority(x.League))
+            .OrderBy(group => group.Key)
+            .Select(group => group.Select(x => x.Candidate).ToList())
+            .ToList();
+        var selected = SelectRounds(priority, count);
+        if (selected.Count == count)
+            return selected;
+
+        var fallback = candidates.Where(x => x.Eligibility == LeagueEligibility.Unrecognized)
+            .GroupBy(x => Normalize(x.League!))
+            .OrderBy(group => group.Min(x => x.Index))
+            .Select(group => group.OrderBy(x => x.Index).Select(x => x.Candidate).ToList())
+            .ToList();
+        selected.AddRange(SelectRounds(fallback, count - selected.Count));
+        return selected;
+    }
+
+    private static List<T> SelectRounds<T>(IReadOnlyList<List<T>> leagues, int count)
+    {
+        var selected = new List<T>(count);
+        int rounds = leagues.Count == 0 ? 0 : leagues.Max(league => league.Count);
+        for (int round = 0; round < rounds && selected.Count < count; round++)
+        {
+            foreach (var league in leagues)
+            {
+                if (selected.Count == count)
+                    break;
+                if (league.Count > round)
+                    selected.Add(league[round]);
+            }
+        }
+        return selected;
+    }
+
     private static string Normalize(string value)
     {
         string decomposed = value.Normalize(NormalizationForm.FormD);

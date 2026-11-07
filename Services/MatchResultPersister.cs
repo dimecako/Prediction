@@ -1,3 +1,6 @@
+using System.ClientModel;
+using System.Net.Http;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Prediction.Data;
 using Prediction.Entities;
@@ -21,6 +24,10 @@ public static class MatchResultPersister
     {
         int matched = 0, inserted = 0, existing = 0, unmatched = 0, halfTimeUpdated = 0;
         int identityConflicts = 0, scoreConflicts = 0;
+        int aiSuggestions = 0;
+        bool aiConfigurationNoticeWritten = false;
+        const int maximumAiSuggestions = 20;
+        string? aiApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         var resultMatches = await db.Matches.Include(x => x.Result)
             .Where(x => x.MatchDate == date).ToListAsync();
         var sourceSnapshots = await db.PredictionSnapshots.AsNoTracking()
@@ -35,6 +42,40 @@ public static class MatchResultPersister
                 log($"[RESULTS] Identity conflict: {external.Source} {external.ExternalId} | " +
                     $"{external.HomeTeam} vs {external.AwayTeam}; {resolution.Method}.");
                 WriteConflictDiagnostics(date, external, resolution.Candidates, sourceSnapshots, log);
+                if (!string.IsNullOrWhiteSpace(aiApiKey) && resolution.Candidates.Count > 0 &&
+                    aiSuggestions < maximumAiSuggestions)
+                {
+                    aiSuggestions++;
+                    try
+                    {
+                        var suggestion = await ResultMatchAiSuggester.SuggestAsync(
+                            date, external, resolution.Candidates, sourceSnapshots, aiApiKey);
+                        if (suggestion.MatchId is long suggestedId)
+                        {
+                            var candidate = resolution.Candidates.Single(x => x.Id == suggestedId);
+                            log($"[RESULTS-AI] SUGGESTION ONLY: consider DB #{suggestedId} " +
+                                $"({CleanAiLog(candidate.HomeTeam)} vs {CleanAiLog(candidate.AwayTeam)}); " +
+                                $"{suggestion.Reason} " +
+                                "No records changed; verify manually.");
+                        }
+                        else
+                            log($"[RESULTS-AI] ABSTAINED: {suggestion.Reason} No records changed.");
+                    }
+                    catch (Exception ex) when (ex is ClientResultException or HttpRequestException or
+                        JsonException or InvalidDataException or OperationCanceledException)
+                    {
+                        log($"[RESULTS-AI] Suggestion unavailable ({ex.GetType().Name}): {CleanAiLog(ex.Message)}");
+                    }
+                }
+                else if (resolution.Candidates.Count > 0 && string.IsNullOrWhiteSpace(aiApiKey) &&
+                         !aiConfigurationNoticeWritten)
+                {
+                    log("[RESULTS-AI] Suggestions are disabled; set OPENAI_API_KEY to request optional AI suggestions. " +
+                        "No match will be applied automatically.");
+                    aiConfigurationNoticeWritten = true;
+                }
+                else if (resolution.Candidates.Count > 0 && aiSuggestions >= maximumAiSuggestions)
+                    log($"[RESULTS-AI] Suggestion limit ({maximumAiSuggestions}) reached; remaining conflicts require manual review.");
                 CommandExecution.Fail();
             }
             else if (resolution.Matches.Count > 0 && resolution.Method.Contains("source ID"))
@@ -122,6 +163,12 @@ public static class MatchResultPersister
             IdentityConflicts = identityConflicts,
             ScoreConflicts = scoreConflicts
         };
+    }
+
+    private static string CleanAiLog(string value)
+    {
+        string clean = string.Concat(value.Where(c => !char.IsControl(c))).Trim();
+        return clean.Length <= 300 ? clean : clean[..300];
     }
 
     public static void WriteConflictDiagnostics(DateOnly date, ExternalMatchResult incoming,

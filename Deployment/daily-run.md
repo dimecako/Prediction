@@ -23,12 +23,22 @@ contain the current migrations. This job never migrates, imports Excel, rebuilds
 at runtime, or runs a separate ML training command; ticket commands may train
 their in-memory ML ranker from prepared history.
 
-The first attempt is at **07:07 UTC year-round**, with up to two additional
-attempts at **08:07 and 09:07 UTC** if no attempt has succeeded for that date.
-These are 08:07/09:07/10:07 in winter and 09:07/10:07/11:07 in summer in Skopje.
-The guard checks `github.event.schedule`, not the runner's current hour, so same-day queue delays still
-execute the intended occurrence. GitHub can delay, drop or coalesce queued cron
-jobs; these are retry opportunities, not a guaranteed exact-time scheduler.
+Optionally set the repository Actions secret `OPENAI_API_KEY` to enable AI
+suggestions for up to 20 result identity conflicts per collection. The model
+receives only the incoming fixture identity and candidate fixture names,
+competition, kickoff and provider IDs; it does not receive scores. Suggestions
+are printed to the run logs for manual review and never change or settle records.
+Without this secret, result collection behaves as before.
+
+The first attempt is at **07:07 Europe/Skopje**, with up to two additional
+attempts at **08:07 and 09:07 local time** if no attempt has succeeded for that
+date. GitHub cron is UTC, so the workflow schedules 05:07 through 08:07 UTC and
+the guard converts each scheduled occurrence to Skopje time, selecting only
+07:07, 08:07 and 09:07. This covers both winter and summer time without shifting
+the local start hour. The guard checks the scheduled occurrence, not the runner's
+current hour, so same-day queue delays still execute the intended attempt.
+GitHub can delay, drop or coalesce queued cron jobs; these are retry opportunities,
+not a guaranteed exact-time scheduler.
 
 After a completely successful execution, the workflow uploads
 `daily-success-yyyy-MM-dd` with 90-day retention. Before building or scraping,

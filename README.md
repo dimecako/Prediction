@@ -56,10 +56,12 @@ already train their ranking models from history; a separate `train` command is
 not needed. Build happens before execution, and Excel imports are not needed
 because selections are stored in PostgreSQL.
 
-Scheduling starts at 07:07 UTC year-round, with up to two hourly retries
-at 08:07 and 09:07 UTC. The first attempt is at 08:07 Europe/Skopje in winter
-and 09:07 in summer. Avoiding minute zero reduces peak-hour scheduling load,
-but GitHub can still delay or drop scheduled occurrences; this is not an exact-time guarantee.
+Scheduling starts at 07:07 Europe/Skopje, with up to two hourly retries
+at 08:07 and 09:07 local time. Since GitHub cron uses UTC, the workflow covers
+the UTC hours that map to those three local times and filters each occurrence
+through the Europe/Skopje timezone. Avoiding minute zero reduces peak-hour
+scheduling load, but GitHub can still delay or drop scheduled occurrences;
+this is not an exact-time guarantee.
 The three-attempt budget and completed steps survive retries, revision changes
 and ticket-count changes. Existing date/mode tickets are reused rather than regenerated.
 Once a manual or scheduled execution succeeds for the target date, subsequent
@@ -630,10 +632,12 @@ dotnet run --no-build -- ticket 2026-10-23 15 ml
   Allsvenskan, Slovakia Nike Liga, Slovenia Prva Liga, Russia Premier League,
   Romania Superliga, Denmark 1st Division, Czech Chance Liga, France Ligue 2,
   England Championship, Germany Bundesliga 2, Italy Serie B, Spain La Liga 2.
-  It picks the top eligible selection in each league before considering a second
-  selection from any league (maximum two per league) to fill the requested count.
-  Within a league, source agreement share ranks first, followed by supporting-vote
-  count and the AI-safe ranking. Unknown or unlisted league labels are excluded.
+  All ticket generators use the same ordering: priority leagues first, one
+  selection per league per round; eligible unrecognized league labels are used
+  afterward as fallback. Explicitly excluded cup competitions and missing
+  league labels are never selected. Within each league, the generator's existing
+  ranking determines the order. The `league` flag keeps its separate simulation
+  mode but does not change this ordering.
   Existing odds and calibration thresholds still apply; if fewer than the
   requested number qualify, the ticket stays shorter. This ranking is not a
   guarantee of improved accuracy.
@@ -657,12 +661,12 @@ fixture/date matching, merge duplicate stored fixtures, and exclude started
 matches. Nonempty tickets are now saved to the simulation ledger for subsequent
 grading, with the historical quality evidence frozen for each pick.
 
-- `daily-ticket-league` accepts only the supported leagues listed above. It
-  takes one candidate per league in priority order, then second choices, then
-  further rounds if needed to reach the requested count. Unlike `ai-rank ...
-  league`, it has no two-per-league cap.
-- `daily-ticket` has no league filter, league priority or per-league cap. It
-  ranks all eligible daily fixtures together.
+- Both commands take one candidate per priority league in configured order,
+  then subsequent rounds. If that does not fill the ticket, other unrecognized
+  league labels are used as fallback, one per league per round. Explicitly
+  excluded cups and fixtures without league metadata are never selected.
+- `daily-ticket-league` and `daily-ticket` share the same selection ordering;
+  they retain distinct simulation modes and output filenames.
 
 Ranking uses the exact-market Wilson lower bound, measured accuracy and sample
 size before source agreement/probability tie-breaks. Source forecasts and raw ML

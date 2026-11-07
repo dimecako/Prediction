@@ -149,6 +149,24 @@ public sealed class DailyTicketSelectorTests
     }
 
     [Fact]
+    public void DailyAndFixedTicketsUseOtherLeaguesOnlyAfterPriorityLeaguePicks()
+    {
+        var matches = Enumerable.Range(1, 4).Select(i => Fixture(i)).ToList();
+        string[] leagues = ["FRANCE 1", "ENGLAND 1", "SWEDEN 3", "UEFA Champions League"];
+        var offers = matches.Select((match, index) => Offer(match) with { League = leagues[index] }).ToList();
+        var calibration = TicketSelectorTests.Calibrate(matches[0]);
+
+        var daily = DailyTicketSelector.Build(matches, offers, Date, Now, 4, false,
+            calibration: calibration);
+        var fixedTicket = DailyTicketSelector.BuildFixed(matches, offers, Date, Now, 4,
+            calibration: calibration);
+
+        Assert.Equal(new long[] { 2, 1, 3 }, daily.Picks.Select(p => p.MatchId));
+        Assert.Equal(new long[] { 2, 1, 3 }, fixedTicket.Picks.Select(p => p.MatchId));
+        Assert.Equal(1, daily.ExcludedLeagues);
+    }
+
+    [Fact]
     public void ExcludesWrongDatesStartedAndUnmatchedFixtures()
     {
         var matches = Enumerable.Range(1, 4).Select(i => Fixture(i)).ToList();

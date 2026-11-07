@@ -274,23 +274,18 @@ public partial class Program
             "with previous winner/goal-signal gates. Strict FT challenger not promoted.");
         if (winnerGoalsOnly)
             Console.WriteLine("[TIKET] FT-COMBOS ONLY: win & 2-5/2-6 total goals or winner scores 2+. No straight wins, BTTS or standalone goals; all base price bands considered.");
-        if (prioritizeLeagues)
-            Console.WriteLine("[TIKET] Liga-rezim: prvo po eden izbor od ligite po prioritet; ako se pod 15, " +
-                "dozvolen e vtor izbor po liga. Primarno se rangira exact-market istoriskata sigurnost.");
+        Console.WriteLine("[TIKET] Liga-redosled: prvo prioritetnite ligi, po eden izbor od liga po krug; " +
+            "ako nema dovolno, prodolzuva so ostanatite ligi. Eksplicitno isklucenite kup-natprevari ostanuvaat iskluceni.");
 
         foreach (var rejection in rejected.OrderByDescending(x => x.Value))
             Console.WriteLine($"[TIKET] Preskoknati {rejection.Value}: {rejection.Key}");
-        var picks = prioritizeLeagues
-            ? LeagueTicketSelector.Select(best, count, x => x.League,
-                x => x.AgreementShare, x => x.AgreementVotes, x => x.RankSafe,
-                x => x.Accuracy, x => x.Accuracy, x => x.SignalPriority, safetyFirst: true).ToList()
-            : best
+        var rankedBest = best
                 .OrderByDescending(x => !rankBySafety && x.HasValue)
                 .ThenByDescending(x => rankBySafety ? x.RankSafe : x.RankSafe * x.Odds!.Value)
                 .ThenByDescending(x => x.Accuracy)
                 .ThenByDescending(x => x.SignalPriority)
-                .Take(count)
                 .ToList();
+        var picks = LeagueTicketSelector.SelectPriorityFirst(rankedBest, count, x => x.League).ToList();
         if (prioritizeLeagues)
         {
             Console.WriteLine($"[TIKET] Liga-rezim: izbori={picks.Count}; league diagnosis of matched future fixtures:");
@@ -341,7 +336,7 @@ public partial class Program
                 ? bookmaker.Count > 0 && best.All(pick => pick.AgreementTotal > 0)
                 : evaluatedValidFixture && !invalidFixtureData;
             if ((evaluatedValidFixture && !invalidFixtureData) ||
-                LeagueTicketSelector.IsNoSelection(prioritizeLeagues, picks.Count,
+                LeagueTicketSelector.IsNoSelection(false, picks.Count,
                 best.Select(x => x.League), hasRequiredData &&
                     CommandExecution.ExitCode == 0, evaluatedValidFixture))
                 Console.WriteLine("[TIKET] NO_SELECTION: no candidate passed exact-market quality thresholds. No ticket saved or exported.");

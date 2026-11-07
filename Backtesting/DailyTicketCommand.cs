@@ -73,9 +73,8 @@ public partial class Program
         Console.WriteLine($"[DAILY] {TicketQualityPolicy.Version}: exact-market pre-date historical qualification. " +
             "Winner & FT goals retains previous eligibility pending separate validation. " +
             "Source agreement and raw ML are not calibrated win probabilities. No half-time markets.");
-        Console.WriteLine(leagueOnly
-            ? "[DAILY] Samo prioritetnite ligi; prvo eden po liga, potoa slednite po istiot redosled do baraniot broj."
-            : "[DAILY] Site ligi, bez liga-filter ili ogranicuvanje po liga.");
+        Console.WriteLine("[DAILY] Prvo prioritetnite ligi po redosled; ako nema dovolno izbori, " +
+            "prodolzuva so ostanatite ligi. Kup-natprevarite ostanuvaat iskluceni.");
         Console.WriteLine($"[DAILY] Kvalifikuvani={selection.Eligible} | Iskluceni ligi={selection.ExcludedLeagues} | " +
             $"Izbrani={selection.Picks.Count}/{count}");
         if (leagueOnly)

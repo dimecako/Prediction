@@ -99,6 +99,29 @@ public sealed class LeagueTicketSelectorTests
     }
 
     [Fact]
+    public void PriorityFirstFillsPriorityRoundsBeforeFallbackAndExcludesMissingAndCupLeagues()
+    {
+        var candidates = new[]
+        {
+            new Candidate("SWEDEN 3", "Fallback first", 1, 10, 1, 1, 1),
+            new Candidate("ENGLAND 1", "England first", .8, 8, .8, .8, .8),
+            new Candidate("FRANCE 1", "France first", .8, 8, .8, .8, .8),
+            new Candidate("UEFA Champions League", "Cup", 1, 10, 1, 1, 1),
+            new Candidate("", "Missing league", 1, 10, 1, 1, 1),
+            new Candidate("SWEDEN 3", "Fallback second", .7, 7, .7, .7, .7),
+            new Candidate("Unknown League", "Other fallback", .7, 7, .7, .7, .7),
+            new Candidate("ENGLAND 1", "England second", .7, 7, .7, .7, .7)
+        };
+
+        var selected = LeagueTicketSelector.SelectPriorityFirst(candidates, 6, x => x.League);
+
+        Assert.Equal(
+            ["England first", "France first", "England second", "Fallback first",
+                "Other fallback", "Fallback second"],
+            selected.Select(x => x.Name));
+    }
+
+    [Fact]
     public void PrefersSourceAgreementBeforeAiSafetyWithinLeague()
     {
         var candidates = new[]
