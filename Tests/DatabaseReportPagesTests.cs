@@ -19,10 +19,10 @@ public sealed class DatabaseReportPagesTests
     }
 
     [Fact]
-    public void TicketDropdownIncludesFtCombinationsAndHistoricalRetiredMode()
+    public void TicketDropdownIncludesShortBenchmarkFtCombinationsAndHistoricalRetiredMode()
     {
         Assert.Contains("fixed-auto", DatabaseReportService.TicketModes);
-        Assert.Equal(["1-3p3+", "daily", "daily-league", "fixed-auto", "ft-combos"],
+        Assert.Equal(["1-3p3+", "daily", "daily-league", "daily-short", "fixed-auto", "ft-combos"],
             DatabaseReportService.TicketModes.Order().ToArray());
     }
 

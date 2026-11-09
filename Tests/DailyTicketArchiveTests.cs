@@ -73,6 +73,11 @@ public sealed class DailyTicketArchiveTests
         var league = DailyTicketArchive.Read(workbook, Date, [Fixture]);
         Assert.Equal("daily-league", league.Mode);
         Assert.NotEqual(ticket.Fingerprint, league.Fingerprint);
+        workbook.Worksheet("Info").Cell(1, 1).Value = "daily-ticket-short";
+        var shortTicket = DailyTicketArchive.Read(workbook, Date, [Fixture]);
+        Assert.Equal("daily-short", shortTicket.Mode);
+        Assert.True(TicketLedger.IsDailyMode(shortTicket.Mode));
+        Assert.NotEqual(ticket.Fingerprint, shortTicket.Fingerprint);
     }
 
     [Fact]

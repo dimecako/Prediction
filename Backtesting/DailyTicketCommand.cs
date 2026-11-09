@@ -13,17 +13,22 @@ public partial class Program
     private static async Task RunDailyTicketAsync(string[] args)
     {
         bool leagueOnly = args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase);
-        string command = leagueOnly ? "daily-ticket-league" : "daily-ticket";
+        bool shortTicket = args[0].Equals("daily-ticket-short", StringComparison.OrdinalIgnoreCase);
+        string command = leagueOnly ? "daily-ticket-league" : shortTicket ? "daily-ticket-short" : "daily-ticket";
         bool why = args.Skip(2).Any(a => a.Equals("why", StringComparison.OrdinalIgnoreCase));
         var countArgs = args.Skip(2).Where(a => !a.Equals("why", StringComparison.OrdinalIgnoreCase)).ToList();
-        int count = TicketDefaultCount;
+        int count = shortTicket ? 7 : TicketDefaultCount;
+        int minimumCount = shortTicket ? 3 : 1;
+        int maximumCount = shortTicket ? 7 : TicketQualityPolicy.MaximumSelections;
         if (args.Length < 2 ||
             !DateOnly.TryParseExact(args[1], "yyyy-MM-dd", CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var date) ||
             countArgs.Count > 1 ||
-            (countArgs.Count == 1 && (!int.TryParse(countArgs[0], out count) || count is < 1 or > TicketQualityPolicy.MaximumSelections)))
+            (countArgs.Count == 1 && (!int.TryParse(countArgs[0], out count) ||
+                count < minimumCount || count > maximumCount)))
         {
-            Console.Error.WriteLine($"[DAILY] Invalid arguments. Use: {command} yyyy-MM-dd [count 1-15] [why]");
+            Console.Error.WriteLine($"[DAILY] Invalid arguments. Use: {command} yyyy-MM-dd " +
+                (shortTicket ? "[count 3-7] [why]" : "[count 1-15] [why]"));
             CommandExecution.Fail();
             return;
         }
@@ -33,7 +38,8 @@ public partial class Program
             throw new InvalidOperationException("ConnectionStrings__FootballDb environment variable is not configured.");
         var options = new DbContextOptionsBuilder<FootballDbContext>().UseNpgsql(connection).Options;
         await using var db = new FootballDbContext(options);
-        if (await ReuseFrozenTicketAsync(db, date, leagueOnly ? "daily-league" : "daily"))
+        string mode = shortTicket ? "daily-short" : leagueOnly ? "daily-league" : "daily";
+        if (await ReuseFrozenTicketAsync(db, date, mode))
             return;
         var matches = await db.Matches.AsNoTracking()
             .Where(m => m.MatchDate == date)
@@ -73,6 +79,8 @@ public partial class Program
         Console.WriteLine($"[DAILY] {TicketQualityPolicy.Version}: exact-market pre-date historical qualification. " +
             "Winner & FT goals retains previous eligibility pending separate validation. " +
             "Source agreement and raw ML are not calibrated win probabilities. No half-time markets.");
+        if (shortTicket)
+            Console.WriteLine("[DAILY] Short benchmark: requires 3-7 fully qualified selections; otherwise no ticket is saved.");
         Console.WriteLine("[DAILY] Prvo prioritetnite ligi po redosled; ako nema dovolno izbori, " +
             "prodolzuva so ostanatite ligi. Kup-natprevarite ostanuvaat iskluceni.");
         Console.WriteLine($"[DAILY] Kvalifikuvani={selection.Eligible} | Iskluceni ligi={selection.ExcludedLeagues} | " +
@@ -93,6 +101,17 @@ public partial class Program
         if (selection.Picks.Count < count)
             Console.WriteLine("[DAILY] Nema dovolno mecevi so potvrdena kvota, dozvolen tip i nezapocnat termin" +
                 (leagueOnly ? " vo izbranite ligi." : ".") + " Nema izmislenuvanje dopolnitelni izbori.");
+        if (shortTicket && selection.Picks.Count < minimumCount)
+        {
+            if (selection.Picks.Count == 0 && !selection.NoSelection)
+            {
+                Console.Error.WriteLine("[DAILY] Short ticket produced no selections, but the result is not a verified NO_SELECTION; refusing to treat it as success.");
+                CommandExecution.Fail();
+                return;
+            }
+            Console.WriteLine($"[DAILY] NO_SELECTION: only {selection.Picks.Count}/{minimumCount} minimum qualified picks; no short ticket saved.");
+            return;
+        }
         if (selection.Picks.Count == 0)
         {
             if (selection.NoSelection && CommandExecution.ExitCode == 0)
@@ -111,7 +130,7 @@ public partial class Program
         if (!CommandExecution.IsAutomation)
             await db.Database.MigrateAsync();
         var saved = await TicketLedger.SaveAsync(db,
-            TicketLedger.CreateDaily(date, selection.Picks, now, leagueOnly));
+            TicketLedger.CreateDaily(date, selection.Picks, now, leagueOnly, shortTicket ? mode : null));
         Console.WriteLine($"[SIMULATION] #{saved.Ticket.Id} | " +
             $"{(saved.Created ? "Saved" : "Already saved; not duplicated")} | Mode={saved.Ticket.Mode} | " +
             "1 unit for the WHOLE ticket; not an actual bet. Historical quality metrics are frozen in evidence.");

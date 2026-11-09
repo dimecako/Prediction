@@ -20,7 +20,8 @@ public partial class Program
             return;
         }
         if (args[0].Equals("daily-ticket", StringComparison.OrdinalIgnoreCase) ||
-            args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase))
+            args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase) ||
+            args[0].Equals("daily-ticket-short", StringComparison.OrdinalIgnoreCase))
         {
             await RunDailyTicketAsync(args);
             return;

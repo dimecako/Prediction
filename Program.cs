@@ -128,6 +128,7 @@ public partial class Program
              args[0].Equals("ticket-ft-combos", StringComparison.OrdinalIgnoreCase) ||
              args[0].Equals("daily-ticket", StringComparison.OrdinalIgnoreCase) ||
              args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase) ||
+             args[0].Equals("daily-ticket-short", StringComparison.OrdinalIgnoreCase) ||
              args[0].StartsWith("daily-fixed-", StringComparison.OrdinalIgnoreCase) ||
              args[0].StartsWith("daily-ai-fixed-", StringComparison.OrdinalIgnoreCase) ||
              args[0].Equals("ai-rank", StringComparison.OrdinalIgnoreCase)))

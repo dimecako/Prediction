@@ -10,7 +10,7 @@ public static class DailyTicketArchive
     {
         var info = workbook.Worksheet("Info");
         string command = info.Cell(1, 1).GetString();
-        if (command is not ("daily-ticket" or "daily-ticket-league") ||
+        if (command is not ("daily-ticket" or "daily-ticket-league" or "daily-ticket-short") ||
             info.Cell(2, 2).GetString() != date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
             throw new InvalidDataException("Daily workbook command/date does not match the requested archive.");
         var created = DateTime.ParseExact(info.Cell(3, 2).GetString(), "O",
@@ -53,7 +53,13 @@ public static class DailyTicketArchive
             if (row.Cell(1).GetValue<int>() != picks.Count)
                 throw new InvalidDataException("Daily workbook positions must be consecutive.");
         }
-        var ticket = TicketLedger.CreateDaily(date, picks, created, command == "daily-ticket-league");
+        string mode = command switch
+        {
+            "daily-ticket-league" => "daily-league",
+            "daily-ticket-short" => "daily-short",
+            _ => "daily"
+        };
+        var ticket = TicketLedger.CreateDaily(date, picks, created, command == "daily-ticket-league", mode);
         string counts = info.Cell(4, 2).GetString();
         if (counts.Split('/')[0] != picks.Count.ToString(CultureInfo.InvariantCulture))
             throw new InvalidDataException("Daily workbook selection count does not match its Info sheet.");

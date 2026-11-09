@@ -50,11 +50,20 @@ The daily workflow runs the `daily-run` command, not the Windows-only
 `tickets.ps1`. It collects predictions for the current Europe/Skopje date,
 collects results for the previous day, and checks one additional day back only
 if that date has unresolved ticket selections. Older pending dates are not
-scanned. It then runs four ticket variants: daily, daily-league, FT combinations and
-fixed-auto. Confirmed results are not overwritten. ML-ranked variants
+scanned. It then runs five ticket variants: daily, daily-league, daily-short,
+FT combinations and fixed-auto. Confirmed results are not overwritten. ML-ranked variants
 already train their ranking models from history; a separate `train` command is
 not needed. Build happens before execution, and Excel imports are not needed
 because selections are stored in PostgreSQL.
+
+`daily-ticket-short yyyy-MM-dd [count 3-7] [why]` creates a separate
+`daily-short` comparison ticket using the same exact-market gates and ranking
+as `daily-ticket`, capped at seven selections (default 7). It saves a ticket
+only when at least three fully qualified selections exist; otherwise it reports
+`NO_SELECTION` and does not lower thresholds or pad the ticket. `daily-run`
+executes this seven-pick benchmark alongside the existing variants. Compare its
+settled ticket win rate and ROI with `daily` over a meaningful sample; a smaller
+ticket is not inherently more accurate or profitable.
 
 Scheduling starts at 07:07 Europe/Skopje, with up to two hourly retries
 at 08:07 and 09:07 local time. Since GitHub cron uses UTC, the workflow covers
