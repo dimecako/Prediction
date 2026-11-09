@@ -847,6 +847,12 @@ public partial class Program
         builder.Services.AddDbContext<FootballDbContext>(options =>
             options.UseNpgsql(connectionString));
         builder.Services.AddScoped<Prediction.Services.IDatabaseReportService, Prediction.Services.DatabaseReportService>();
+        builder.Services.AddHttpClient<Prediction.Services.IGitHubDailyWorkflowClient,
+            Prediction.Services.GitHubDailyWorkflowClient>(client =>
+            {
+                client.BaseAddress = new Uri("https://api.github.com/");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("Prediction-Daily-Run/1.0");
+            });
         builder.Services.AddProblemDetails();
         builder.Services.AddAntiforgery();
 
@@ -855,6 +861,7 @@ public partial class Program
         ConfigureWebAccess(app);
         app.UseExceptionHandler();
         Prediction.Web.DatabaseReportEndpoints.MapDatabaseReports(app);
+        Prediction.Web.DailyAutomationEndpoints.MapDailyAutomation(app);
         Prediction.Web.ResultCollectionEndpoints.MapResultCollection(app, async (date, ct) =>
         {
             if (!await analysisLock.WaitAsync(0, ct))
@@ -901,7 +908,9 @@ public partial class Program
                 "text/html; charset=utf-8";
 
             var language = Prediction.Web.DatabaseReportPages.ParseLanguage(context.Request.Query["lang"]);
-            await context.Response.WriteAsync(GetHomePage(language));
+            var antiforgery = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Antiforgery.IAntiforgery>();
+            var tokens = antiforgery.GetAndStoreTokens(context);
+            await context.Response.WriteAsync(GetHomePage(language, tokens.RequestToken));
         });
 
         // ------------------------------------------------

@@ -59,7 +59,12 @@ public static class DatabaseReportPages
             "Compare historical consensus accuracy by league and market." =>
                 "Спореди ја историската точност на консензусот по лига и пазар.",
             "Daily automation targets 08:00 Europe/Skopje; GitHub scheduling may be delayed." =>
-                "Дневната автоматизација е планирана за 08:00 часот (Europe/Skopje); GitHub може да ја започне со задоцнување.",
+                "Дневната автоматизација е планирана меѓу 07:07 и 09:07 часот (Europe/Skopje); GitHub може да ја започне со задоцнување.",
+            "Daily automation" => "Дневна автоматизација",
+            "Daily run status" => "Статус на дневното извршување",
+            "Checking today's scheduled run…" => "Се проверува денешното стартување…",
+            "View GitHub run" => "Види го GitHub run",
+            "Start daily-run manually" => "Стартувај daily-run рачно",
             "Stored predictions and tickets are available without Excel files." =>
                 "Зачуваните прогнози и тикети се достапни без Excel-датотеки.",
             "View run history and errors →" => "Прегледај ја историјата и грешките →",

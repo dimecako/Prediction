@@ -82,6 +82,15 @@ branch; scheduled runs and manual runs from `main` check out the deployed
 Actions tab for manual runs, failure details and reruns. Check the first real
 run before relying on unattended operation.
 
+The dashboard checks today's GitHub Actions daily-run status and offers a
+manual retry button only after a failed run or a missed final schedule window.
+It dispatches the existing workflow on `main`; the app does not run the scraper
+inside the Render web process. Set `GitHub__Token` on Render to a fine-grained
+GitHub token restricted to `dimecako/Prediction` with Actions read/write
+permission. The workflow retains its three-attempt-per-date limit. Without the
+token, the dashboard reports that the integration is not configured and
+manual retry is unavailable.
+
 `daily-fixed-auto yyyy-MM-dd [count]` defaults to 15 selections (allowed range
 1-15); `daily-run` passes its requested count to this mode too. Fixed-auto uses
 only straight 1/2 picks, confirmed odds >=1.60 (preferably >=1.80), source-average
