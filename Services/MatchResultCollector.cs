@@ -18,7 +18,7 @@ public static class MatchResultCollector
     public static IReadOnlyList<IMatchResultProvider> CreatePrimaryProviders(Action<string> log)
     {
         log("[RESULTS] FootballResultsOnline disabled: unlabelled scores cannot verify regulation-time FT.");
-        log("[RESULTS] Forebet is the sole primary source; SoccerVista is reserved for missing FT/HT.");
+        log("[RESULTS] Forebet is primary; SoccerVista and Flashscore are targeted fallbacks for missing FT/HT.");
         return [new ForebetResultProvider()];
     }
 
@@ -58,7 +58,7 @@ public static class MatchResultCollector
                 rows = ex.Results;
             }
             catch (Exception ex) when (ex is HttpRequestException or
-                System.Text.Json.JsonException or Newtonsoft.Json.JsonException ||
+                System.Text.Json.JsonException or Newtonsoft.Json.JsonException or Microsoft.Playwright.PlaywrightException ||
                 ex is OperationCanceledException && !cancellationToken.IsCancellationRequested)
             {
                 log($"[RESULTS] {provider.Name} failed: {ex.Message}");

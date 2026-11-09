@@ -633,19 +633,39 @@ public partial class Program
             else
                 Console.WriteLine("[RESULTS] No fixtures are missing FT/HT; SoccerVista fallback skipped.");
 
-            var collected = new CollectedMatchResults(
-                primaryCollected.Results.Concat(fallbackCollected.Results).ToList(),
-                primaryCollected.FailedProviders + fallbackCollected.FailedProviders,
-                primaryCollected.RejectedRows + fallbackCollected.RejectedRows)
+            var flashscoreCollected = new CollectedMatchResults([], 0, 0);
+            var flashscorePersistence = new MatchResultPersistenceSummary(0, 0, 0, 0, 0, 0);
+            pendingMatches = await MatchResultCollector.MissingScores(
+                collectDb.Matches.AsNoTracking().Where(x => x.MatchDate == date)).ToListAsync();
+            if (pendingMatches.Count > 0)
             {
-                SourceResults = primaryCollected.SourceResults.Concat(fallbackCollected.SourceResults).ToList()
+                Console.WriteLine($"[RESULTS] {pendingMatches.Count} fixtures still lack FT or complete HT; " +
+                    "checking only those fixtures with Flashscore.");
+                flashscoreCollected = await MatchResultCollector.CollectTargetedAsync(date,
+                    new FlashscoreResultProvider(Console.WriteLine), pendingMatches, Console.WriteLine);
+                if (flashscoreCollected.FailedProviders > 0 || flashscoreCollected.RejectedRows > 0)
+                    CommandExecution.Fail();
+                flashscorePersistence = await MatchResultPersister.PersistAsync(
+                    collectDb, date, flashscoreCollected.SourceResults, Console.WriteLine);
+            }
+            else
+                Console.WriteLine("[RESULTS] No fixtures are missing FT/HT; Flashscore fallback skipped.");
+
+            var collected = new CollectedMatchResults(
+                primaryCollected.Results.Concat(fallbackCollected.Results).Concat(flashscoreCollected.Results).ToList(),
+                primaryCollected.FailedProviders + fallbackCollected.FailedProviders + flashscoreCollected.FailedProviders,
+                primaryCollected.RejectedRows + fallbackCollected.RejectedRows + flashscoreCollected.RejectedRows)
+            {
+                SourceResults = primaryCollected.SourceResults.Concat(fallbackCollected.SourceResults)
+                    .Concat(flashscoreCollected.SourceResults).ToList()
             };
-            int matched = primaryPersistence.Matched + fallbackPersistence.Matched;
-            int inserted = primaryPersistence.Inserted + fallbackPersistence.Inserted;
-            int existing = primaryPersistence.Existing + fallbackPersistence.Existing;
-            int unmatched = primaryPersistence.Unmatched + fallbackPersistence.Unmatched;
-            int halfTimeUpdated = primaryPersistence.HalfTimeUpdated + fallbackPersistence.HalfTimeUpdated;
-            int changes = primaryPersistence.Changes + fallbackPersistence.Changes;
+            int matched = primaryPersistence.Matched + fallbackPersistence.Matched + flashscorePersistence.Matched;
+            int inserted = primaryPersistence.Inserted + fallbackPersistence.Inserted + flashscorePersistence.Inserted;
+            int existing = primaryPersistence.Existing + fallbackPersistence.Existing + flashscorePersistence.Existing;
+            int unmatched = primaryPersistence.Unmatched + fallbackPersistence.Unmatched + flashscorePersistence.Unmatched;
+            int halfTimeUpdated = primaryPersistence.HalfTimeUpdated + fallbackPersistence.HalfTimeUpdated +
+                flashscorePersistence.HalfTimeUpdated;
+            int changes = primaryPersistence.Changes + fallbackPersistence.Changes + flashscorePersistence.Changes;
             var externalResults = collected.Results;
 
             Console.WriteLine();

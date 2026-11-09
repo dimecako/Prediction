@@ -104,7 +104,7 @@ Authenticated read-only web pages:
   confused with source agreement. None of these figures is calibrated win probability.
   The "Collect results only" button opens a date confirmation form, then submits
   an authenticated, antiforgery-protected POST to `/results/collect`. It reuses
-  `collect-results` (Forebet plus targeted SoccerVista FT/HT fallback), without
+  `collect-results` (Forebet plus targeted SoccerVista and Flashscore FT/HT fallbacks), without
   migrations, prediction collection or ticket generation. Future dates are rejected;
   concurrent web collection returns 409 and partial/failed collection returns 502.
 - `/tickets`: date and mode filters for all saved variants.
@@ -503,12 +503,15 @@ old frozen ticket selections, prices and results are not rewritten.
 Sources that return no final scores cannot be repaired by identity matching:
 rerun collection later or verify against another reliable result source.
 
-`collect-results` also queries SoccerVista as a supplementary FT-only source,
-after Forebet. It reads actual `score`, never `predictionScore`, and verifies
-the fixture ID, teams, date, final score and regulation-time `FIN` status against
-the event's detail feed. Live, postponed, cancelled, extra-time and penalty
-outcomes are not used. HT stays unknown; goal-event minutes are not used to
-infer it, so half-time-dependent selections can remain Pending.
+`collect-results` tries Forebet first, then targets only fixtures still missing
+FT or complete HT with SoccerVista, and finally targets any remaining gaps with
+Flashscore. SoccerVista verifies the fixture ID, teams, date, final score and
+regulation-time `FIN` status against the event's detail feed; it does not provide
+HT, which stays unknown rather than being inferred from goal-event minutes.
+Flashscore verifies the selected date, teams and FT on both its result list and
+match page, reads HT only from the displayed first-half score, and rejects
+extra-time/penalty status or period data. Conflicting stored scores are not
+overwritten, and unavailable or invalid provider data remains unresolved.
 New SoccerVista prediction snapshots retain `soccervista:ID`; older snapshots
 still use exact normalized teams and date. Existing scores are not overwritten
 on disagreement, and HTTP/schema failures remain explicit collection errors.

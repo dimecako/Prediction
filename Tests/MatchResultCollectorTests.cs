@@ -35,7 +35,15 @@ public sealed class MatchResultCollectorTests
         Assert.DoesNotContain(providers, x => x is FootballResultsOnlineProvider);
         Assert.Contains(messages, x => x.Contains("FootballResultsOnline disabled") &&
             x.Contains("cannot verify regulation-time FT"));
-        Assert.Contains(messages, x => x.Contains("Forebet is the sole primary source"));
+        Assert.Contains(messages, x => x.Contains("Forebet is primary") &&
+            x.Contains("SoccerVista and Flashscore") && x.Contains("targeted fallbacks"));
+    }
+
+    [Fact]
+    public void FlashscoreIsNotAddedToUnfilteredPrimaryProviders()
+    {
+        var providers = MatchResultCollector.CreatePrimaryProviders(_ => { });
+        Assert.DoesNotContain(providers, x => x is FlashscoreResultProvider);
     }
 
     [Fact]
