@@ -166,6 +166,43 @@ public sealed class FtShadowTests
         Assert.Throws<InvalidDataException>(() => FtShadowEvaluation.Read(run));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(5)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    public void FrozenPayloadAcceptsPostgresMicrosecondPrecisionWithoutChangingJson(int subMicrosecondTicks)
+    {
+        var capture = Capture([Fixture()], [Offer(Fixture())], History()) with
+        {
+            CapturedAtUtc = Now.AddTicks(1234560 + subMicrosecondTicks)
+        };
+        var run = Stored(capture);
+        run.CapturedAtUtc = Now.AddTicks(1234560);
+
+        var loaded = FtShadowEvaluation.Read(run);
+
+        Assert.Equal(capture.CapturedAtUtc, loaded.CapturedAtUtc);
+        Assert.Equal(JsonSerializer.Serialize(capture), run.FrozenJson);
+    }
+
+    [Theory]
+    [InlineData(-10)]
+    [InlineData(10)]
+    public void FrozenPayloadRejectsTimestampDifferencesAtDatabasePrecision(int changedTicks)
+    {
+        var capture = Capture([Fixture()], [Offer(Fixture())], History()) with
+        {
+            CapturedAtUtc = Now.AddTicks(1234567)
+        };
+        var run = Stored(capture);
+        run.CapturedAtUtc = Now.AddTicks(1234560 + changedTicks);
+
+        Assert.Throws<InvalidDataException>(() => FtShadowEvaluation.Read(run));
+    }
+
     [Fact]
     public void CorruptFrozenPositionsQualificationPricesAndSnapshotsAreRejected()
     {
@@ -282,13 +319,17 @@ public sealed class FtShadowTests
         await using var db = new FootballDbContextFactory().CreateDbContext([]);
         await using var transaction = await db.Database.BeginTransactionAsync();
         int ticketsBefore = await db.SimulatedTickets.CountAsync();
-        var capture = Capture([Fixture()], [Offer(Fixture())], []);
+        var capture = Capture([Fixture()], [Offer(Fixture())], []) with
+        {
+            CapturedAtUtc = Now.AddTicks(1234567)
+        };
         var saved = await FtShadowEvaluation.SaveAsync(db, capture);
         var repeated = await FtShadowEvaluation.SaveAsync(db, capture with { RequestedCount = 1 });
         Assert.True(saved.Created);
         Assert.False(repeated.Created);
         Assert.Equal(saved.Run.Id, repeated.Run.Id);
         Assert.Equal(15, FtShadowEvaluation.Read(repeated.Run).RequestedCount);
+        Assert.Equal(capture.CapturedAtUtc, FtShadowEvaluation.Read(repeated.Run).CapturedAtUtc);
         Assert.Equal(ticketsBefore, await db.SimulatedTickets.CountAsync());
         await transaction.RollbackAsync();
     }

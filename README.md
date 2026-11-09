@@ -377,6 +377,8 @@ including valid zero-selection evaluations. Retries reuse it before fetching
 odds, even if the requested count changes. Missing/invalid input fails explicitly
 without saving a misleading empty run. Frozen offers retain eligibility,
 rejection reasons, historical scores and each arm's selected positions.
+Frozen capture timestamps are compared with database metadata at PostgreSQL's
+microsecond precision; the original JSON timestamp and decisions remain unchanged.
 
 The cumulative report shows each exact combination type and totals: offered,
 qualified, selected, coverage, wins/losses/Pending, accuracy with descriptive

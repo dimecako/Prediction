@@ -160,8 +160,11 @@ public static class FtShadowEvaluation
     {
         var capture = JsonSerializer.Deserialize<FtShadowCapture>(run.FrozenJson) ??
             throw new InvalidDataException($"Empty frozen shadow run #{run.Id}.");
+        // PostgreSQL truncates timestamps to microseconds; JSON preserves .NET's 100 ns ticks.
         if (run.Experiment != Experiment || capture.Experiment != run.Experiment ||
-            capture.Date != run.MatchDate || capture.CapturedAtUtc != run.CapturedAtUtc ||
+            capture.Date != run.MatchDate ||
+            capture.CapturedAtUtc.Ticks / TimeSpan.TicksPerMicrosecond !=
+                run.CapturedAtUtc.Ticks / TimeSpan.TicksPerMicrosecond ||
             capture.RequestedCount != run.RequestedCount ||
             capture.BaselineVersion != BaselineVersion || capture.ChallengerVersion != ChallengerVersion)
             throw new InvalidDataException($"Inconsistent frozen shadow run #{run.Id}.");
