@@ -48,9 +48,34 @@ public sealed class PredictionSnapshotWriter
             : cleaned;
     }
 
-    public async Task SaveAsync(
+    public async Task SaveAllowedAsync(
+        string targetDate,
+        IReadOnlyCollection<UnifiedMatch> matches)
+    {
+        var allowed = new Dictionary<UnifiedMatch, string>();
+        int outOfScope = 0;
+        foreach (var match in matches)
+        {
+            if (!LeagueTicketSelector.IsAllowedLeague(match.League))
+            {
+                outOfScope++;
+                continue;
+            }
+            allowed.Add(match, match.League!.Trim());
+        }
+
+        Console.WriteLine($"[DB] League scope: allowed={allowed.Count}; out-of-scope={outOfScope}. " +
+            "League identity came from a league-bearing prediction source.");
+        await SaveAsync(targetDate, allowed.Keys.ToList(), allowed);
+    }
+
+    public Task SaveAsync(string targetDate, IReadOnlyCollection<UnifiedMatch> matches) =>
+        SaveAsync(targetDate, matches, null);
+
+    private async Task SaveAsync(
     string targetDate,
-    IReadOnlyCollection<UnifiedMatch> matches)
+    IReadOnlyCollection<UnifiedMatch> matches,
+    IReadOnlyDictionary<UnifiedMatch, string>? leagueByMatch)
     {
         DateTime capturedAtUtc = DateTime.UtcNow;
 
@@ -158,6 +183,7 @@ public sealed class PredictionSnapshotWriter
                     ExternalMatchId = externalMatchId,
                     HomeTeam = unified.HomeOrig,
                     AwayTeam = unified.AwayOrig,
+                    League = leagueByMatch?.GetValueOrDefault(unified),
                     MatchDate = matchDate,
                     KickoffUtc = kickoffUtc,
                     CreatedAtUtc = capturedAtUtc,
@@ -171,6 +197,8 @@ public sealed class PredictionSnapshotWriter
             else
             {
                 match.MatchDate = matchDate;
+                if (leagueByMatch != null)
+                    match.League = leagueByMatch[unified];
 
                 if (!match.KickoffUtc.HasValue)
                     match.KickoffUtc = kickoffUtc;

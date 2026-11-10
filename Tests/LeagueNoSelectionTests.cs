@@ -30,7 +30,6 @@ public sealed class LeagueNoSelectionTests
     }
 
     [Theory]
-    [InlineData("UEFA Champions League")]
     [InlineData("Imaginary Cup")]
     public async Task ValidLeagueFilterWithoutPicksSucceedsAndCompletesCheckpoint(string? league)
     {
@@ -47,6 +46,13 @@ public sealed class LeagueNoSelectionTests
 
         Assert.Equal(0, status);
         Assert.True(checkpoint.IsCompleted(step));
+    }
+
+    [Fact]
+    public void ConfiguredEuropeanCompetitionsAreNotTreatedAsExcluded()
+    {
+        Assert.False(LeagueTicketSelector.IsNoSelection(
+            true, 0, ["UEFA Champions League"], hasRequiredData: true));
     }
 
     [Theory]

@@ -9,6 +9,27 @@ namespace Prediction.Tests;
 public sealed class PredictionSnapshotWriterTests
 {
     [DatabaseFact]
+    public async Task ProductionCaptureStoresOnlyUniquelyMatchedAllowedLeaguePredictions()
+    {
+        await using var db = new FootballDbContextFactory().CreateDbContext([]);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        const string date = "2026-11-01";
+        var allowed = Capture("Allowed Home", "Allowed Away");
+        allowed.League = "UEFA Champions League";
+        var outside = Capture("Outside Home", "Outside Away");
+        outside.League = "SWEDEN 3";
+
+        await new PredictionSnapshotWriter(db).SaveAllowedAsync(date, [allowed, outside]);
+
+        var stored = await db.Matches.Include(x => x.PredictionSnapshots).ToListAsync();
+        var match = Assert.Single(stored);
+        Assert.Equal("UEFA Champions League", match.League);
+        Assert.Equal("Allowed Home", match.HomeTeam);
+        Assert.Single(match.PredictionSnapshots);
+        await transaction.RollbackAsync();
+    }
+
+    [DatabaseFact]
     public async Task CaptureReusesVerifiedAliasesButAnyConflictPreventsAllCaptureWrites()
     {
         await using var db = new FootballDbContextFactory().CreateDbContext([]);
@@ -146,4 +167,11 @@ public sealed class PredictionSnapshotWriterTests
     {
         MatchId = id, Source = "Forebet", SourceMatchId = "forebet:123"
     };
+
+    private static UnifiedMatch Capture(string home, string away)
+    {
+        var match = new UnifiedMatch { HomeOrig = home, AwayOrig = away };
+        match.Sources["Forebet"] = new() { SourceMatchId = $"forebet:{home}", Tip = "1" };
+        return match;
+    }
 }

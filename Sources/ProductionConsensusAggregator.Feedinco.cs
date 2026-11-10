@@ -244,7 +244,7 @@ public partial class ProductionConsensusAggregator
 
                     foreach (JToken item in fixtures)
                     {
-                        SiteMatch? parsed = ParseSokapediaFixture(item);
+                        SiteMatch? parsed = ParseSokapediaFixture(item, ReadSokapediaLeagueName(league));
                         if (parsed != null)
                             UpsertFeedincoMatch(results, parsed);
                     }
@@ -271,7 +271,17 @@ public partial class ProductionConsensusAggregator
         return results;
     }
 
-    private static SiteMatch? ParseSokapediaFixture(JToken item)
+    private static string? ReadSokapediaLeagueName(JToken league)
+    {
+        string? name = league["name"]?.ToString() ??
+            league["league_name"]?.ToString() ??
+            league["leagueName"]?.ToString() ??
+            league["competition_name"]?.ToString() ??
+            league["title"]?.ToString();
+        return string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+    }
+
+    private static SiteMatch? ParseSokapediaFixture(JToken item, string? leagueName)
     {
         string home = item["home_team_name"]?.ToString().Trim() ?? "";
         string away = item["away_team_name"]?.ToString().Trim() ?? "";
@@ -339,6 +349,7 @@ public partial class ProductionConsensusAggregator
         return new SiteMatch
         {
             SiteName = "Feedinco",
+            League = leagueName,
             HomeTeam = home,
             AwayTeam = away,
             Tip = tip,
@@ -808,4 +819,3 @@ public partial class ProductionConsensusAggregator
         }
     }
 }
-

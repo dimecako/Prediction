@@ -487,6 +487,7 @@ public partial class ProductionConsensusAggregator
         string dbKey = GetOrCreateMatch(siteMatch.HomeTeam, siteMatch.AwayTeam);
         if (unifiedDb.TryGetValue(dbKey, out var match))
         {
+            match.League ??= siteMatch.League;
             match.Sources[siteMatch.SiteName] = new MatchSourceData
             {
                 SourceMatchId = siteMatch.SourceMatchId,

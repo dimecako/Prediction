@@ -25,6 +25,20 @@ public sealed class TicketQualityPolicyTests
         Assert.Equal(1, TicketQualityPolicy.Calibrate([prepared]).Get("1X2|1|70+").Total);
     }
 
+    [Fact]
+    public void HistoryExcludesMatchesOutsideConfiguredLeagueAllowlist()
+    {
+        var allowed = Historical();
+        var outside = Historical();
+        outside.Id = 2;
+        outside.League = "SWEDEN 3";
+
+        var prepared = TicketQualityPolicy.PrepareHistory([allowed, outside], Target, _ => { });
+
+        Assert.Single(prepared);
+        Assert.Equal(allowed.Id, prepared[0].Id);
+    }
+
     [Theory]
     [InlineData("2030-01-09T23:00:00Z")]
     [InlineData("2030-01-10T00:00:00Z")]
@@ -196,6 +210,7 @@ public sealed class TicketQualityPolicyTests
         match.Id = 1;
         match.HomeTeam = "Home United";
         match.AwayTeam = "Away City";
+        match.League = "ENGLAND 1";
         match.MatchDate = DateOnly.FromDateTime(Kickoff);
         match.KickoffUtc = Kickoff;
         match.Result = new()

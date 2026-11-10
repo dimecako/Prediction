@@ -81,8 +81,8 @@ public partial class Program
             "Source agreement and raw ML are not calibrated win probabilities. No half-time markets.");
         if (shortTicket)
             Console.WriteLine("[DAILY] Short benchmark: requires 3-7 fully qualified selections; otherwise no ticket is saved.");
-        Console.WriteLine("[DAILY] Prvo prioritetnite ligi po redosled; ako nema dovolno izbori, " +
-            "prodolzuva so ostanatite ligi. Kup-natprevarite ostanuvaat iskluceni.");
+        Console.WriteLine("[DAILY] Se koristat samo ligite od konfiguriranata allowlist; " +
+            "nema prioritetni ligi, a nepoznati/nedozvoleni ligi se isklucuvaat.");
         Console.WriteLine($"[DAILY] Kvalifikuvani={selection.Eligible} | Iskluceni ligi={selection.ExcludedLeagues} | " +
             $"Izbrani={selection.Picks.Count}/{count}");
         if (leagueOnly)

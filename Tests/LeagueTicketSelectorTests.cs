@@ -9,30 +9,47 @@ public sealed class LeagueTicketSelectorTests
         string League, string Name, double Agreement, int Votes, double Safety, double Ml, double Accuracy);
 
     [Theory]
-    [InlineData("ENGLAND 1", 0)]
-    [InlineData("Premier League", 0)]
-    [InlineData("Ligue 2", 20)]
-    [InlineData("England Championship", 21)]
-    [InlineData("Bundesliga 2", 22)]
-    [InlineData("Serie B", 23)]
-    [InlineData("La Liga 2", 24)]
-    public void MapsSupportedLeagueNamesToConfiguredOrder(string league, int expectedPriority)
+    [InlineData("ENGLAND 1")]
+    [InlineData("Premier League")]
+    [InlineData("Ligue 2")]
+    [InlineData("England Championship")]
+    [InlineData("Bundesliga 2")]
+    [InlineData("Serie B")]
+    [InlineData("La Liga 2")]
+    [InlineData("Austria 2. Liga")]
+    [InlineData("Bulgaria 1")]
+    [InlineData("Chile Liga de Primera")]
+    [InlineData("Cyprus")]
+    [InlineData("Greece Super League")]
+    [InlineData("Hungary NB1")]
+    [InlineData("Netherlands Eerste Divisie")]
+    [InlineData("Norway Eliteserien")]
+    [InlineData("Portugal Liga Portugal 2")]
+    [InlineData("Scottish Championship")]
+    [InlineData("Switzerland Challenge League")]
+    [InlineData("USA MLS")]
+    [InlineData("Denmark Superliga")]
+    [InlineData("UEFA Champions League")]
+    [InlineData("UEFA Europa League")]
+    [InlineData("UEFA Conference League")]
+    public void AllowsConfiguredLeagueNamesWithoutPriorityRanks(string league)
     {
-        Assert.Equal(expectedPriority, LeagueTicketSelector.GetPriority(league));
+        Assert.True(LeagueTicketSelector.IsAllowedLeague(league));
+        Assert.Equal(LeagueEligibility.Eligible, LeagueTicketSelector.Classify(league));
     }
 
     [Fact]
-    public void DoesNotConfuseUnlistedDivisionsWithPriorityLeagues()
+    public void DoesNotConfuseUnlistedDivisionsWithAllowedLeagues()
     {
-        Assert.Equal(-1, LeagueTicketSelector.GetPriority("SWEDEN 3"));
-        Assert.Equal(-1, LeagueTicketSelector.GetPriority("SLOVAKIA 2"));
+        Assert.False(LeagueTicketSelector.IsAllowedLeague("SWEDEN 3"));
+        Assert.False(LeagueTicketSelector.IsAllowedLeague("SLOVAKIA 2"));
     }
 
     [Theory]
     [InlineData(null, LeagueEligibility.Missing)]
     [InlineData("", LeagueEligibility.Missing)]
     [InlineData("  ", LeagueEligibility.Missing)]
-    [InlineData("UEFA Champions League", LeagueEligibility.IntentionallyExcluded)]
+    [InlineData("UEFA Champions League", LeagueEligibility.Eligible)]
     [InlineData("UEFA Youth League", LeagueEligibility.IntentionallyExcluded)]
     [InlineData("England FA Cup", LeagueEligibility.IntentionallyExcluded)]
     [InlineData("DFB-Pokal", LeagueEligibility.IntentionallyExcluded)]
@@ -47,7 +64,7 @@ public sealed class LeagueTicketSelectorTests
     {
         Assert.Equal(expected, LeagueTicketSelector.Classify(league));
         if (expected != LeagueEligibility.Eligible)
-            Assert.Equal(-1, LeagueTicketSelector.GetPriority(league));
+            Assert.False(LeagueTicketSelector.IsAllowedLeague(league));
     }
 
     [Fact]
@@ -56,7 +73,7 @@ public sealed class LeagueTicketSelectorTests
         var diagnosis = LeagueTicketSelector.Diagnose(
             [null, "", "UEFA Champions League", "UEFA Champions League", "Imaginary Cup", "ENGLAND 1"]);
         Assert.Contains(new("(missing)", LeagueEligibility.Missing, 2), diagnosis);
-        Assert.Contains(new("UEFA Champions League", LeagueEligibility.IntentionallyExcluded, 2), diagnosis);
+        Assert.Contains(new("UEFA Champions League", LeagueEligibility.Eligible, 2), diagnosis);
         Assert.Contains(new("Imaginary Cup", LeagueEligibility.Unrecognized, 1), diagnosis);
         Assert.Contains(new("ENGLAND 1", LeagueEligibility.Eligible, 1), diagnosis);
     }
@@ -76,7 +93,7 @@ public sealed class LeagueTicketSelectorTests
     }
 
     [Fact]
-    public void SelectsHighestAgreementInPriorityOrderThenAllowsSecondPickPerLeague()
+    public void SelectsAllAllowedLeaguesByRankingAndRoundRobinWithoutPriority()
     {
         var candidates = new[]
         {
@@ -94,12 +111,12 @@ public sealed class LeagueTicketSelectorTests
             x => x.Ml, x => x.Accuracy, _ => 0);
 
         Assert.Equal(
-            ["England best agreement", "France", "Sweden", "England lower agreement", "France second"],
+            ["Sweden", "France", "England best agreement", "Sweden second", "France second"],
             selected.Select(x => x.Name));
     }
 
     [Fact]
-    public void PriorityFirstFillsPriorityRoundsBeforeFallbackAndExcludesMissingAndCupLeagues()
+    public void SelectionExcludesUnconfiguredLeaguesAndAllowsConfiguredEuropeanCompetitions()
     {
         var candidates = new[]
         {
@@ -113,11 +130,10 @@ public sealed class LeagueTicketSelectorTests
             new Candidate("ENGLAND 1", "England second", .7, 7, .7, .7, .7)
         };
 
-        var selected = LeagueTicketSelector.SelectPriorityFirst(candidates, 6, x => x.League);
+        var selected = LeagueTicketSelector.SelectAllowedLeagues(candidates, 6, x => x.League);
 
         Assert.Equal(
-            ["England first", "France first", "England second", "Fallback first",
-                "Other fallback", "Fallback second"],
+            ["England first", "France first", "Cup", "England second"],
             selected.Select(x => x.Name));
     }
 

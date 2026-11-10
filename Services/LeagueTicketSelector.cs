@@ -15,7 +15,7 @@ public sealed record LeagueDiagnosis(string League, LeagueEligibility Eligibilit
 
 public static class LeagueTicketSelector
 {
-    private static readonly string[][] LeagueAliases =
+    private static readonly string[][] AllowedLeagueAliases =
     [
         ["ENGLAND 1", "ENGLAND PREMIER", "PREMIER LEAGUE"],
         ["FRANCE 1", "FRANCE LIGUE 1", "LIGUE 1"],
@@ -41,21 +41,34 @@ public static class LeagueTicketSelector
         ["ENGLAND 2", "ENGLAND CHAMPIONSHIP", "CHAMPIONSHIP"],
         ["GERMANY 2", "GERMANY BUNDESLIGA 2", "BUNDESLIGA 2"],
         ["ITALY 2", "ITALY SERIE B", "SERIE B"],
-        ["SPAIN 2", "SPAIN LALIGA 2", "SPAIN LA LIGA 2", "LA LIGA 2", "LALIGA 2"]
+        ["SPAIN 2", "SPAIN LALIGA 2", "SPAIN LA LIGA 2", "LA LIGA 2", "LALIGA 2"],
+        ["AUSTRIA 2", "AUSTRIA 2 LIGA", "2 LIGA AUSTRIA"],
+        ["BULGARIA 1", "BULGARIA FIRST LEAGUE", "BULGARIA FIRST PROFESSIONAL LEAGUE"],
+        ["CHILE LIGA DE PRIMERA", "LIGA DE PRIMERA", "CHILE PRIMERA DIVISION"],
+        ["CYPRUS", "CYPRUS 1", "CYPRUS FIRST DIVISION", "CYPRUS 1ST DIVISION"],
+        ["GREECE SUPER LEAGUE", "SUPER LEAGUE GREECE", "GREECE 1"],
+        ["HUNGARY NB1", "HUNGARY NB I", "HUNGARY OTP BANK LIGA", "NB1"],
+        ["NETHERLANDS EERSTE", "NETHERLANDS EERSTE DIVISIE", "NETHERLANDS 2", "EERSTE DIVISIE"],
+        ["NORWAY ELITESERIEN", "ELITESERIEN"],
+        ["PORTUGAL LIGA PORTUGAL 2", "PORTUGAL 2", "LIGA PORTUGAL 2"],
+        ["SCOTLAND CHAMPIONSHIP", "SCOTTISH CHAMPIONSHIP", "SCOTLAND CHAMPIONSHIPS", "SCOTLAND 2"],
+        ["SWITZERLAND CHALLENGE LEAGUE", "SWISS CHALLENGE LEAGUE", "CHALLENGE LEAGUE"],
+        ["USA MLS", "UNITED STATES MLS", "MAJOR LEAGUE SOCCER", "MLS"],
+        ["DENMARK SUPERLIGA", "DANISH SUPERLIGA", "SUPERLIGA DENMARK"],
+        ["UEFA CHAMPIONS LEAGUE", "CHAMPIONS LEAGUE"],
+        ["UEFA EUROPA LEAGUE", "EUROPA LEAGUE"],
+        ["UEFA CONFERENCE LEAGUE", "UEFA EUROPA CONFERENCE LEAGUE", "CONFERENCE LEAGUE"]
     ];
 
-    private static readonly Dictionary<string, int> PriorityByAlias =
-        LeagueAliases
-            .SelectMany((aliases, priority) => aliases.Select(alias => (Normalize(alias), priority)))
-            .ToDictionary(x => x.Item1, x => x.priority, StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> LeagueIdentityByAlias =
+        AllowedLeagueAliases.SelectMany(aliases =>
+            aliases.Select(alias => (Alias: Normalize(alias), Identity: Normalize(aliases[0])))
+        ).ToDictionary(x => x.Alias, x => x.Identity, StringComparer.Ordinal);
 
     // Exact competition identities only: a substring such as "cup" or "U19" is not evidence.
     private static readonly HashSet<string> ExcludedCompetitions = new(
         new[]
         {
-            "UEFA CHAMPIONS LEAGUE", "CHAMPIONS LEAGUE",
-            "UEFA EUROPA LEAGUE", "EUROPA LEAGUE",
-            "UEFA CONFERENCE LEAGUE", "UEFA EUROPA CONFERENCE LEAGUE",
             "UEFA YOUTH LEAGUE", "UEFA SUPER CUP",
             "FA CUP", "ENGLAND FA CUP", "EFL CUP", "ENGLAND EFL CUP",
             "COPA DEL REY", "SPAIN COPA DEL REY",
@@ -64,15 +77,29 @@ public static class LeagueTicketSelector
             "COUPE DE FRANCE", "FRANCE COUPE DE FRANCE"
         }.Select(Normalize), StringComparer.Ordinal);
 
-    public static int GetPriority(string? league) =>
-        string.IsNullOrWhiteSpace(league) ? -1 :
-        PriorityByAlias.GetValueOrDefault(Normalize(league), -1);
+    public static bool IsAllowedLeague(string? league) =>
+        GetAllowedLeagueIdentity(league) != null;
+
+    public static string? GetAllowedLeagueIdentity(string? league) =>
+        !string.IsNullOrWhiteSpace(league)
+            ? LeagueIdentityByAlias.GetValueOrDefault(Normalize(league))
+            : null;
+
+    public static string? GetCompetitionIdentity(string? league)
+    {
+        if (string.IsNullOrWhiteSpace(league))
+            return null;
+        string normalized = Normalize(league);
+        return LeagueIdentityByAlias.TryGetValue(normalized, out string? identity)
+            ? identity
+            : $"OTHER|{normalized}";
+    }
 
     public static LeagueEligibility Classify(string? league)
     {
         if (string.IsNullOrWhiteSpace(league))
             return LeagueEligibility.Missing;
-        if (GetPriority(league) >= 0)
+        if (IsAllowedLeague(league))
             return LeagueEligibility.Eligible;
         return ExcludedCompetitions.Contains(Normalize(league))
             ? LeagueEligibility.IntentionallyExcluded
@@ -117,49 +144,19 @@ public static class LeagueTicketSelector
         if (count <= 0)
             return [];
 
-        var byLeague = candidates
-            .Select(candidate => (Candidate: candidate, Priority: GetPriority(getLeague(candidate))))
-            .Where(x => x.Priority >= 0)
-            .GroupBy(x => x.Priority)
-            .OrderBy(x => x.Key)
-            .Select(group => group
-                .Select(x => x.Candidate)
-                .OrderByDescending(x => safetyFirst ? getSafety(x) : getAgreementShare(x))
-                .ThenByDescending(x => safetyFirst ? getMlProbability(x) : 0)
-                .ThenByDescending(getAgreementShare)
-                .ThenByDescending(getAgreementVotes)
-                .ThenByDescending(getSafety)
-                .ThenByDescending(getMlProbability)
-                .ThenByDescending(getAccuracy)
-                .ThenByDescending(getSignalPriority)
-                .ToList())
-            .ToList();
-
-        var selected = new List<T>(Math.Min(count, LeagueAliases.Length * 2));
-
-        foreach (var league in byLeague)
-        {
-            if (selected.Count == count)
-                return selected;
-            if (league.Count > 0)
-                selected.Add(league[0]);
-        }
-
-        if (selected.Count < count)
-        {
-            foreach (var league in byLeague)
-            {
-                if (selected.Count == count)
-                    break;
-                if (league.Count > 1)
-                    selected.Add(league[1]);
-            }
-        }
-
-        return selected;
+        var ranked = candidates.Where(candidate => IsAllowedLeague(getLeague(candidate)))
+            .OrderByDescending(x => safetyFirst ? getSafety(x) : getAgreementShare(x))
+            .ThenByDescending(x => safetyFirst ? getMlProbability(x) : 0)
+            .ThenByDescending(getAgreementShare)
+            .ThenByDescending(getAgreementVotes)
+            .ThenByDescending(getSafety)
+            .ThenByDescending(getMlProbability)
+            .ThenByDescending(getAccuracy)
+            .ThenByDescending(getSignalPriority);
+        return SelectAllowedLeagues(ranked, count, getLeague);
     }
 
-    public static IReadOnlyList<T> SelectPriorityFirst<T>(
+    public static IReadOnlyList<T> SelectAllowedLeagues<T>(
         IEnumerable<T> rankedCandidates, int count, Func<T, string?> getLeague)
     {
         if (count <= 0)
@@ -168,26 +165,14 @@ public static class LeagueTicketSelector
         var candidates = rankedCandidates
             .Select((candidate, index) => (Candidate: candidate, Index: index,
                 League: getLeague(candidate)))
-            .Select(x => (x.Candidate, x.Index, x.League, Eligibility: Classify(x.League)))
-            .Where(x => x.Eligibility is LeagueEligibility.Eligible or LeagueEligibility.Unrecognized)
+            .Where(x => IsAllowedLeague(x.League))
             .ToList();
-
-        var priority = candidates.Where(x => x.Eligibility == LeagueEligibility.Eligible)
-            .GroupBy(x => GetPriority(x.League))
-            .OrderBy(group => group.Key)
-            .Select(group => group.Select(x => x.Candidate).ToList())
-            .ToList();
-        var selected = SelectRounds(priority, count);
-        if (selected.Count == count)
-            return selected;
-
-        var fallback = candidates.Where(x => x.Eligibility == LeagueEligibility.Unrecognized)
+        var byLeague = candidates
             .GroupBy(x => Normalize(x.League!))
             .OrderBy(group => group.Min(x => x.Index))
             .Select(group => group.OrderBy(x => x.Index).Select(x => x.Candidate).ToList())
             .ToList();
-        selected.AddRange(SelectRounds(fallback, count - selected.Count));
-        return selected;
+        return SelectRounds(byLeague, count);
     }
 
     private static List<T> SelectRounds<T>(IReadOnlyList<List<T>> leagues, int count)

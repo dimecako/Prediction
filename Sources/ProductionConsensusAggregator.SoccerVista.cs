@@ -54,6 +54,7 @@ public partial class ProductionConsensusAggregator
             {
                 if (tournament["events"] is not JArray events)
                     continue;
+                string? tournamentName = ReadSoccerVistaTournamentName(tournament);
 
                 foreach (JToken item in events)
                 {
@@ -96,6 +97,7 @@ public partial class ProductionConsensusAggregator
                             SiteName = "SoccerVista",
                             SourceMatchId = string.IsNullOrWhiteSpace(item["id"]?.ToString())
                                 ? null : $"soccervista:{item["id"]!.ToString().Trim()}",
+                            League = tournamentName,
                             HomeTeam = home,
                             AwayTeam = away,
                             Tip = tip,
@@ -145,6 +147,16 @@ public partial class ProductionConsensusAggregator
         }
 
         return matches;
+    }
+
+    private static string? ReadSoccerVistaTournamentName(JToken tournament)
+    {
+        string? name = tournament["name"]?.ToString() ??
+            tournament["leagueName"]?.ToString() ??
+            tournament["tournamentName"]?.ToString() ??
+            tournament["competitionName"]?.ToString() ??
+            tournament["title"]?.ToString();
+        return string.IsNullOrWhiteSpace(name) ? null : name.Trim();
     }
 
     private static string NormalizeSoccerVistaScore(string? score)

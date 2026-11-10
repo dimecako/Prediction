@@ -41,6 +41,7 @@ public static class DailyTicketSelector
 
         var rejections = new List<string>();
         var paired = new List<(Match Match, BookmakerMatch Offer)>();
+        int excluded = 0;
         foreach (var match in matches.Where(m => m.MatchDate == date))
         {
             var matching = offers.Where(o => DateOnly.FromDateTime(o.KickoffUtc.ToLocalTime()) == date &&
@@ -60,6 +61,12 @@ public static class DailyTicketSelector
         bool invalidFixture = false;
         foreach (var (match, offer) in unique)
         {
+            if (!LeagueTicketSelector.IsAllowedLeague(match.League))
+            {
+                rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: saved league is outside the configured allowlist.");
+                excluded++;
+                continue;
+            }
             if (offer.KickoffUtc <= nowUtc)
             {
                 rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Natprevarot vekje zapocnal.");
@@ -118,7 +125,7 @@ public static class DailyTicketSelector
                 }
                 evidence += $" AI 1X2={candidate.Pick} {ml.Value:P1}; raw uncalibrated model signal";
             }
-            eligible.Add(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", offer.League,
+            eligible.Add(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", match.League,
                 offer.KickoffUtc, candidate, odds!.Value, odds.Value,
                 probability, consensus.MatchingVotes, consensus.TotalVotes, evidence, ml)
             {
@@ -134,17 +141,20 @@ public static class DailyTicketSelector
             .ThenByDescending(p => p.Odds)
             .ThenByDescending(p => p.Agreement)
             .ToList();
-        var picks = LeagueTicketSelector.SelectPriorityFirst(ranked, count, p => p.League);
+        var picks = LeagueTicketSelector.SelectAllowedLeagues(ranked, count, p => p.League);
         return new(picks, rejections, unique.Count, paired.Count - unique.Count,
-            eligible.Count, 0)
+            eligible.Count, excluded)
         {
-            NoSelection = picks.Count == 0 && validFixture && !invalidFixture && calibration != null
+            NoSelection = picks.Count == 0 && !invalidFixture &&
+                (validFixture || excluded > 0) && calibration != null
         };
     }
 
     public static DailyTicketDecision Select(Match match, BookmakerMatch offer, MlMatchRanker? mlRanker = null,
         Tally? calibration = null)
     {
+        if (!LeagueTicketSelector.IsAllowedLeague(match.League))
+            return new(null, "Saved league is outside the configured allowlist.");
         var snapshots = CalibrationAnalyzer.LatestPerSource(match);
         var consensus = CalibrationAnalyzer.BuildResultConsensus(snapshots);
         if (consensus is not { Pick: "1" or "2" })
@@ -178,7 +188,7 @@ public static class DailyTicketSelector
             $"BTTS={BinaryEvidence(btts)}; Goals={BinaryEvidence(goals)}; " +
             TicketQualityPolicy.Evidence(score) +
             (mlProbability.HasValue ? $"; ML={mlProbability.Value:P1} (raw, uncalibrated)" : "; ML=n/a for exact market");
-        return new(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", offer.League,
+        return new(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", match.League,
             offer.KickoffUtc, chosen, odds!.Value, baseOdds!.Value,
             consensus.AverageProbability, consensus.MatchingVotes, consensus.TotalVotes, evidence, mlProbability)
         {
@@ -221,9 +231,14 @@ public static class DailyTicketSelector
                 rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Natprevarot vekje zapocnal.");
                 continue;
             }
+            if (!LeagueTicketSelector.IsAllowedLeague(match.League))
+            {
+                rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: saved league is outside the configured allowlist.");
+                continue;
+            }
             bool validFixture = TicketSelector.HasRequiredData(match,
                     c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick)) &&
-                LeagueTicketSelector.Classify(offer.League) != LeagueEligibility.Missing;
+                LeagueTicketSelector.IsAllowedLeague(match.League);
             evaluatedValidFixture |= validFixture;
             invalidFixtureData |= !validFixture;
             var decision = Select(match, offer, mlRanker, calibration);
@@ -233,11 +248,10 @@ public static class DailyTicketSelector
                 rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: {decision.Reason}");
         }
 
-        int excluded = eligible.Count(p =>
-            LeagueTicketSelector.Classify(p.League) == LeagueEligibility.IntentionallyExcluded);
+        int excluded = unique.Count(pair => !LeagueTicketSelector.IsAllowedLeague(pair.Match.League));
         var ranked = Rank(eligible);
         IReadOnlyList<DailyTicketPick> picks =
-            LeagueTicketSelector.SelectPriorityFirst(ranked, count, p => p.League);
+            LeagueTicketSelector.SelectAllowedLeagues(ranked, count, p => p.League);
         var targetMatches = matches.Where(match => match.MatchDate == date).ToList();
         bool hasSourceData = targetMatches.Count > 0 &&
             targetMatches.All(match => CalibrationAnalyzer.LatestPerSource(match)
@@ -245,10 +259,11 @@ public static class DailyTicketSelector
         return new(picks, rejections, unique.Count, paired.Count - unique.Count, eligible.Count, excluded)
         {
             LeagueDiagnoses = LeagueTicketSelector.Diagnose(unique
-                .Where(pair => pair.Offer.KickoffUtc > nowUtc).Select(pair => pair.Offer.League)),
+                .Where(pair => pair.Offer.KickoffUtc > nowUtc).Select(pair => pair.Match.League)),
             NoSelection = (picks.Count == 0 && calibration != null &&
                 evaluatedValidFixture && !invalidFixtureData) || LeagueTicketSelector.IsNoSelection(true, picks.Count,
-                eligible.Select(p => p.League), offers.Count > 0 && (eligible.Count > 0
+                unique.Where(pair => pair.Offer.KickoffUtc > nowUtc).Select(pair => pair.Match.League),
+                offers.Count > 0 && (eligible.Count > 0
                     ? eligible.All(pick => pick.TotalVotes > 0)
                     : hasSourceData && !invalidFixtureData), evaluatedValidFixture)
         };

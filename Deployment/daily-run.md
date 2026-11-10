@@ -195,9 +195,15 @@ No automatic destructive cleanup is performed by `daily-run`.
 
 League diagnostics separate missing labels, recognized competitions outside the
 allowlist, and unrecognized labels, including the actual labels and counts.
-The existing allowlist and selection thresholds are unchanged. Champions League
-and cups are not implicitly enabled; additional competitions require an explicit
-selection of which ones to allow.
+League-bearing prediction sources supply the league identity. Other prediction
+sources are attached by home/away team names only when they uniquely match a
+league-bearing prediction for an allowed competition; ambiguous, unanchored and
+out-of-allowlist predictions are filtered before merging. Result persistence,
+calibration history and ticket generation use the same allowlist. The bookmaker
+is used for fixture matching and prices, not to infer the prediction's league.
+Allowed leagues have no priority order and no unknown-league fallback.
+Champions League, Europa League and Conference League are explicitly included;
+other cup competitions remain outside the allowlist.
 
 Prediction persistence verifies shared-source aliases even when the new display
 name has no exact stored match. Verification includes stored FT/HT results, not

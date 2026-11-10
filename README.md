@@ -647,20 +647,27 @@ dotnet run --no-build -- ticket 2026-10-23 15 ml
   for each match's candidate (`ML=...%` in `[SIGNALI]`), blends it with the empirical
   95% Wilson lower bound (`RankSafe = (Safe + MlProbability) / 2`), and saves the
   resulting simulated ticket under mode `ml` or `ml-safe`.
-- Add the `league` flag to `ai-rank` to select from these Maxbet league labels in
-  priority order: England Premier League, France Ligue 1, Germany Bundesliga,
-  Italy Serie A, Spain La Liga, Belgium Jupiler Pro League, Netherlands
-  Eredivisie, Portugal Liga Portugal, Turkey Super Lig, Scotland Premiership,
-  Switzerland Super League, Austria Bundesliga, Poland Ekstraklasa, Sweden
-  Allsvenskan, Slovakia Nike Liga, Slovenia Prva Liga, Russia Premier League,
-  Romania Superliga, Denmark 1st Division, Czech Chance Liga, France Ligue 2,
-  England Championship, Germany Bundesliga 2, Italy Serie B, Spain La Liga 2.
-  All ticket generators use the same ordering: priority leagues first, one
-  selection per league per round; eligible unrecognized league labels are used
-  afterward as fallback. Explicitly excluded cup competitions and missing
-  league labels are never selected. Within each league, the generator's existing
-  ranking determines the order. The `league` flag keeps its separate simulation
-  mode but does not change this ordering.
+- League filtering uses one allowlist with no league priority or fallback.
+  League-bearing prediction sources supply the league identity; other
+  prediction sources are matched to those fixtures by home/away team names.
+  Ambiguous or unanchored predictions are excluded before the sources are
+  merged. The league is saved with the unified match and is required for result
+  persistence, calibration history and ticket generation. The bookmaker is
+  used for fixture matching and prices, not to infer the prediction's league.
+  Unknown, missing, and other out-of-list leagues are excluded. The configured
+  leagues are England Premier League, France Ligue 1, Germany Bundesliga, Italy
+  Serie A, Spain La Liga, Belgium Jupiler Pro League, Netherlands Eredivisie,
+  Portugal Liga Portugal, Turkey Super Lig, Scotland Premiership, Switzerland
+  Super League, Austria Bundesliga, Poland Ekstraklasa, Sweden Allsvenskan,
+  Slovakia Nike Liga, Slovenia Prva Liga, Russia Premier League, Romania
+  Superliga, Denmark 1st Division and Superliga, Czech Chance Liga, France
+  Ligue 2, England Championship, Germany Bundesliga 2, Italy Serie B, Spain
+  La Liga 2, Austria 2. Liga, Bulgaria 1, Chile Liga de Primera, Cyprus,
+  Greece Super League, Hungary NB1, Netherlands Eerste Divisie, Norway
+  Eliteserien, Portugal Liga Portugal 2, Scotland Championship, Switzerland
+  Challenge League, USA MLS, UEFA Champions League, UEFA Europa League and
+  UEFA Conference League. Within the allowed set, existing candidate ranking
+  determines ticket picks, with at most one pick per league per round.
   Existing odds and calibration thresholds still apply; if fewer than the
   requested number qualify, the ticket stays shorter. This ranking is not a
   guarantee of improved accuracy.
@@ -684,11 +691,9 @@ fixture/date matching, merge duplicate stored fixtures, and exclude started
 matches. Nonempty tickets are now saved to the simulation ledger for subsequent
 grading, with the historical quality evidence frozen for each pick.
 
-- Both commands take one candidate per priority league in configured order,
-  then subsequent rounds. If that does not fill the ticket, other unrecognized
-  league labels are used as fallback, one per league per round. Explicitly
-  excluded cups and fixtures without league metadata are never selected.
-- `daily-ticket-league` and `daily-ticket` share the same selection ordering;
+- Both commands use only allowlisted leagues, with no league priority or
+  fallback. Picks follow candidate ranking, with one pick per league per round.
+- `daily-ticket-league` and `daily-ticket` share the same selection rules;
   they retain distinct simulation modes and output filenames.
 
 Ranking uses the exact-market Wilson lower bound, measured accuracy and sample

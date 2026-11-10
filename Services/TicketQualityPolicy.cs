@@ -80,7 +80,8 @@ public static class TicketQualityPolicy
     {
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Skopje");
         var cutoff = TimeZoneInfo.ConvertTimeToUtc(target.ToDateTime(TimeOnly.MinValue), zone);
-        var input = matches.ToList();
+        var all = matches.ToList();
+        var input = all.Where(match => LeagueTicketSelector.IsAllowedLeague(match.League)).ToList();
         var conflicts = input.Where(m => m.MatchDate < target && m.Result != null &&
                 m.Result.CollectedAtUtc != default && m.Result.CollectedAtUtc < cutoff)
             .GroupBy(m => (m.MatchDate, Home: m.HomeTeam.Trim().ToUpperInvariant(),
@@ -118,7 +119,8 @@ public static class TicketQualityPolicy
             .Where(g => g.Select(m => (m.Result!.HomeGoals, m.Result.AwayGoals)).Distinct().Count() == 1)
             .Select(g => g.OrderByDescending(m => CalibrationAnalyzer.LatestPerSource(m).Count)
                 .ThenBy(m => m.Id).First()).ToList();
-        log($"[QUALITY] {Version}; pre-date, prematch history={unique.Count}/{input.Count}. " +
+        log($"[QUALITY] {Version}; allowed-league, pre-date, prematch history={unique.Count}/{all.Count}; " +
+            $"out-of-scope history excluded={all.Count - input.Count}. " +
             "Late/unknown/invalid snapshots, unavailable results and duplicate/conflicting fixtures excluded.");
         return unique;
     }

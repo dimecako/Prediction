@@ -10,32 +10,31 @@ public sealed class DailyLeagueNoSelectionTests
     private static readonly DateTime Now = new(2030, 1, 1, 8, 0, 0, DateTimeKind.Utc);
 
     [Theory]
-    [InlineData("UEFA Champions League", LeagueEligibility.IntentionallyExcluded)]
-    public void LeagueFilterCanProduceValidNoSelectionWithoutInventingTicket(
+    [InlineData("UEFA Champions League", LeagueEligibility.Eligible)]
+    public void ConfiguredEuropeanCompetitionCanProduceTicket(
         string? league, LeagueEligibility expected)
     {
         var match = Fixture(1);
         var selection = Build([match], [Offer(match, league)], Date, Now, 15, true);
-        Assert.Empty(selection.Picks);
-        Assert.True(selection.NoSelection);
+        Assert.Single(selection.Picks);
+        Assert.False(selection.NoSelection);
         Assert.Equal(1, selection.Eligible);
         Assert.Equal(expected, Assert.Single(selection.LeagueDiagnoses).Eligibility);
     }
 
     [Fact]
-    public void LeagueModeFallsBackToQualifiedUnrecognizedLeagueWhenPriorityLeagueHasNoPick()
+    public void LeagueModeDoesNotFallBackToUnconfiguredLeagues()
     {
         var match = Fixture(1);
         var selection = Build([match], [Offer(match, "New Competition")], Date, Now, 15, true);
 
-        Assert.Single(selection.Picks);
-        Assert.Equal(1, selection.Picks[0].MatchId);
-        Assert.False(selection.NoSelection);
+        Assert.Empty(selection.Picks);
+        Assert.True(selection.NoSelection);
         Assert.Equal(LeagueEligibility.Unrecognized, Assert.Single(selection.LeagueDiagnoses).Eligibility);
     }
 
     [Fact]
-    public void QualifiedExcludedCandidateDoesNotRequireSourceDataForUnrelatedFixtures()
+    public void MissingDataInAnAllowedLeagueIsNotHiddenByAnOutOfScopeFixture()
     {
         var valid = Fixture(1);
         var missing = Fixture(2);
@@ -43,7 +42,7 @@ public sealed class DailyLeagueNoSelectionTests
         var selection = Build([valid, missing],
             [Offer(valid, "UEFA Youth League"), Offer(missing, "ENGLAND 1")], Date, Now, 15, true);
         Assert.Empty(selection.Picks);
-        Assert.True(selection.NoSelection);
+        Assert.False(selection.NoSelection);
     }
 
     [Theory]
@@ -67,20 +66,20 @@ public sealed class DailyLeagueNoSelectionTests
         var match = Fixture(1);
         Assert.False(Build([match], [], Date, Now, 15, true).NoSelection);
         Assert.False(Build([], [Offer(match, "FA Cup")], Date, Now, 15, true).NoSelection);
-        var unpriced = Offer(match, "FA Cup") with { Odds = new Dictionary<string, double>() };
+        var unpriced = Offer(match, "ENGLAND 1") with { Odds = new Dictionary<string, double>() };
         Assert.False(Build([match], [unpriced], Date, Now, 15, true).NoSelection);
     }
 
     [Fact]
-    public void PriorityAndFallbackCandidatesCanProduceTicketsAndExcludedCupReportsNoSelection()
+    public void OnlyConfiguredLeaguesCanProduceTickets()
     {
         var match = Fixture(1);
         var eligible = Build([match], [Offer(match, "ENGLAND 1")], Date, Now, 15, true);
         Assert.Single(eligible.Picks);
         Assert.False(eligible.NoSelection);
-        var fallback = Build([match], [Offer(match, "New Competition")], Date, Now, 15, false);
-        Assert.Single(fallback.Picks);
-        Assert.False(fallback.NoSelection);
+        var unconfigured = Build([match], [Offer(match, "New Competition")], Date, Now, 15, false);
+        Assert.Empty(unconfigured.Picks);
+        Assert.True(unconfigured.NoSelection);
         var cup = Build([match], [Offer(match, "FA Cup")], Date, Now, 15, false);
         Assert.Empty(cup.Picks);
         Assert.True(cup.NoSelection);
@@ -105,7 +104,7 @@ public sealed class DailyLeagueNoSelectionTests
     [InlineData(double.NaN)]
     [InlineData(double.PositiveInfinity)]
     [InlineData(1.0)]
-    public void QualifiedExcludedCandidateDoesNotRequireValidOddsForUnrelatedFixtures(double invalidOdds)
+    public void InvalidAllowedFixtureDataIsNotHiddenByOutOfScopeFixture(double invalidOdds)
     {
         var excluded = Fixture(1);
         var invalid = Fixture(2);
@@ -116,7 +115,7 @@ public sealed class DailyLeagueNoSelectionTests
         var selection = Build([excluded, invalid],
             [Offer(excluded, "FA Cup"), badOffer], Date, Now, 15, true);
         Assert.Empty(selection.Picks);
-        Assert.True(selection.NoSelection);
+        Assert.False(selection.NoSelection);
     }
 
     [Fact]
@@ -167,7 +166,10 @@ public sealed class DailyLeagueNoSelectionTests
         DailyTicketSelector.Build(matches, offers, date, now, count, leagueOnly,
             calibration: matches.Count == 0 ? new Tally() : TicketSelectorTests.Calibrate(matches[0]));
 
-    private static BookmakerMatch Offer(Match match, string? league) =>
-        new(match.HomeTeam, match.AwayTeam, Now.AddHours(5),
+    private static BookmakerMatch Offer(Match match, string? league)
+    {
+        match.League = league;
+        return new(match.HomeTeam, match.AwayTeam, Now.AddHours(5),
             new Dictionary<string, double> { ["1"] = 1.8 }, league);
+    }
 }

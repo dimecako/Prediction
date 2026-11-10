@@ -36,6 +36,14 @@ public static class MatchResultPersister
         foreach (var external in sourceResults)
         {
             var resolution = ResultMatchResolver.Resolve(date, external, resultMatches, sourceSnapshots);
+            var scopeCandidates = resolution.Conflict ? resolution.Candidates : resolution.Matches;
+            if (scopeCandidates.Count > 0 && scopeCandidates.Any(match =>
+                    !LeagueTicketSelector.IsAllowedLeague(match.League)))
+            {
+                log($"[RESULTS] Out-of-scope fixture {external.HomeTeam} vs {external.AwayTeam}; " +
+                    "result ignored because its database league is not in the configured allowlist.");
+                continue;
+            }
             if (resolution.Conflict)
             {
                 identityConflicts++;

@@ -345,7 +345,7 @@ public sealed class FtShadowTests
 
     private static Match Fixture(int id = 1) => new()
     {
-        Id = id, MatchDate = Date,
+        Id = id, MatchDate = Date, League = "ITALY 1",
         HomeTeam = new string((char)('a' + id % 26), 4) + new string((char)('a' + id / 26 % 26), 4),
         AwayTeam = new string((char)('z' - id % 26), 4) + new string((char)('z' - id / 26 % 26), 4),
         PredictionSnapshots = Enumerable.Range(0, 3).Select(i => new PredictionSnapshot

@@ -149,10 +149,12 @@ public sealed class DailyTicketSelectorTests
     }
 
     [Fact]
-    public void DailyAndFixedTicketsUseOtherLeaguesOnlyAfterPriorityLeaguePicks()
+    public void DailyAndFixedTicketsUseOnlyConfiguredLeaguesWithoutPriority()
     {
         var matches = Enumerable.Range(1, 4).Select(i => Fixture(i)).ToList();
         string[] leagues = ["FRANCE 1", "ENGLAND 1", "SWEDEN 3", "UEFA Champions League"];
+        for (int i = 0; i < matches.Count; i++)
+            matches[i].League = leagues[i];
         var offers = matches.Select((match, index) => Offer(match) with { League = leagues[index] }).ToList();
         var calibration = TicketSelectorTests.Calibrate(matches[0]);
 
@@ -161,8 +163,8 @@ public sealed class DailyTicketSelectorTests
         var fixedTicket = DailyTicketSelector.BuildFixed(matches, offers, Date, Now, 4,
             calibration: calibration);
 
-        Assert.Equal(new long[] { 2, 1, 3 }, daily.Picks.Select(p => p.MatchId));
-        Assert.Equal(new long[] { 2, 1, 3 }, fixedTicket.Picks.Select(p => p.MatchId));
+        Assert.Equal(new long[] { 1, 2, 4 }, daily.Picks.Select(p => p.MatchId));
+        Assert.Equal(new long[] { 1, 2, 4 }, fixedTicket.Picks.Select(p => p.MatchId));
         Assert.Equal(1, daily.ExcludedLeagues);
     }
 
@@ -254,6 +256,7 @@ public sealed class DailyTicketSelectorTests
     {
         var match = TicketSelectorTests.Fixture();
         match.Id = id;
+        match.League = "ITALY 1";
         match.MatchDate = Date;
         match.HomeTeam = $"Home{id:D2}";
         match.AwayTeam = $"Away{id:D2}";

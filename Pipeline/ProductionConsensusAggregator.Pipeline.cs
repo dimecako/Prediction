@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Prediction.Services;
 
 public partial class ProductionConsensusAggregator
 {
@@ -15,6 +16,48 @@ public partial class ProductionConsensusAggregator
     List<SiteMatch> oddslot,
     List<SiteMatch> theDatabetics)
     {
+        var sourceLists = new[]
+        {
+            forebet, statarea, predictz, wdw, zulubet, vitibet, feedinco,
+            soccerVista, footyStats, oddslot, theDatabetics
+        };
+        var leagueAnchors = sourceLists.SelectMany(source => source)
+            .Where(match => !string.IsNullOrWhiteSpace(match.League)).ToList();
+        int filtered = 0;
+        bool TryResolveAllowedLeague(SiteMatch match, out string league)
+        {
+            var matches = leagueAnchors.Where(anchor =>
+                TeamNameMatcher.SameFixture(match.HomeTeam, match.AwayTeam,
+                    anchor.HomeTeam, anchor.AwayTeam)).ToList();
+            var identities = matches.Select(anchor =>
+                    LeagueTicketSelector.GetCompetitionIdentity(anchor.League))
+                .Where(identity => identity != null).Distinct(StringComparer.Ordinal).ToList();
+            if (identities.Count != 1 ||
+                !LeagueTicketSelector.IsAllowedLeague(matches[0].League))
+            {
+                league = "";
+                return false;
+            }
+
+            league = matches[0].League!.Trim();
+            return true;
+        }
+
+        foreach (var sourceMatches in sourceLists)
+        {
+            int before = sourceMatches.Count;
+            sourceMatches.RemoveAll(match =>
+            {
+                if (!TryResolveAllowedLeague(match, out string league))
+                    return true;
+                match.League = league;
+                return false;
+            });
+            filtered += before - sourceMatches.Count;
+        }
+        Console.WriteLine($"[LEAGUE FILTER] Removed {filtered} source predictions without a unique " +
+            "league-bearing prediction-source match in the configured league allowlist.");
+
         Console.WriteLine("\n--- MERGE PHASE ---");
         Console.WriteLine(
     $"Forebet: {forebet.Count} | " +
@@ -107,4 +150,3 @@ public partial class ProductionConsensusAggregator
             
     }
 }
-

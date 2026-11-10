@@ -151,13 +151,10 @@ public partial class Program
             .ToList();
         int duplicates = paired.Count - unique.Count;
         var rejectedDetails = new List<string>();
-
-        foreach (var (match, offer) in paired)
-        {
-            if (!string.IsNullOrWhiteSpace(offer.League))
-                match.League = offer.League;
-        }
-        await db.SaveChangesAsync();
+        int outOfScope = unique.Count(pair => !LeagueTicketSelector.IsAllowedLeague(pair.Match.League));
+        if (outOfScope > 0)
+            Reject($"{outOfScope} fixture(s) outside the configured league allowlist.");
+        unique = unique.Where(pair => LeagueTicketSelector.IsAllowedLeague(pair.Match.League)).ToList();
 
         foreach (var (match, offer) in unique)
         {
@@ -175,9 +172,9 @@ public partial class Program
                 : TicketSelector.Select(match, calibration,
                     c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), rankBySafety,
                     includeTeamGoals: true, winnerGoalsOnly: winnerGoalsOnly);
-            bool validFixture = TicketSelector.HasRequiredData(match,
-                    c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick)) &&
-                LeagueTicketSelector.Classify(match.League) != LeagueEligibility.Missing;
+            bool validFixture = LeagueTicketSelector.IsAllowedLeague(match.League) &&
+                TicketSelector.HasRequiredData(match,
+                    c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick));
             evaluatedValidFixture |= validFixture;
             invalidFixtureData |= !validFixture;
             string SignalText(TicketCandidate? c)
@@ -275,8 +272,8 @@ public partial class Program
             "with previous winner/goal-signal gates. Strict FT challenger not promoted.");
         if (winnerGoalsOnly)
             Console.WriteLine("[TIKET] FT-COMBOS ONLY: win & 2-5/2-6 total goals or winner scores 2+. No straight wins, BTTS or standalone goals; all base price bands considered.");
-        Console.WriteLine("[TIKET] Liga-redosled: prvo prioritetnite ligi, po eden izbor od liga po krug; " +
-            "ako nema dovolno, prodolzuva so ostanatite ligi. Eksplicitno isklucenite kup-natprevari ostanuvaat iskluceni.");
+        Console.WriteLine("[TIKET] Se koristat samo ligite od konfiguriranata allowlist; " +
+            "nema prioritetni ligi, a nepoznati/nedozvoleni ligi se isklucuvaat.");
 
         foreach (var rejection in rejected.OrderByDescending(x => x.Value))
             Console.WriteLine($"[TIKET] Preskoknati {rejection.Value}: {rejection.Key}");
@@ -286,7 +283,7 @@ public partial class Program
                 .ThenByDescending(x => x.Accuracy)
                 .ThenByDescending(x => x.SignalPriority)
                 .ToList();
-        var picks = LeagueTicketSelector.SelectPriorityFirst(rankedBest, count, x => x.League).ToList();
+        var picks = LeagueTicketSelector.SelectAllowedLeagues(rankedBest, count, x => x.League).ToList();
         if (prioritizeLeagues)
         {
             Console.WriteLine($"[TIKET] Liga-rezim: izbori={picks.Count}; league diagnosis of matched future fixtures:");

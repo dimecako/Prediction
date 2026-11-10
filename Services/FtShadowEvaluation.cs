@@ -50,7 +50,8 @@ public static class FtShadowEvaluation
         var tally = TicketQualityPolicy.Calibrate(preparedHistory);
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Skopje");
         int unmatched = 0, ambiguous = 0, started = 0, knownResults = 0;
-        var input = matches.Where(m => m.MatchDate == date).ToList();
+        var input = matches.Where(m => m.MatchDate == date &&
+            LeagueTicketSelector.IsAllowedLeague(m.League)).ToList();
         var pairs = new List<(Match Match, BookmakerMatch Offer)>();
         foreach (var match in input)
         {
@@ -98,7 +99,7 @@ public static class FtShadowEvaluation
                     TicketQualityPolicy.Score(candidate, tally, price),
                     baseline.Confirmed != null, strict.Confirmed != null, baseline.Reason, strict.Reason));
             }
-            fixtures.Add(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", offer.League, offer.KickoffUtc,
+            fixtures.Add(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", match.League, offer.KickoffUtc,
                 fix == null ? null : Price(fix), CalibrationAnalyzer.LatestPerSource(match).Select(s =>
                     new FtShadowSnapshot(s.Id, s.Source, s.PredictedResult, s.Goals, s.Btts, s.Confidence,
                         s.CapturedAtUtc)).ToList(), events, fix == null ? "No unambiguous 1/2 signal with probability." : ""));

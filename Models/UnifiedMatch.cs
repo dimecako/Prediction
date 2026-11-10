@@ -4,6 +4,7 @@ public class UnifiedMatch
 {
     public string HomeOrig { get; set; }
     public string AwayOrig { get; set; }
+    public string? League { get; set; }
 
     public ConcurrentDictionary<string, MatchSourceData> Sources { get; set; }
         = new ConcurrentDictionary<string, MatchSourceData>();
