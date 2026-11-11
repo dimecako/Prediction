@@ -23,7 +23,7 @@ public sealed class PredictionSnapshotWriterTests
 
         var stored = await db.Matches.Include(x => x.PredictionSnapshots).ToListAsync();
         var match = Assert.Single(stored);
-        Assert.Equal("UEFA Champions League", match.League);
+        Assert.Equal("UEFA CHAMPIONS LEAGUE", match.League);
         Assert.Equal("Allowed Home", match.HomeTeam);
         Assert.Single(match.PredictionSnapshots);
         await transaction.RollbackAsync();

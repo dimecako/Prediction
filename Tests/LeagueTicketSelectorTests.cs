@@ -1,3 +1,4 @@
+using Newtonsoft.Json.Linq;
 using Prediction.Services;
 using Xunit;
 
@@ -10,16 +11,17 @@ public sealed class LeagueTicketSelectorTests
 
     [Theory]
     [InlineData("ENGLAND 1")]
-    [InlineData("Premier League")]
-    [InlineData("Ligue 2")]
+    [InlineData("England Premier League")]
+    [InlineData("France Ligue 1")]
+    [InlineData("France Ligue 2")]
     [InlineData("England Championship")]
-    [InlineData("Bundesliga 2")]
-    [InlineData("Serie B")]
-    [InlineData("La Liga 2")]
+    [InlineData("Germany Bundesliga 2")]
+    [InlineData("Italy Serie B")]
+    [InlineData("Spain La Liga 2")]
     [InlineData("Austria 2. Liga")]
     [InlineData("Bulgaria 1")]
     [InlineData("Chile Liga de Primera")]
-    [InlineData("Cyprus")]
+    [InlineData("Cyprus First Division")]
     [InlineData("Greece Super League")]
     [InlineData("Hungary NB1")]
     [InlineData("Netherlands Eerste Divisie")]
@@ -43,6 +45,65 @@ public sealed class LeagueTicketSelectorTests
     {
         Assert.False(LeagueTicketSelector.IsAllowedLeague("SWEDEN 3"));
         Assert.False(LeagueTicketSelector.IsAllowedLeague("SLOVAKIA 2"));
+    }
+
+    [Theory]
+    [InlineData("Ligue 1")]
+    [InlineData("Ligue 2")]
+    [InlineData("Premier League")]
+    [InlineData("Bundesliga")]
+    [InlineData("Bundesliga 2")]
+    [InlineData("Serie A")]
+    [InlineData("Serie B")]
+    [InlineData("La Liga")]
+    [InlineData("Championship")]
+    [InlineData("Superliga")]
+    [InlineData("Prva Liga")]
+    [InlineData("Cyprus")]
+    [InlineData("Champions League")]
+    [InlineData("DR Congo Ligue 1")]
+    [InlineData("Congo Ligue 1")]
+    [InlineData("Brazil Serie B")]
+    [InlineData("Egypt Premier League")]
+    [InlineData("France Ligue 1 Women")]
+    [InlineData("France Ligue 1 U19")]
+    public void AmbiguousOrDifferentCompetitionsCannotEnterSelection(string league)
+    {
+        Assert.Equal(LeagueEligibility.Unrecognized, LeagueTicketSelector.Classify(league));
+        Assert.Empty(LeagueTicketSelector.SelectAllowedLeagues(new[] { league }, 15, x => x));
+    }
+
+    [Theory]
+    [InlineData("""{"name":"Ligue 1","countryName":"DR Congo"}""", "DR Congo Ligue 1", false)]
+    [InlineData("""{"name":"Ligue 1","countryName":"France"}""", "FRANCE Ligue 1", true)]
+    [InlineData("""{"name":"Serie B","countryName":"Brazil"}""", "BRAZIL Serie B", false)]
+    [InlineData("""{"name":"Serie B","countryName":"Italy"}""", "ITALY Serie B", true)]
+    [InlineData("""{"name":"Premier League","countryName":"Egypt"}""", "EGYPT Premier League", false)]
+    [InlineData("""{"name":"Premier League","countryName":"England"}""", "ENGLAND Premier League", true)]
+    [InlineData("""{"name":"Ligue 1"}""", "Ligue 1", false)]
+    [InlineData("""{"name":"France Ligue 1"}""", "France Ligue 1", true)]
+    [InlineData("""{"name":"France Ligue 1","countryName":"DR Congo"}""", "DR CONGO France Ligue 1", false)]
+    [InlineData("""{"name":"France Ligue 1","countryName":"France"}""", "France Ligue 1", true)]
+    [InlineData("""{"name":"UEFA Champions League","countryName":"Europe"}""", "UEFA Champions League", true)]
+    [InlineData("""{"name":"Champions League","countryName":"Europe"}""", "UEFA Champions League", true)]
+    [InlineData("""{"name":"Ligue 1","country":{"name":"France"}}""", "FRANCE Ligue 1", true)]
+    [InlineData("""{"league_name":"Ligue 1","country_name":"Congo"}""", "CONGO Ligue 1", false)]
+    [InlineData("""{"league_name":"Ligue 1","country":"France"}""", "FRANCE Ligue 1", true)]
+    public void SourceMetadataPreservesCountryInsteadOfTreatingBareNameAsIdentity(
+        string json, string expected, bool allowed)
+    {
+        string? league = SourceLeagueReader.Read(JObject.Parse(json), "name", "league_name");
+        Assert.Equal(expected, league, ignoreCase: true);
+        Assert.Equal(allowed, LeagueTicketSelector.IsAllowedLeague(league));
+    }
+
+    [Fact]
+    public void FullNamesAndCountryQualifiedAliasesShareOneRoundRobinIdentity()
+    {
+        string[] candidates = ["FRANCE 1", "France Ligue 1", "ENGLAND 1"];
+        Assert.Equal(["FRANCE 1", "ENGLAND 1"],
+            LeagueTicketSelector.SelectAllowedLeagues(candidates, 2, x => x));
+        Assert.Equal("FRANCE LIGUE 1", LeagueTicketSelector.GetAllowedLeagueIdentity("France 1"));
     }
 
     [Theory]

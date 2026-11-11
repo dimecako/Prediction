@@ -48,7 +48,7 @@ public partial class Program
                 <p>{{Prediction.Web.DatabaseReportPages.Text(language, "Compare historical consensus accuracy by league and market.")}}</p>
               </a>
             </section>
-            <p class="footer-note">{{Prediction.Web.DatabaseReportPages.Text(language, "Daily automation targets 08:00 Europe/Skopje; GitHub scheduling may be delayed.")}}
+            <p class="footer-note">{{Prediction.Web.DatabaseReportPages.Text(language, "Daily automation targets 07:00 Europe/Skopje, with retries at 08:00 and 09:00; GitHub scheduling may be delayed.")}}
             {{Prediction.Web.DatabaseReportPages.Text(language, "Stored predictions and tickets are available without Excel files.")}}
             <a href="https://github.com/dimecako/Prediction/actions">{{Prediction.Web.DatabaseReportPages.Text(language, "View run history and errors →")}}</a></p>
             <script>
@@ -56,6 +56,7 @@ public partial class Program
                 const status = document.getElementById("daily-run-status");
                 const form = document.getElementById("daily-run-form");
                 const link = document.getElementById("daily-run-link");
+                let submitting = false;
                 const mk = {{(Prediction.Web.DatabaseReportPages.LanguageCode(language) == "mk").ToString().ToLowerInvariant()}};
                 const labels = mk
                   ? {checking:"Се проверува денешното стартување…",unconfigured:"Интеграцијата со GitHub не е наместена на Render.",waiting:"Дневното автоматско стартување сѐ уште се очекува.",queued:"Дневниот run е во редица.",running:"Дневниот run е во тек.",succeeded:"Дневниот run заврши успешно.",failed:"Дневниот run не успеа.",missed:"Автоматскиот run не е забележан по последниот термин.",limit:"Неуспешен run; потрошени се сите 3 обиди.",unknown:"Не може да се утврди статусот на дневниот run.",retry:"Обиди се повторно со daily-run",sent:"Барањето за рачно стартување е испратено.",error:"Не успеа рачното стартување. Провери ја GitHub Actions историјата."}
@@ -68,6 +69,7 @@ public partial class Program
                     status.textContent = data.configured ? (labels[data.state] || labels.unknown) : labels.unconfigured;
                     form.hidden = !data.canRetry;
                     form.querySelector("button").textContent = labels.retry;
+                    form.querySelector("button").disabled = submitting || !data.canRetry;
                     link.hidden = !data.runUrl;
                     if (data.runUrl) link.href = data.runUrl;
                   } catch {
@@ -78,18 +80,23 @@ public partial class Program
                 form.addEventListener("submit", async event => {
                   event.preventDefault();
                   const button = form.querySelector("button");
+                  submitting = true;
                   button.disabled = true;
                   status.textContent = labels.checking;
                   try {
                     const response = await fetch(form.action, {method:"POST",body:new FormData(form)});
-                    if (!response.ok) throw new Error("Dispatch failed");
+                    if (!response.ok) {
+                      const problem = await response.json();
+                      throw new Error(problem.detail || labels.error);
+                    }
                     status.textContent = labels.sent;
                     form.hidden = true;
                     window.setTimeout(refresh, 5000);
-                  } catch {
-                    status.textContent = labels.error;
+                  } catch (error) {
+                    status.textContent = labels.error + (error.message ? " " + error.message : "");
                     button.disabled = false;
-                    await refresh();
+                  } finally {
+                    submitting = false;
                   }
                 });
                 refresh();

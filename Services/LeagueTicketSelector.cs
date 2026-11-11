@@ -17,47 +17,47 @@ public static class LeagueTicketSelector
 {
     private static readonly string[][] AllowedLeagueAliases =
     [
-        ["ENGLAND 1", "ENGLAND PREMIER", "PREMIER LEAGUE"],
-        ["FRANCE 1", "FRANCE LIGUE 1", "LIGUE 1"],
-        ["GERMANY 1", "GERMANY BUNDESLIGA", "BUNDESLIGA"],
-        ["ITALY 1", "ITALY SERIE A", "SERIE A"],
-        ["SPAIN 1", "SPAIN LALIGA", "SPAIN LA LIGA", "LA LIGA", "LALIGA"],
-        ["BELGIUM 1", "BELGIUM JUPILER PRO LEAGUE", "JUPILER PRO LEAGUE"],
-        ["NETHERLANDS 1", "NETHERLANDS EREDIVISIE", "EREDIVISIE"],
-        ["PORTUGAL 1", "PORTUGAL LIGA PORTUGAL", "LIGA PORTUGAL"],
-        ["TURKEY 1", "TURKEY SUPER LIG", "SUPER LIG"],
-        ["SCOTLAND 1", "SCOTLAND PREMIERSHIP", "SCOTTISH PREMIERSHIP"],
-        ["SWITZERLAND 1", "SWITZERLAND SUPER LEAGUE", "SWISS SUPER LEAGUE"],
-        ["AUSTRIA 1", "AUSTRIA BUNDESLIGA", "AUSTRIAN BUNDESLIGA"],
-        ["POLAND 1", "POLAND EKSTRAKLASA", "EKSTRAKLASA"],
-        ["SWEDEN 1", "SWEDEN ALLSVENSKAN", "ALLSVENSKAN"],
-        ["SLOVAKIA 1", "SLOVAKIA NIKE LIGA", "NIKE LIGA"],
-        ["SLOVENIA 1", "SLOVENIA PRVA LIGA", "PRVA LIGA"],
-        ["RUSSIA 1", "RUSSIA PREMIER LEAGUE", "RUSSIAN PREMIER LEAGUE"],
-        ["ROMANIA 1", "ROMANIA SUPERLIGA", "SUPERLIGA"],
-        ["DENMARK 2", "DENMARK 1ST DIVISION", "DANISH 1ST DIVISION"],
-        ["CZECH REPUBLIC 1", "CZECHIA 1", "CZECH 1", "CHANCE LIGA"],
-        ["FRANCE 2", "FRANCE LIGUE 2", "LIGUE 2"],
-        ["ENGLAND 2", "ENGLAND CHAMPIONSHIP", "CHAMPIONSHIP"],
-        ["GERMANY 2", "GERMANY BUNDESLIGA 2", "BUNDESLIGA 2"],
-        ["ITALY 2", "ITALY SERIE B", "SERIE B"],
-        ["SPAIN 2", "SPAIN LALIGA 2", "SPAIN LA LIGA 2", "LA LIGA 2", "LALIGA 2"],
-        ["AUSTRIA 2", "AUSTRIA 2 LIGA", "2 LIGA AUSTRIA"],
-        ["BULGARIA 1", "BULGARIA FIRST LEAGUE", "BULGARIA FIRST PROFESSIONAL LEAGUE"],
-        ["CHILE LIGA DE PRIMERA", "LIGA DE PRIMERA", "CHILE PRIMERA DIVISION"],
-        ["CYPRUS", "CYPRUS 1", "CYPRUS FIRST DIVISION", "CYPRUS 1ST DIVISION"],
+        ["ENGLAND PREMIER LEAGUE", "ENGLAND 1", "ENGLAND PREMIER"],
+        ["FRANCE LIGUE 1", "FRANCE 1"],
+        ["GERMANY BUNDESLIGA", "GERMANY 1"],
+        ["ITALY SERIE A", "ITALY 1"],
+        ["SPAIN LA LIGA", "SPAIN 1", "SPAIN LALIGA"],
+        ["BELGIUM JUPILER PRO LEAGUE", "BELGIUM 1"],
+        ["NETHERLANDS EREDIVISIE", "NETHERLANDS 1"],
+        ["PORTUGAL LIGA PORTUGAL", "PORTUGAL 1"],
+        ["TURKEY SUPER LIG", "TURKEY 1"],
+        ["SCOTLAND PREMIERSHIP", "SCOTLAND 1", "SCOTTISH PREMIERSHIP"],
+        ["SWITZERLAND SUPER LEAGUE", "SWITZERLAND 1", "SWISS SUPER LEAGUE"],
+        ["AUSTRIA BUNDESLIGA", "AUSTRIA 1", "AUSTRIAN BUNDESLIGA"],
+        ["POLAND EKSTRAKLASA", "POLAND 1"],
+        ["SWEDEN ALLSVENSKAN", "SWEDEN 1"],
+        ["SLOVAKIA NIKE LIGA", "SLOVAKIA 1"],
+        ["SLOVENIA PRVA LIGA", "SLOVENIA 1"],
+        ["RUSSIA PREMIER LEAGUE", "RUSSIA 1", "RUSSIAN PREMIER LEAGUE"],
+        ["ROMANIA SUPERLIGA", "ROMANIA 1"],
+        ["DENMARK 1ST DIVISION", "DENMARK 2", "DANISH 1ST DIVISION"],
+        ["CZECH REPUBLIC CHANCE LIGA", "CZECH REPUBLIC 1", "CZECHIA 1", "CZECH 1"],
+        ["FRANCE LIGUE 2", "FRANCE 2"],
+        ["ENGLAND CHAMPIONSHIP", "ENGLAND 2"],
+        ["GERMANY BUNDESLIGA 2", "GERMANY 2", "GERMANY 2 BUNDESLIGA"],
+        ["ITALY SERIE B", "ITALY 2"],
+        ["SPAIN LA LIGA 2", "SPAIN 2", "SPAIN LALIGA 2"],
+        ["AUSTRIA 2 LIGA", "AUSTRIA 2", "2 LIGA AUSTRIA"],
+        ["BULGARIA FIRST LEAGUE", "BULGARIA 1", "BULGARIA FIRST PROFESSIONAL LEAGUE"],
+        ["CHILE LIGA DE PRIMERA", "CHILE PRIMERA DIVISION"],
+        ["CYPRUS FIRST DIVISION", "CYPRUS 1", "CYPRUS 1ST DIVISION"],
         ["GREECE SUPER LEAGUE", "SUPER LEAGUE GREECE", "GREECE 1"],
-        ["HUNGARY NB1", "HUNGARY NB I", "HUNGARY OTP BANK LIGA", "NB1"],
-        ["NETHERLANDS EERSTE", "NETHERLANDS EERSTE DIVISIE", "NETHERLANDS 2", "EERSTE DIVISIE"],
-        ["NORWAY ELITESERIEN", "ELITESERIEN"],
-        ["PORTUGAL LIGA PORTUGAL 2", "PORTUGAL 2", "LIGA PORTUGAL 2"],
+        ["HUNGARY NB1", "HUNGARY NB I", "HUNGARY OTP BANK LIGA"],
+        ["NETHERLANDS EERSTE DIVISIE", "NETHERLANDS EERSTE", "NETHERLANDS 2"],
+        ["NORWAY ELITESERIEN"],
+        ["PORTUGAL LIGA PORTUGAL 2", "PORTUGAL 2"],
         ["SCOTLAND CHAMPIONSHIP", "SCOTTISH CHAMPIONSHIP", "SCOTLAND CHAMPIONSHIPS", "SCOTLAND 2"],
-        ["SWITZERLAND CHALLENGE LEAGUE", "SWISS CHALLENGE LEAGUE", "CHALLENGE LEAGUE"],
-        ["USA MLS", "UNITED STATES MLS", "MAJOR LEAGUE SOCCER", "MLS"],
+        ["SWITZERLAND CHALLENGE LEAGUE", "SWISS CHALLENGE LEAGUE"],
+        ["USA MLS", "UNITED STATES MLS", "USA MAJOR LEAGUE SOCCER"],
         ["DENMARK SUPERLIGA", "DANISH SUPERLIGA", "SUPERLIGA DENMARK"],
-        ["UEFA CHAMPIONS LEAGUE", "CHAMPIONS LEAGUE"],
-        ["UEFA EUROPA LEAGUE", "EUROPA LEAGUE"],
-        ["UEFA CONFERENCE LEAGUE", "UEFA EUROPA CONFERENCE LEAGUE", "CONFERENCE LEAGUE"]
+        ["UEFA CHAMPIONS LEAGUE"],
+        ["UEFA EUROPA LEAGUE"],
+        ["UEFA CONFERENCE LEAGUE", "UEFA EUROPA CONFERENCE LEAGUE"]
     ];
 
     private static readonly Dictionary<string, string> LeagueIdentityByAlias =
@@ -84,6 +84,30 @@ public static class LeagueTicketSelector
         !string.IsNullOrWhiteSpace(league)
             ? LeagueIdentityByAlias.GetValueOrDefault(Normalize(league))
             : null;
+
+    public static string? QualifySourceLeague(string? country, string? league)
+    {
+        if (string.IsNullOrWhiteSpace(league))
+            return null;
+        if (string.IsNullOrWhiteSpace(country))
+            return league.Trim();
+
+        string region = Normalize(country) switch
+        {
+            "EUROPE" => "UEFA",
+            "TURKIYE" => "TURKEY",
+            "CZECHIA" => "CZECH REPUBLIC",
+            "UNITED STATES" or "UNITED STATES OF AMERICA" => "USA",
+            var value => value
+        };
+        string name = Normalize(league);
+        string? identity = GetAllowedLeagueIdentity(name);
+        if (name.StartsWith(region + " ", StringComparison.Ordinal) ||
+            identity?.StartsWith(region + " ", StringComparison.Ordinal) == true)
+            return league.Trim();
+
+        return $"{region} {league.Trim()}";
+    }
 
     public static string? GetCompetitionIdentity(string? league)
     {
@@ -168,7 +192,7 @@ public static class LeagueTicketSelector
             .Where(x => IsAllowedLeague(x.League))
             .ToList();
         var byLeague = candidates
-            .GroupBy(x => Normalize(x.League!))
+            .GroupBy(x => GetAllowedLeagueIdentity(x.League)!)
             .OrderBy(group => group.Min(x => x.Index))
             .Select(group => group.OrderBy(x => x.Index).Select(x => x.Candidate).ToList())
             .ToList();

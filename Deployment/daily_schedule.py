@@ -15,14 +15,14 @@ LOCAL_ATTEMPT_HOURS = range(7, 10)
 
 
 def scheduled_local_hour(schedule, now):
-    if schedule not in {f"7 {hour} * * *" for hour in SCHEDULE_UTC_HOURS}:
+    if schedule not in {f"0 {hour} * * *" for hour in SCHEDULE_UTC_HOURS}:
         return None
     utc_hour = int(schedule.split()[1])
     scheduled_utc = datetime.combine(
         now.astimezone(timezone.utc).date(),
         datetime.min.time(),
         tzinfo=timezone.utc,
-    ).replace(hour=utc_hour, minute=7)
+    ).replace(hour=utc_hour, minute=0)
     return scheduled_utc.astimezone(LOCAL_ZONE).hour
 
 

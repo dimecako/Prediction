@@ -39,7 +39,7 @@ public partial class ProductionConsensusAggregator
                 return false;
             }
 
-            league = matches[0].League!.Trim();
+            league = LeagueTicketSelector.GetAllowedLeagueIdentity(matches[0].League)!;
             return true;
         }
 

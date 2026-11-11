@@ -2,6 +2,7 @@ using System.Globalization;
 using HtmlAgilityPack;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
+using Prediction.Services;
 
 public partial class ProductionConsensusAggregator
 {
@@ -149,15 +150,8 @@ public partial class ProductionConsensusAggregator
         return matches;
     }
 
-    private static string? ReadSoccerVistaTournamentName(JToken tournament)
-    {
-        string? name = tournament["name"]?.ToString() ??
-            tournament["leagueName"]?.ToString() ??
-            tournament["tournamentName"]?.ToString() ??
-            tournament["competitionName"]?.ToString() ??
-            tournament["title"]?.ToString();
-        return string.IsNullOrWhiteSpace(name) ? null : name.Trim();
-    }
+    private static string? ReadSoccerVistaTournamentName(JToken tournament) =>
+        SourceLeagueReader.Read(tournament, "name", "leagueName", "tournamentName", "competitionName", "title");
 
     private static string NormalizeSoccerVistaScore(string? score)
     {

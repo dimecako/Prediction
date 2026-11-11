@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
+using Prediction.Services;
 
 public partial class ProductionConsensusAggregator
 {
@@ -271,15 +272,8 @@ public partial class ProductionConsensusAggregator
         return results;
     }
 
-    private static string? ReadSokapediaLeagueName(JToken league)
-    {
-        string? name = league["name"]?.ToString() ??
-            league["league_name"]?.ToString() ??
-            league["leagueName"]?.ToString() ??
-            league["competition_name"]?.ToString() ??
-            league["title"]?.ToString();
-        return string.IsNullOrWhiteSpace(name) ? null : name.Trim();
-    }
+    private static string? ReadSokapediaLeagueName(JToken league) =>
+        SourceLeagueReader.Read(league, "name", "league_name", "leagueName", "competition_name", "title");
 
     private static SiteMatch? ParseSokapediaFixture(JToken item, string? leagueName)
     {

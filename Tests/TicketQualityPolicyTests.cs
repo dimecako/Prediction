@@ -25,13 +25,18 @@ public sealed class TicketQualityPolicyTests
         Assert.Equal(1, TicketQualityPolicy.Calibrate([prepared]).Get("1X2|1|70+").Total);
     }
 
-    [Fact]
-    public void HistoryExcludesMatchesOutsideConfiguredLeagueAllowlist()
+    [Theory]
+    [InlineData("SWEDEN 3")]
+    [InlineData("Ligue 1")]
+    [InlineData("DR Congo Ligue 1")]
+    [InlineData("Serie B")]
+    [InlineData("Brazil Serie B")]
+    public void HistoryExcludesMatchesOutsideConfiguredLeagueAllowlist(string league)
     {
         var allowed = Historical();
         var outside = Historical();
         outside.Id = 2;
-        outside.League = "SWEDEN 3";
+        outside.League = league;
 
         var prepared = TicketQualityPolicy.PrepareHistory([allowed, outside], Target, _ => { });
 

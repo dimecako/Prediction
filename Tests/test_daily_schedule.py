@@ -25,12 +25,12 @@ class DailyScheduleTests(unittest.TestCase):
         now = datetime.fromisoformat(timestamp).replace(tzinfo=timezone.utc)
         for hour in range(24):
             with self.subTest(hour=hour):
-                scheduled = datetime.combine(now.date(), time(7, hour), timezone.utc)
+                scheduled = datetime.combine(now.date(), time(hour, 0), timezone.utc)
                 expected = (hour in range(5, 9) and
                             7 <= scheduled.astimezone(module.LOCAL_ZONE).hour <= 9)
                 self.assertEqual(
                     expected,
-                    module.should_run("schedule", f"7 {hour} * * *", now),
+                    module.should_run("schedule", f"0 {hour} * * *", now),
                 )
 
     def test_winter_with_hours_of_delay(self):
@@ -52,13 +52,13 @@ class DailyScheduleTests(unittest.TestCase):
         now = datetime.now(timezone.utc)
         self.assertFalse(module.should_run("push", "", now))
         self.assertFalse(module.should_run("schedule", "0 11 * * *", now))
-        self.assertFalse(module.should_run("schedule", "0 7 * * *", now))
+        self.assertFalse(module.should_run("schedule", "7 7 * * *", now))
 
     def test_workflow_crons_cover_local_attempts_in_both_seasons(self):
         workflow = (Path(__file__).parents[1] / ".github" / "workflows" /
                     "daily-run.yml").read_text(encoding="utf-8")
         crons = re.findall(r'cron: "([^"]+)"', workflow)
-        self.assertEqual([f"7 {hour} * * *" for hour in range(5, 9)], crons)
+        self.assertEqual([f"0 {hour} * * *" for hour in range(5, 9)], crons)
         winter = datetime.fromisoformat("2026-11-06T16:37:00+00:00")
         summer = datetime.fromisoformat("2026-07-15T16:37:00+00:00")
         self.assertEqual(
@@ -78,7 +78,7 @@ class DailyScheduleTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 module.target_date(invalid, now)
 
-    def plan(self, event="schedule", schedule="7 7 * * *", requested="", artifacts=None,
+    def plan(self, event="schedule", schedule="0 7 * * *", requested="", artifacts=None,
              status="completed", conclusion="success", path=".github/workflows/daily-run.yml"):
         calls = []
 
@@ -105,12 +105,12 @@ class DailyScheduleTests(unittest.TestCase):
     def test_each_of_three_attempts_is_eligible_without_a_success_record(self):
         for hour in range(6, 9):
             with self.subTest(hour=hour):
-                (run, target, _), _ = self.plan(schedule=f"7 {hour} * * *")
+                (run, target, _), _ = self.plan(schedule=f"0 {hour} * * *")
                 self.assertTrue(run)
                 self.assertEqual("2026-11-02", target)
 
     def test_successful_manual_or_scheduled_execution_blocks_all_later_attempts(self):
-        for event, schedule in [("schedule", f"7 {hour} * * *") for hour in range(6, 9)] + [
+        for event, schedule in [("schedule", f"0 {hour} * * *") for hour in range(6, 9)] + [
                 ("workflow_dispatch", "")]:
             with self.subTest(event=event, schedule=schedule):
                 (run, _, message), _ = self.plan(
@@ -143,7 +143,7 @@ class DailyScheduleTests(unittest.TestCase):
         self.assertEqual("2026-10-31", target)
 
     def test_inactive_occurrence_does_not_query_success_records(self):
-        (run, _, _), calls = self.plan(schedule="7 5 * * *")
+        (run, _, _), calls = self.plan(schedule="0 5 * * *")
         self.assertFalse(run)
         self.assertEqual([], calls)
 
@@ -299,7 +299,7 @@ class DailyScheduleTests(unittest.TestCase):
 
         with self.assertRaises(HTTPError):
             module.plan_run(
-                "schedule", "7 7 * * *", "", datetime.fromisoformat("2026-11-02T07:07:00+00:00"),
+                "schedule", "0 7 * * *", "", datetime.fromisoformat("2026-11-02T07:00:00+00:00"),
                 "owner/repo", "test-token", "https://api.github.com", request,
             )
 

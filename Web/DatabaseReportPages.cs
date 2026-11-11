@@ -58,8 +58,8 @@ public static class DatabaseReportPages
             "League insights" => "Статистика по лиги",
             "Compare historical consensus accuracy by league and market." =>
                 "Спореди ја историската точност на консензусот по лига и пазар.",
-            "Daily automation targets 08:00 Europe/Skopje; GitHub scheduling may be delayed." =>
-                "Дневната автоматизација е планирана меѓу 07:07 и 09:07 часот (Europe/Skopje); GitHub може да ја започне со задоцнување.",
+            "Daily automation targets 07:00 Europe/Skopje, with retries at 08:00 and 09:00; GitHub scheduling may be delayed." =>
+                "Дневната автоматизација е планирана во 07:00, со повторни обиди во 08:00 и 09:00 часот (Europe/Skopje); GitHub може да ја започне со задоцнување.",
             "Daily automation" => "Дневна автоматизација",
             "Daily run status" => "Статус на дневното извршување",
             "Checking today's scheduled run…" => "Се проверува денешното стартување…",

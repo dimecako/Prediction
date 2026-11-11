@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -33,50 +34,135 @@ public sealed class GitHubDailyWorkflowClient(
         if (string.IsNullOrWhiteSpace(token))
             return new("unconfigured", false, false, 0, null, null);
 
-        using var request = CreateRequest(HttpMethod.Get,
-            $"repos/{Repository}/actions/workflows/daily-run.yml/runs?branch=main&per_page=100", token);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            logger.LogError("GitHub workflow status request failed with HTTP {StatusCode}.",
-                (int)response.StatusCode);
-            response.EnsureSuccessStatusCode();
-        }
+        var successTask = FindArtifactAsync($"daily-success-{date:yyyy-MM-dd}", token,
+            requireSuccess: true, cancellationToken);
+        var checkpointTask = FindArtifactAsync($"daily-checkpoint-{date:yyyy-MM-dd}", token,
+            requireSuccess: false, cancellationToken);
+        var runsTask = GetRunsAsync(date, token, cancellationToken);
+        await Task.WhenAll(successTask, checkpointTask, runsTask);
+        var checkpoint = await checkpointTask;
+        int attempts = checkpoint == null ? 0 :
+            await ReadAttemptsAsync(checkpoint.Artifact.Id, date, token, cancellationToken);
+        var success = await successTask;
+        if (success != null)
+            return new("succeeded", true, false, attempts, success.Run.HtmlUrl,
+                DateTimeOffset.Parse(success.Run.CreatedAt));
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        var result = await JsonSerializer.DeserializeAsync<WorkflowRunsResponse>(stream,
-            cancellationToken: cancellationToken) ??
-            throw new InvalidDataException("GitHub returned an empty workflow-runs response.");
-
-        var runs = result.Runs
+        var runs = (await runsTask)
             .Select(run => (Run: run, CreatedAt: DateTimeOffset.Parse(run.CreatedAt)))
             .Where(item => IsRelevantRun(item.Run, item.CreatedAt, date))
             .OrderByDescending(item => item.CreatedAt)
             .ThenByDescending(item => item.Run.RunAttempt)
             .ToList();
-        int attempts = runs.Sum(item => Math.Max(item.Run.RunAttempt, 1));
-        var latest = runs.FirstOrDefault();
-        if (latest.Run == null)
-        {
-            bool schedulePassed = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, LocalZone).TimeOfDay >=
-                new TimeSpan(9, 7, 0);
-            return attempts >= 3
-                ? new("retry-limit", true, false, attempts, null, null)
-                : new(schedulePassed ? "missed" : "waiting", true, schedulePassed, attempts, null, null);
-        }
+        var active = runs.FirstOrDefault(item =>
+            item.Run.Status is "queued" or "waiting" or "requested" or "pending" or "in_progress");
+        if (active.Run != null)
+            return new(active.Run.Status == "in_progress" ? "running" : "queued",
+                true, false, attempts, active.Run.HtmlUrl, active.CreatedAt);
+        if (runs.Any(item => item.Run.Status != "completed"))
+            return new("unknown", true, false, attempts, null, null);
 
-        var state = latest.Run.Status switch
+        // A green workflow may only have skipped an inactive cron occurrence.
+        var failed = runs.FirstOrDefault(item =>
+            item.Run.Status == "completed" && item.Run.Conclusion != "success");
+        var latest = failed.Run ?? checkpoint?.Run;
+        string? runUrl = latest?.HtmlUrl;
+        DateTimeOffset? updatedAt = latest == null ? null : DateTimeOffset.Parse(latest.CreatedAt);
+        if (attempts >= 3)
+            return new("retry-limit", true, false, attempts, runUrl, updatedAt);
+        if (latest != null)
+            return new("failed", true, true, attempts, runUrl, updatedAt);
+
+        var localNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, LocalZone);
+        var today = DateOnly.FromDateTime(localNow.DateTime);
+        bool schedulePassed = date < today || date == today &&
+            localNow.TimeOfDay >= new TimeSpan(9, 0, 0);
+        return new(schedulePassed ? "missed" : "waiting", true, schedulePassed, attempts, null, null);
+    }
+
+    private async Task<IReadOnlyList<WorkflowRun>> GetRunsAsync(
+        DateOnly date, string token, CancellationToken cancellationToken)
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(date.ToDateTime(TimeOnly.MinValue), LocalZone);
+        var end = TimeZoneInfo.ConvertTimeToUtc(date.AddDays(1).ToDateTime(TimeOnly.MinValue), LocalZone)
+            .AddSeconds(-1);
+        string range = Uri.EscapeDataString($"{start:yyyy-MM-ddTHH:mm:ssZ}..{end:yyyy-MM-ddTHH:mm:ssZ}");
+        var runs = new List<WorkflowRun>();
+        for (int page = 1; ; page++)
         {
-            "queued" or "waiting" or "requested" => "queued",
-            "in_progress" => "running",
-            "completed" when latest.Run.Conclusion == "success" => "succeeded",
-            "completed" => "failed",
-            _ => "unknown"
-        };
-        bool canRetry = state == "failed" && attempts < 3;
-        if (state == "failed" && attempts >= 3)
-            state = "retry-limit";
-        return new(state, true, canRetry, attempts, latest.Run.HtmlUrl, latest.CreatedAt);
+            var result = await GetJsonAsync<WorkflowRunsResponse>(
+                $"repos/{Repository}/actions/workflows/daily-run.yml/runs" +
+                $"?branch=main&created={range}&per_page=100&page={page}", token, cancellationToken);
+            runs.AddRange(result.Runs);
+            if (result.Runs.Count < 100)
+                return runs;
+        }
+    }
+
+    private async Task<ArtifactMatch?> FindArtifactAsync(
+        string name, string token, bool requireSuccess, CancellationToken cancellationToken)
+    {
+        for (int page = 1; ; page++)
+        {
+            string filter = requireSuccess ? $"name={Uri.EscapeDataString(name)}&" : "";
+            var result = await GetJsonAsync<WorkflowArtifactsResponse>(
+                $"repos/{Repository}/actions/artifacts?{filter}per_page=100&page={page}",
+                token, cancellationToken);
+            string reservationPrefix = name.Replace("daily-checkpoint-", "daily-attempt-") + "-";
+            foreach (var artifact in result.Artifacts.Where(a => !a.Expired &&
+                (a.Name == name || !requireSuccess &&
+                    (a.Name.StartsWith(name + "-", StringComparison.Ordinal) ||
+                     a.Name.StartsWith(reservationPrefix, StringComparison.Ordinal)))))
+            {
+                var run = await GetJsonAsync<WorkflowRun>(
+                    $"repos/{Repository}/actions/runs/{artifact.WorkflowRun.Id}", token, cancellationToken);
+                if (run.Path == WorkflowPath && run.Status == "completed" &&
+                    (!requireSuccess || run.Conclusion == "success"))
+                    return new(artifact, run);
+            }
+            if (result.Artifacts.Count < 100)
+                return null;
+        }
+    }
+
+    private async Task<int> ReadAttemptsAsync(
+        long artifactId, DateOnly date, string token, CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(HttpMethod.Get,
+            $"repos/{Repository}/actions/artifacts/{artifactId}/zip", token);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        EnsureSuccess(response);
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        var entry = archive.GetEntry("daily-checkpoints.json") ??
+            throw new InvalidDataException("GitHub checkpoint artifact is missing daily-checkpoints.json.");
+        await using var content = entry.Open();
+        var checkpoint = await JsonSerializer.DeserializeAsync<CheckpointStatus>(content,
+            cancellationToken: cancellationToken);
+        if (checkpoint == null || checkpoint.FormatVersion != 1 ||
+            checkpoint.Date != date.ToString("yyyy-MM-dd") ||
+            checkpoint.Attempts < 0 || checkpoint.CompletedSteps == null)
+            throw new InvalidDataException("GitHub returned an invalid daily-run checkpoint.");
+        return checkpoint.Attempts;
+    }
+
+    private async Task<T> GetJsonAsync<T>(string path, string token, CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(HttpMethod.Get, path, token);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        EnsureSuccess(response);
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        return await JsonSerializer.DeserializeAsync<T>(stream, cancellationToken: cancellationToken) ??
+            throw new InvalidDataException("GitHub returned an empty automation response.");
+    }
+
+    private void EnsureSuccess(HttpResponseMessage response)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+        logger.LogError("GitHub automation request failed with HTTP {StatusCode}.",
+            (int)response.StatusCode);
+        response.EnsureSuccessStatusCode();
     }
 
     public async Task DispatchAsync(DateOnly date, CancellationToken cancellationToken)
@@ -118,12 +204,7 @@ public sealed class GitHubDailyWorkflowClient(
     {
         if (DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(createdAt, LocalZone).DateTime) != date)
             return false;
-        if (run.Event == "workflow_dispatch")
-            return true;
-        if (run.Event != "schedule")
-            return false;
-        TimeSpan localTime = TimeZoneInfo.ConvertTime(createdAt, LocalZone).TimeOfDay;
-        return localTime >= new TimeSpan(7, 0, 0) && localTime < new TimeSpan(10, 0, 0);
+        return run.Event is "workflow_dispatch" or "schedule";
     }
 
     private sealed record WorkflowRunsResponse(
@@ -135,5 +216,19 @@ public sealed class GitHubDailyWorkflowClient(
         [property: JsonPropertyName("conclusion")] string? Conclusion,
         [property: JsonPropertyName("created_at")] string CreatedAt,
         [property: JsonPropertyName("html_url")] string HtmlUrl,
-        [property: JsonPropertyName("run_attempt")] int RunAttempt);
+        [property: JsonPropertyName("run_attempt")] int RunAttempt,
+        [property: JsonPropertyName("path")] string? Path);
+
+    private sealed record WorkflowArtifactsResponse(
+        [property: JsonPropertyName("artifacts")] IReadOnlyList<WorkflowArtifact> Artifacts);
+
+    private sealed record WorkflowArtifact(
+        [property: JsonPropertyName("id")] long Id,
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("expired")] bool Expired,
+        [property: JsonPropertyName("workflow_run")] ArtifactRun WorkflowRun);
+
+    private sealed record ArtifactRun([property: JsonPropertyName("id")] long Id);
+    private sealed record ArtifactMatch(WorkflowArtifact Artifact, WorkflowRun Run);
+    private sealed record CheckpointStatus(int FormatVersion, string Date, int Attempts, string[] CompletedSteps);
 }

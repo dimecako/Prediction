@@ -61,7 +61,7 @@ public sealed class PredictionSnapshotWriter
                 outOfScope++;
                 continue;
             }
-            allowed.Add(match, match.League!.Trim());
+            allowed.Add(match, LeagueTicketSelector.GetAllowedLeagueIdentity(match.League)!);
         }
 
         Console.WriteLine($"[DB] League scope: allowed={allowed.Count}; out-of-scope={outOfScope}. " +

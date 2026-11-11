@@ -770,6 +770,22 @@ public partial class Program
                         oddslotTask,
                         theDatabeticsTask);
 
+                    if (CommandExecution.IsAutomation && !DailyRunPlan.CheckSourceCoverage(
+                        [
+                            ("Forebet", (await forebetTask).Count),
+                            ("Statarea", (await statareaTask).Count),
+                            ("PredictZ", (await predictzTask).Count),
+                            ("WinDrawWin", (await wdwTask).Count),
+                            ("ZuluBet", (await zulubetTask).Count),
+                            ("Vitibet", (await vitibetTask).Count),
+                            ("Feedinco", (await feedincoTask).Count),
+                            ("SoccerVista", (await soccerVistaTask).Count),
+                            ("FootyStats", (await footyStatsTask).Count),
+                            ("Oddslot", (await oddslotTask).Count),
+                            ("TheDatabetics", (await theDatabeticsTask).Count)
+                        ], Console.WriteLine))
+                        CommandExecution.Fail();
+
                     aggregator.ExecutePipeline(
                         await forebetTask,
                         await statareaTask,
@@ -782,22 +798,6 @@ public partial class Program
                         await footyStatsTask,
                         await oddslotTask,
                         await theDatabeticsTask);
-
-                    if (CommandExecution.IsAutomation && !DailyRunPlan.CheckSourceCoverage(
-                        [
-                            ("Forebet", aggregator.UnifiedMatches.Count(m => m.Sources["Forebet"] != null)),
-                            ("Statarea", aggregator.UnifiedMatches.Count(m => m.Sources["Statarea"] != null)),
-                            ("PredictZ", aggregator.UnifiedMatches.Count(m => m.Sources["PredictZ"] != null)),
-                            ("WinDrawWin", aggregator.UnifiedMatches.Count(m => m.Sources["WinDrawWin"] != null)),
-                            ("ZuluBet", aggregator.UnifiedMatches.Count(m => m.Sources["ZuluBet"] != null)),
-                            ("Vitibet", aggregator.UnifiedMatches.Count(m => m.Sources["Vitibet"] != null)),
-                            ("Feedinco", aggregator.UnifiedMatches.Count(m => m.Sources["Feedinco"] != null)),
-                            ("SoccerVista", aggregator.UnifiedMatches.Count(m => m.Sources["SoccerVista"] != null)),
-                            ("FootyStats", aggregator.UnifiedMatches.Count(m => m.Sources["FootyStats"] != null)),
-                            ("Oddslot", aggregator.UnifiedMatches.Count(m => m.Sources["Oddslot"] != null)),
-                            ("TheDatabetics", aggregator.UnifiedMatches.Count(m => m.Sources["TheDatabetics"] != null))
-                        ], Console.WriteLine))
-                        CommandExecution.Fail();
 
                     var cliConnectionString =
                         Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb");

@@ -65,12 +65,11 @@ executes this seven-pick benchmark alongside the existing variants. Compare its
 settled ticket win rate and ROI with `daily` over a meaningful sample; a smaller
 ticket is not inherently more accurate or profitable.
 
-Scheduling starts at 07:07 Europe/Skopje, with up to two hourly retries
-at 08:07 and 09:07 local time. Since GitHub cron uses UTC, the workflow covers
+Scheduling starts at 07:00 Europe/Skopje, with up to two hourly retries
+at 08:00 and 09:00 local time. Since GitHub cron uses UTC, the workflow covers
 the UTC hours that map to those three local times and filters each occurrence
-through the Europe/Skopje timezone. Avoiding minute zero reduces peak-hour
-scheduling load, but GitHub can still delay or drop scheduled occurrences;
-this is not an exact-time guarantee.
+through the Europe/Skopje timezone. GitHub can delay or drop scheduled
+occurrences, especially at the top of the hour; this is not an exact-time guarantee.
 The three-attempt budget and completed steps survive retries, revision changes
 and ticket-count changes. Existing date/mode tickets are reused rather than regenerated.
 Once a manual or scheduled execution succeeds for the target date, subsequent
@@ -81,9 +80,18 @@ branch; scheduled runs and manual runs from `main` check out the deployed
 `prediction-api` branch. Manual runs from other branches use the selected revision. Use the
 Actions tab for manual runs, failure details and reruns. Check the first real
 run before relying on unattended operation.
+Publish schedule changes to both the workflow on `main` and the matching
+`Deployment/daily_schedule.py` gate on `prediction-api`; their cron expressions
+must agree before relying on the next scheduled run.
 
 The dashboard checks today's GitHub Actions daily-run status and offers a
 manual retry button only after a failed run or a missed final schedule window.
+Delayed scheduled runs are included even when GitHub starts them after the
+morning window. The attempt count comes from the persisted date checkpoint,
+not the number or start time of workflow runs. A green skipped workflow is not
+treated as successful daily execution without the verified date success marker.
+Prediction-source availability is checked before league filtering: receiving
+only out-of-scope competitions is not reported as an empty provider response.
 It dispatches the existing workflow on `main`; the app does not run the scraper
 inside the Render web process. Set `GitHub__Token` on Render to a fine-grained
 GitHub token restricted to `dimecako/Prediction` with Actions read/write
@@ -648,8 +656,16 @@ dotnet run --no-build -- ticket 2026-10-23 15 ml
   95% Wilson lower bound (`RankSafe = (Safe + MlProbability) / 2`), and saves the
   resulting simulated ticket under mode `ml` or `ml-safe`.
 - League filtering uses one allowlist with no league priority or fallback.
-  League-bearing prediction sources supply the league identity; other
-  prediction sources are matched to those fixtures by home/away team names.
+  League-bearing prediction sources supply the league identity. Their
+  country/region and competition name are read together (for example,
+  `France Ligue 1`, never bare `Ligue 1`). Only exact, country-qualified aliases
+  from the allowlist are accepted; UEFA competitions require the UEFA identity.
+  `DR Congo Ligue 1`, `Brazil Serie B` and ambiguous bare names cannot qualify.
+  New captures save the canonical full competition identity. Existing records
+  with ambiguous bare names are excluded from new result persistence, calibration
+  and ticket generation until their league is verified and corrected; no country
+  is inferred from team names and historical rows/tickets are not rewritten.
+  Other prediction sources are matched to those fixtures by home/away team names.
   Ambiguous or unanchored predictions are excluded before the sources are
   merged. The league is saved with the unified match and is required for result
   persistence, calibration history and ticket generation. The bookmaker is
@@ -662,7 +678,7 @@ dotnet run --no-build -- ticket 2026-10-23 15 ml
   Slovakia Nike Liga, Slovenia Prva Liga, Russia Premier League, Romania
   Superliga, Denmark 1st Division and Superliga, Czech Chance Liga, France
   Ligue 2, England Championship, Germany Bundesliga 2, Italy Serie B, Spain
-  La Liga 2, Austria 2. Liga, Bulgaria 1, Chile Liga de Primera, Cyprus,
+  La Liga 2, Austria 2. Liga, Bulgaria First League, Chile Liga de Primera, Cyprus First Division,
   Greece Super League, Hungary NB1, Netherlands Eerste Divisie, Norway
   Eliteserien, Portugal Liga Portugal 2, Scotland Championship, Switzerland
   Challenge League, USA MLS, UEFA Champions League, UEFA Europa League and
