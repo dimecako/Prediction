@@ -135,6 +135,11 @@ date/mode even when odds or selections change. Standalone ticket commands now
 also reuse the first saved date/mode ticket before fetching new odds. This is
 not an atomic concurrency guarantee for overlapping standalone commands; use the
 daily automation lock for that.
+Within one `daily-run` attempt, ticket variants and the FT shadow evaluation
+reuse the historical matches and snapshots loaded by the first step that needs
+them. The data is loaded after result collection and is discarded when the run
+ends; standalone commands and later attempts read fresh history. Changes made
+by other processes after that first load are not reflected until the next run.
 No actionable 1/2 signal (including a draw or tied votes) is a normal abstention
 when the matched future fixture has valid source votes and bookmaker prices.
 Unmatched unrelated fixtures do not invalidate that evaluation. Missing source

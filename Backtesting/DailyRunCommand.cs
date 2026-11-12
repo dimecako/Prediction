@@ -79,6 +79,7 @@ public partial class Program
         await checkpoint.SetPlanAsync(includeDayBefore);
         var steps = DailyRunPlan.Build(date, count,
             includeDayBefore ? pendingDates.Append(dayBefore) : pendingDates);
+        var history = new DailyRunHistory(date);
         foreach (var step in steps)
         {
             // A lost connection also loses the advisory lock: stop before any further writes.
@@ -96,7 +97,7 @@ public partial class Program
                 continue;
             }
             if (!await DailyRunPlan.ExecuteStepAsync(step, checkpoint,
-                () => CommandExecution.RunAsync(() => ExecuteCommandAsync(step.Args), automation: true),
+                () => CommandExecution.RunAsync(() => ExecuteCommandAsync(step.Args, history), automation: true),
                 Console.WriteLine, Console.Error.WriteLine))
                 failed.Add(step.Name);
         }
@@ -109,10 +110,43 @@ public partial class Program
         else
             Console.WriteLine("[DAILY-RUN] All steps completed successfully.");
     }
+
+    private static Task<List<Match>> LoadTicketHistoryAsync(
+        FootballDbContext db, DateOnly date, DailyRunHistory? history, bool splitQuery = false)
+    {
+        async Task<List<Match>> LoadAsync()
+        {
+            var query = db.Matches.AsNoTracking()
+                .Where(m => m.MatchDate < date && m.Result != null)
+                .Include(m => m.Result).Include(m => m.PredictionSnapshots);
+            return await (splitQuery ? query.AsSplitQuery() : query).ToListAsync();
+        }
+
+        return history == null ? LoadAsync() : history.GetAsync(date, LoadAsync);
+    }
 }
 
 namespace Prediction.Services
 {
+    public sealed class DailyRunHistory(DateOnly date)
+    {
+        private List<Match>? matches;
+
+        public async Task<List<Match>> GetAsync(DateOnly target, Func<Task<List<Match>>> load)
+        {
+            if (target != date)
+                throw new InvalidOperationException("Daily-run history belongs to a different target date.");
+            if (matches == null)
+            {
+                matches = await load();
+                Console.WriteLine($"[DAILY-RUN] Loaded historical matches once: {matches.Count}.");
+            }
+            else
+                Console.WriteLine($"[DAILY-RUN] Reusing historical matches: {matches.Count}.");
+            return matches;
+        }
+    }
+
     public sealed record DailyRunStep(string Name, string[] Args, IReadOnlyList<string> Dependencies)
     {
         public DailyRunStep(string name, string[] args) : this(name, args, []) { }

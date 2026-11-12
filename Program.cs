@@ -70,11 +70,11 @@ public partial class Program
     public static Task<int> Main(string[] args) =>
         CommandExecution.RunAsync(() => ExecuteCommandAsync(args));
 
-    private static async Task ExecuteCommandAsync(string[] args)
+    private static async Task ExecuteCommandAsync(string[] args, DailyRunHistory? history = null)
     {
         if (args.Length > 0 && args[0].Equals("ticket-ft-shadow", StringComparison.OrdinalIgnoreCase))
         {
-            await RunFtShadowAsync(args);
+            await RunFtShadowAsync(args, history);
             return;
         }
         if (args.Length > 0 && args[0].Equals("ticket-ft-shadow-report", StringComparison.OrdinalIgnoreCase))
@@ -133,7 +133,7 @@ public partial class Program
              args[0].StartsWith("daily-ai-fixed-", StringComparison.OrdinalIgnoreCase) ||
              args[0].Equals("ai-rank", StringComparison.OrdinalIgnoreCase)))
         {
-            await RunTicketAsync(args);
+            await RunTicketAsync(args, history);
             return;
         }
 

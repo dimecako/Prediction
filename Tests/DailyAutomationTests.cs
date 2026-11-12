@@ -15,6 +15,36 @@ public sealed class DailyAutomationTests
     private static readonly DateOnly Target = new(2026, 11, 1);
 
     [Fact]
+    public async Task DailyRunHistoryLoadsOncePerRunAndRejectsOtherDates()
+    {
+        int loads = 0;
+        var original = new List<Match> { new() { Id = 42 } };
+        Task<List<Match>> Load()
+        {
+            loads++;
+            return Task.FromResult(original);
+        }
+
+        var history = new DailyRunHistory(Target);
+        Assert.Same(original, await history.GetAsync(Target, Load));
+        Assert.Same(original, await history.GetAsync(Target, Load));
+        Assert.Equal(1, loads);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => history.GetAsync(Target.AddDays(1), Load));
+        Assert.Same(original, await new DailyRunHistory(Target).GetAsync(Target, Load));
+        Assert.Equal(2, loads);
+    }
+
+    [Fact]
+    public async Task DailyRunHistoryRetriesAfterLoadFailure()
+    {
+        var history = new DailyRunHistory(Target);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            history.GetAsync(Target, () => Task.FromException<List<Match>>(new InvalidOperationException())));
+        var matches = new List<Match> { new() { Id = 7 } };
+        Assert.Same(matches, await history.GetAsync(Target, () => Task.FromResult(matches)));
+    }
+
+    [Fact]
     public void EmptySourceIsNamedAsFailureInsteadOfSuccessfulProgress()
     {
         var messages = new List<string>();

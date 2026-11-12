@@ -11,19 +11,19 @@ public partial class Program
 {
     private const int TicketDefaultCount = 15;
 
-    private static async Task RunTicketAsync(string[] args)
+    private static async Task RunTicketAsync(string[] args, DailyRunHistory? runHistory)
     {
         if (args[0].StartsWith("daily-fixed-", StringComparison.OrdinalIgnoreCase) ||
             args[0].StartsWith("daily-ai-fixed-", StringComparison.OrdinalIgnoreCase))
         {
-            await RunDailyFixedAsync(args);
+            await RunDailyFixedAsync(args, runHistory);
             return;
         }
         if (args[0].Equals("daily-ticket", StringComparison.OrdinalIgnoreCase) ||
             args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase) ||
             args[0].Equals("daily-ticket-short", StringComparison.OrdinalIgnoreCase))
         {
-            await RunDailyTicketAsync(args);
+            await RunDailyTicketAsync(args, runHistory);
             return;
         }
         bool only1To3P3Plus = args[0].Equals("ticket-1-3p3+", StringComparison.OrdinalIgnoreCase);
@@ -83,12 +83,7 @@ public partial class Program
             await db.Database.MigrateAsync();
 
         // Only results known before the target date, so the history is never contaminated by it.
-        var history = await db.Matches
-            .AsNoTracking()
-            .Where(x => x.MatchDate < date && x.Result != null)
-            .Include(x => x.Result)
-            .Include(x => x.PredictionSnapshots)
-            .ToListAsync();
+        var history = await LoadTicketHistoryAsync(db, date, runHistory);
 
         history = TicketQualityPolicy.PrepareHistory(history, date, Console.WriteLine);
         var calibration = TicketQualityPolicy.Calibrate(history);
@@ -566,7 +561,7 @@ public partial class Program
         workbook.SaveAs(path);
     }
 
-    private static async Task RunDailyFixedAsync(string[] args)
+    private static async Task RunDailyFixedAsync(string[] args, DailyRunHistory? runHistory)
     {
         bool auto = args[0].Equals("daily-fixed-auto", StringComparison.OrdinalIgnoreCase);
         bool ai = args[0].StartsWith("daily-ai-fixed-", StringComparison.OrdinalIgnoreCase);
@@ -608,9 +603,7 @@ public partial class Program
             return;
         }
 
-        var history = await db.Matches.AsNoTracking()
-            .Where(m => m.MatchDate < date && m.Result != null)
-            .Include(m => m.Result).Include(m => m.PredictionSnapshots).ToListAsync();
+        var history = await LoadTicketHistoryAsync(db, date, runHistory);
         history = TicketQualityPolicy.PrepareHistory(history, date, Console.WriteLine);
         var calibration = TicketQualityPolicy.Calibrate(history);
         MlMatchRanker? ranker = null;

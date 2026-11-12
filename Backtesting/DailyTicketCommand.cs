@@ -10,7 +10,7 @@ using Prediction.ML;
 
 public partial class Program
 {
-    private static async Task RunDailyTicketAsync(string[] args)
+    private static async Task RunDailyTicketAsync(string[] args, DailyRunHistory? runHistory)
     {
         bool leagueOnly = args[0].Equals("daily-ticket-league", StringComparison.OrdinalIgnoreCase);
         bool shortTicket = args[0].Equals("daily-ticket-short", StringComparison.OrdinalIgnoreCase);
@@ -65,9 +65,7 @@ public partial class Program
             return;
         }
         var now = DateTime.UtcNow;
-        var history = await db.Matches.AsNoTracking()
-            .Where(m => m.MatchDate < date && m.Result != null)
-            .Include(m => m.Result).Include(m => m.PredictionSnapshots).ToListAsync();
+        var history = await LoadTicketHistoryAsync(db, date, runHistory);
         history = TicketQualityPolicy.PrepareHistory(history, date, Console.WriteLine);
         var calibration = TicketQualityPolicy.Calibrate(history);
         var mlRanker = MlMatchRanker.TrainFromHistory(history);

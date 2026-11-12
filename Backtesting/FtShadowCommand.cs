@@ -6,7 +6,7 @@ using Prediction.Services;
 
 public partial class Program
 {
-    private static async Task RunFtShadowAsync(string[] args)
+    private static async Task RunFtShadowAsync(string[] args, DailyRunHistory? runHistory)
     {
         int count = TicketDefaultCount;
         if (args.Length is < 2 or > 3 ||
@@ -36,8 +36,7 @@ public partial class Program
         }
         var matches = await db.Matches.AsNoTracking().Where(m => m.MatchDate == date)
             .Include(m => m.Result).Include(m => m.PredictionSnapshots).ToListAsync();
-        var history = await db.Matches.AsNoTracking().Where(m => m.MatchDate < date && m.Result != null)
-            .Include(m => m.Result).Include(m => m.PredictionSnapshots).AsSplitQuery().ToListAsync();
+        var history = await LoadTicketHistoryAsync(db, date, runHistory, splitQuery: true);
         IReadOnlyList<BookmakerMatch> offers;
         try
         {
