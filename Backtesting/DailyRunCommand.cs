@@ -40,7 +40,7 @@ public partial class Program
             Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_REVISION") ?? "local", Console.WriteLine);
         bool reserved = Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_ATTEMPT_RESERVED") == "true";
         if (reserved ? checkpoint.Attempts is < 1 or > DailyRunCheckpoint.MaximumAttempts
-                     : !await checkpoint.TryBeginAttemptAsync())
+                     : !await checkpoint.TryBeginAttemptAsync(enforceLimit: false))
         {
             Console.Error.WriteLine("[DAILY-RUN] No attempt available; maximum three attempts per date.");
             CommandExecution.Fail();
@@ -79,6 +79,18 @@ public partial class Program
         await checkpoint.SetPlanAsync(includeDayBefore);
         var steps = DailyRunPlan.Build(date, count,
             includeDayBefore ? pendingDates.Append(dayBefore) : pendingDates);
+        var collection = steps.Single(step => step.Name == "Collect target predictions");
+        if (!reserved && checkpoint.IsCompleted(collection))
+        {
+            var storedPredictions = await db.Matches.AsNoTracking()
+                .Where(match => match.MatchDate == date && match.PredictionSnapshots.Any())
+                .Select(match => match.League).ToListAsync();
+            if (!storedPredictions.Any(LeagueTicketSelector.IsAllowedLeague))
+            {
+                await checkpoint.InvalidateAsync(collection);
+                Console.WriteLine("[DAILY-RUN] No allowed stored predictions for target date; retrying collection.");
+            }
+        }
         var history = new DailyRunHistory(date);
         foreach (var step in steps)
         {

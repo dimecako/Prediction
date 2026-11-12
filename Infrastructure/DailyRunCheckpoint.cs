@@ -52,9 +52,9 @@ public sealed class DailyRunCheckpoint
             saved.Attempts);
     }
 
-    public async Task<bool> TryBeginAttemptAsync()
+    public async Task<bool> TryBeginAttemptAsync(bool enforceLimit = true)
     {
-        if (Attempts >= MaximumAttempts)
+        if (enforceLimit && Attempts >= MaximumAttempts)
             return false;
         Attempts++;
         await SaveAsync();
@@ -78,6 +78,13 @@ public sealed class DailyRunCheckpoint
     public async Task MarkCompletedAsync(DailyRunStep step)
     {
         if (!completedSteps.Add(step.CheckpointKey))
+            return;
+        await SaveAsync();
+    }
+
+    public async Task InvalidateAsync(DailyRunStep step)
+    {
+        if (!completedSteps.Remove(step.CheckpointKey))
             return;
         await SaveAsync();
     }

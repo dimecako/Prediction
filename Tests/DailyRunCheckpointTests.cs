@@ -90,6 +90,52 @@ public sealed class DailyRunCheckpointTests
     }
 
     [Fact]
+    public async Task LocalAttemptsCanContinueAfterThreeAndPreserveCompletedSteps()
+    {
+        string path = Path.Combine(".automation", "test-checkpoints", Guid.NewGuid().ToString("N"), "checkpoint.json");
+        try
+        {
+            var checkpoint = await DailyRunCheckpoint.LoadAsync(path, Date, 15, "local", _ => { });
+            await checkpoint.MarkCompletedAsync(Step);
+            for (int attempt = 1; attempt <= 5; attempt++)
+                Assert.True(await checkpoint.TryBeginAttemptAsync(enforceLimit: false));
+
+            var restored = await DailyRunCheckpoint.LoadAsync(path, Date, 15, "local", _ => { });
+            Assert.Equal(5, restored.Attempts);
+            Assert.True(restored.IsCompleted(Step));
+            Assert.False(await restored.TryBeginAttemptAsync());
+        }
+        finally
+        {
+            if (Directory.Exists(Path.GetDirectoryName(path)))
+                Directory.Delete(Path.GetDirectoryName(path)!, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidatedCollectionIsRetriedWithoutDiscardingOtherSteps()
+    {
+        string path = Path.Combine(".automation", "test-checkpoints", Guid.NewGuid().ToString("N"), "checkpoint.json");
+        try
+        {
+            var collection = new DailyRunStep("Collect target predictions", ["2026-11-03"]);
+            var checkpoint = await DailyRunCheckpoint.LoadAsync(path, Date, 15, "local", _ => { });
+            await checkpoint.MarkCompletedAsync(collection);
+            await checkpoint.MarkCompletedAsync(Step);
+            await checkpoint.InvalidateAsync(collection);
+
+            var restored = await DailyRunCheckpoint.LoadAsync(path, Date, 15, "local", _ => { });
+            Assert.False(restored.IsCompleted(collection));
+            Assert.True(restored.IsCompleted(Step));
+        }
+        finally
+        {
+            if (Directory.Exists(Path.GetDirectoryName(path)))
+                Directory.Delete(Path.GetDirectoryName(path)!, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task LegacyCheckpointPreservesStepsAndStartsCountingAttempts()
     {
         string path = Path.Combine(".automation", "test-checkpoints", Guid.NewGuid().ToString("N"), "checkpoint.json");

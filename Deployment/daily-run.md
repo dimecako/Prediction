@@ -56,9 +56,11 @@ workflow uploads as `daily-checkpoint-yyyy-MM-dd` even when the daily job
 fails. The next retry downloads the newest completed checkpoint artifact for
 that target date, including legacy count-suffixed artifacts. Completed steps and
 the three-attempt budget survive revision or count changes. The workflow reserves
-an attempt before setup/build; local CLI runs keep their manifest under
-`.automation/daily-checkpoints`. Failed and deferred work is retried, not successful
-work. Ticket commands are independent of collection success and use available
+an attempt before setup/build. Local CLI runs keep their manifest under
+`.automation/daily-checkpoints` and allow unlimited manual retries; they rerun a
+checkpointed collection if the target date has no stored allowed-league predictions.
+Otherwise failed and deferred work is retried, not successful work. Ticket commands
+are independent of collection success and use available
 stored predictions, pre-date exact-market history and current odds; insufficient
 data must not fabricate picks. The four generation modes are `daily`,
 `daily-league`, `fixed-auto` and `ft-combos`, with at most 15 qualified picks each and no forced
