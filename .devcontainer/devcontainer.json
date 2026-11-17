@@ -1,0 +1,11 @@
+{
+  "name": "Prediction",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/Prediction",
+  "remoteEnv": {
+    "ConnectionStrings__FootballDb": "Host=127.0.0.1;Port=5432;Database=prediction;Username=prediction_app;Password=prediction_dev"
+  },
+  "forwardPorts": [5432],
+  "postCreateCommand": "dotnet restore Prediction.csproj"
+}

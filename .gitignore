@@ -13,3 +13,5 @@ TestResults/
 .env.*
 *.dump
 .neon
+.automation/
+*.xlsx
