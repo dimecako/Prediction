@@ -71,11 +71,12 @@ public partial class Program
         var mlRanker = MlMatchRanker.TrainFromHistory(history);
         if (mlRanker == null)
             Console.WriteLine("[DAILY] Nema dovolno istorija za ML; source consensus i kalibracija ostanuvaat.");
-        var selection = DailyTicketSelector.Build(matches, offers, date, now, count, leagueOnly, mlRanker, calibration);
+        var selection = DailyTicketSelector.Build(matches, offers, date, now, count, leagueOnly, mlRanker, calibration,
+            requireHistoricalQualification: false);
         Console.WriteLine($"[DAILY] {command} | Datum={date:yyyy-MM-dd} | Sobrani zapisi={matches.Count} | " +
             $"Sparteni razlicni mecevi={selection.Matched} | Spoeni duplikati={selection.Duplicates}");
-        Console.WriteLine($"[DAILY] {TicketQualityPolicy.Version}: exact-market pre-date historical qualification. " +
-            "Winner & FT goals retains previous eligibility pending separate validation. " +
+        Console.WriteLine($"[DAILY] {TicketQualityPolicy.Version}: historical qualification temporarily disabled. " +
+            "League, source agreement, market, kickoff and odds checks remain active. " +
             "Source agreement and raw ML are not calibrated win probabilities. No half-time markets.");
         if (shortTicket)
             Console.WriteLine("[DAILY] Short benchmark: requires 3-7 fully qualified selections; otherwise no ticket is saved.");

@@ -16,6 +16,8 @@ public sealed class TeamNameMatcherTests
     [InlineData("A.Fukuoka", "Avispa Fukuoka")]
     [InlineData("V Sendai", "Vegalta Sendai")]
     [InlineData("U.A.N.L. Tigres", "Tigres UANL")]
+    [InlineData("Borussia M'gladbach", "Borussia Monchengladbach")]
+    [InlineData("Borussia Mgladbach", "Borussia Mönchengladbach")]
     [InlineData("Kusatsu", "Thespakusatsu")]
     [InlineData("Yokohama F-M.", "Yokohama F. Marinos")]
     [InlineData("Yokohama F-M.", "Yokohama Marinos")]
@@ -44,5 +46,16 @@ public sealed class TeamNameMatcherTests
     {
         Assert.True(TeamNameMatcher.SameFixture("Bayern M.", "Arsenal", "Bayern Munich", "Arsenal"));
         Assert.False(TeamNameMatcher.SameFixture("Bayern M.", "Arsenal", "Bayern Munich", "Chelsea"));
+    }
+
+    [Fact]
+    public void BorussiaGladbachAliasesProduceTheSameExternalIdentity()
+    {
+        string apostrophe = MatchIdentity.BuildExternalMatchId(
+            "2026-11-21", "Borussia M'gladbach", "Borussia Dortmund");
+        string full = MatchIdentity.BuildExternalMatchId(
+            "2026-11-21", "Borussia Monchengladbach", "Borussia Dortmund");
+
+        Assert.Equal(full, apostrophe);
     }
 }

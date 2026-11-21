@@ -21,7 +21,8 @@ public static class LeagueTicketSelector
         ["FRANCE LIGUE 1", "FRANCE 1"],
         ["GERMANY BUNDESLIGA", "GERMANY 1"],
         ["ITALY SERIE A", "ITALY 1"],
-        ["SPAIN LA LIGA", "SPAIN 1", "SPAIN LALIGA"],
+        ["SPAIN LA LIGA", "SPAIN 1", "SPAIN LALIGA", "SPAIN LA LIGA 1", "SPAIN LALIGA 1",
+            "SPAIN LA LIGUE 1"],
         ["BELGIUM JUPILER PRO LEAGUE", "BELGIUM 1"],
         ["NETHERLANDS EREDIVISIE", "NETHERLANDS 1"],
         ["PORTUGAL LIGA PORTUGAL", "PORTUGAL 1"],
@@ -65,6 +66,12 @@ public static class LeagueTicketSelector
             aliases.Select(alias => (Alias: Normalize(alias), Identity: Normalize(aliases[0])))
         ).ToDictionary(x => x.Alias, x => x.Identity, StringComparer.Ordinal);
 
+    private static readonly Dictionary<string, string> CorroboratingLeagueAliases =
+        new(StringComparer.Ordinal)
+        {
+            [Normalize("La Ligue 1")] = Normalize("Spain La Liga")
+        };
+
     // Exact competition identities only: a substring such as "cup" or "U19" is not evidence.
     private static readonly HashSet<string> ExcludedCompetitions = new(
         new[]
@@ -79,6 +86,18 @@ public static class LeagueTicketSelector
 
     public static bool IsAllowedLeague(string? league) =>
         GetAllowedLeagueIdentity(league) != null;
+
+    public static bool IsUnqualifiedAliasOf(string? league, string allowedIdentity)
+    {
+        if (string.IsNullOrWhiteSpace(league) || string.IsNullOrWhiteSpace(allowedIdentity))
+            return false;
+
+        string identity = Normalize(allowedIdentity);
+        int countryEnd = identity.IndexOf(' ');
+        return countryEnd >= 0 &&
+            (Normalize(league) == identity[(countryEnd + 1)..] ||
+             CorroboratingLeagueAliases.GetValueOrDefault(Normalize(league)) == identity);
+    }
 
     public static string? GetAllowedLeagueIdentity(string? league) =>
         !string.IsNullOrWhiteSpace(league)

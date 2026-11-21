@@ -52,6 +52,9 @@ public partial class ProductionConsensusAggregator
             { "man utd", "manchester united" },
             { "man united", "manchester united" },
             { "man city", "manchester city" },
+            { "borussia mgladbach", "borussia monchengladbach" },
+            { "borussia m gladbach", "borussia monchengladbach" },
+            { "borussia moenchengladbach", "borussia monchengladbach" },
 
             { "wolves", "wolverhampton" },
             { "wolverhampton wanderers", "wolverhampton" },

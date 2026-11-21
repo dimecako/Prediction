@@ -18,6 +18,9 @@ public sealed class LeagueTicketSelectorTests
     [InlineData("Germany Bundesliga 2")]
     [InlineData("Italy Serie B")]
     [InlineData("Spain La Liga 2")]
+    [InlineData("Spain La Liga 1")]
+    [InlineData("Spain LaLiga 1")]
+    [InlineData("Spain La Ligue 1")]
     [InlineData("Austria 2. Liga")]
     [InlineData("Bulgaria 1")]
     [InlineData("Chile Liga de Primera")]
@@ -104,6 +107,22 @@ public sealed class LeagueTicketSelectorTests
         Assert.Equal(["FRANCE 1", "ENGLAND 1"],
             LeagueTicketSelector.SelectAllowedLeagues(candidates, 2, x => x));
         Assert.Equal("FRANCE LIGUE 1", LeagueTicketSelector.GetAllowedLeagueIdentity("France 1"));
+        Assert.Equal("SPAIN LA LIGA", LeagueTicketSelector.GetAllowedLeagueIdentity("Spain La Liga 1"));
+    }
+
+    [Theory]
+    [InlineData("La Liga", "SPAIN LA LIGA", true)]
+    [InlineData("Ligue 1", "FRANCE LIGUE 1", true)]
+    [InlineData("Premier League", "ENGLAND PREMIER LEAGUE", true)]
+    [InlineData("Serie A", "ITALY SERIE A", true)]
+    [InlineData("La Ligue 1", "SPAIN LA LIGA", true)]
+    [InlineData("La Ligue 1", "FRANCE LIGUE 1", false)]
+    [InlineData("Sweden 3", "SPAIN LA LIGA", false)]
+    [InlineData("DR Congo Ligue 1", "FRANCE LIGUE 1", false)]
+    public void DistinguishesUnqualifiedNamesFromConflictingCountryQualifiedLeagues(
+        string league, string identity, bool expected)
+    {
+        Assert.Equal(expected, LeagueTicketSelector.IsUnqualifiedAliasOf(league, identity));
     }
 
     [Theory]

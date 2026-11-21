@@ -32,7 +32,8 @@ public static class DailyTicketSelector
     public static DailyTicketSelection BuildFixed(
         IReadOnlyList<Match> matches, IReadOnlyList<BookmakerMatch> offers,
         DateOnly date, DateTime nowUtc, int count,
-        Func<Match, TicketCandidate, double?>? predict = null, Tally? calibration = null)
+        Func<Match, TicketCandidate, double?>? predict = null, Tally? calibration = null,
+        bool requireHistoricalQualification = true)
     {
         if (count is < 1 or > TicketQualityPolicy.MaximumSelections)
             throw new ArgumentOutOfRangeException(nameof(count), "Fixed ticket count must be between 1 and 15.");
@@ -106,14 +107,16 @@ public static class DailyTicketSelector
                 continue;
             }
             var score = TicketQualityPolicy.Score(candidate, calibration ?? new Tally(), odds);
-            if (!TicketQualityPolicy.HasCoverage(match, candidate) || !TicketQualityPolicy.Passes(score, 1.60))
+            if (!TicketQualityPolicy.HasCoverage(match, candidate) ||
+                !TicketQualityPolicy.Passes(score, TicketSelector.KeepFixOdds, requireHistoricalQualification))
             {
                 rejections.Add($"{match.HomeTeam} vs {match.AwayTeam}: Exact-market quality/coverage threshold failed.");
                 continue;
             }
 
             var evidence = $"FIX 1X2={consensus.Pick} {consensus.MatchingVotes}/{consensus.TotalVotes}; " +
-                $"Source Prob.={probability:F1}%; Min odds=1.60; " + TicketQualityPolicy.Evidence(score);
+                $"Source Prob.={probability:F1}%; Min odds=1.60; " +
+                TicketQualityPolicy.Evidence(score, requireHistoricalQualification);
             double? ml = null;
             if (predict != null)
             {
@@ -151,7 +154,7 @@ public static class DailyTicketSelector
     }
 
     public static DailyTicketDecision Select(Match match, BookmakerMatch offer, MlMatchRanker? mlRanker = null,
-        Tally? calibration = null)
+        Tally? calibration = null, bool requireHistoricalQualification = true)
     {
         if (!LeagueTicketSelector.IsAllowedLeague(match.League))
             return new(null, "Saved league is outside the configured allowlist.");
@@ -167,12 +170,12 @@ public static class DailyTicketSelector
         double? baseOdds = MaxbetOddsProvider.GetOdds(offer, fix.Market, fix.Pick);
         if (!ValidOdds(baseOdds))
             return new(null, "Nema potvrdena osnovna Maxbet kvota.");
-        if (calibration == null)
-            return new(null, "Exact-market history is required; daily signals alone cannot qualify a selection.");
+        calibration ??= new Tally();
         var goals = TicketMarkets.BinarySignal(match, "Goals");
         var btts = TicketMarkets.BinarySignal(match, "BTTS");
         var decision = TicketSelector.Select(match, calibration,
-            c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), safe: true, includeTeamGoals: true);
+            c => MaxbetOddsProvider.GetOdds(offer, c.Market, c.Pick), safe: true, includeTeamGoals: true,
+            requireHistoricalQualification: requireHistoricalQualification);
         if (decision.Confirmed is not ScoredTicketCandidate score)
             return new(null, decision.Reason);
         var chosen = score.Candidate;
@@ -186,7 +189,7 @@ public static class DailyTicketSelector
         string evidence = $"1X2={consensus.Pick} {consensus.MatchingVotes}/{consensus.TotalVotes}; " +
             $"Source Prob.={probability}; {consensus.Level}; " +
             $"BTTS={BinaryEvidence(btts)}; Goals={BinaryEvidence(goals)}; " +
-            TicketQualityPolicy.Evidence(score) +
+            TicketQualityPolicy.Evidence(score, requireHistoricalQualification) +
             (mlProbability.HasValue ? $"; ML={mlProbability.Value:P1} (raw, uncalibrated)" : "; ML=n/a for exact market");
         return new(new(match.Id, $"{match.HomeTeam} vs {match.AwayTeam}", match.League,
             offer.KickoffUtc, chosen, odds!.Value, baseOdds!.Value,
@@ -199,7 +202,8 @@ public static class DailyTicketSelector
     public static DailyTicketSelection Build(
         IReadOnlyList<Match> matches, IReadOnlyList<BookmakerMatch> offers,
         DateOnly date, DateTime nowUtc, int count, bool leagueOnly,
-        MlMatchRanker? mlRanker = null, Tally? calibration = null)
+        MlMatchRanker? mlRanker = null, Tally? calibration = null,
+        bool requireHistoricalQualification = true)
     {
         if (count is < 1 or > TicketQualityPolicy.MaximumSelections || nowUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("Daily selection needs a positive count and UTC clock.");
@@ -241,7 +245,7 @@ public static class DailyTicketSelector
                 LeagueTicketSelector.IsAllowedLeague(match.League);
             evaluatedValidFixture |= validFixture;
             invalidFixtureData |= !validFixture;
-            var decision = Select(match, offer, mlRanker, calibration);
+            var decision = Select(match, offer, mlRanker, calibration, requireHistoricalQualification);
             if (decision.Pick != null)
                 eligible.Add(decision.Pick);
             else
@@ -280,5 +284,5 @@ public static class DailyTicketSelector
 
     private static bool ValidOdds(double? odds) => odds.HasValue && double.IsFinite(odds.Value) && odds > 1;
     private static bool ValidFixedOdds(double? odds) =>
-        odds.HasValue && double.IsFinite(odds.Value) && odds.Value >= 1.60;
+        odds.HasValue && double.IsFinite(odds.Value) && odds.Value >= TicketSelector.KeepFixOdds;
 }

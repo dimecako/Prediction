@@ -43,6 +43,31 @@ public sealed class TicketSelectorTests
     }
 
     [Theory]
+    [InlineData(1.59, false)]
+    [InlineData(1.60, true)]
+    public void DirectFixUsesUpdatedMinimumOddsBoundary(double odds, bool accepted)
+    {
+        var match = Fixture();
+
+        var decision = TicketSelector.Select(match, Calibrate(match), _ => odds, true);
+
+        Assert.Equal(accepted, decision.Confirmed is { Candidate.Market: "1X2" });
+    }
+
+    [Fact]
+    public void HistoricalQualificationCanBeTemporarilyDisabled()
+    {
+        var match = Fixture();
+
+        var decision = TicketSelector.Select(match, new Tally(), _ => 1.6, true,
+            requireHistoricalQualification: false);
+
+        Assert.True(decision.Confirmed is { Candidate.Market: "1X2" });
+        Assert.Contains("temporarily disabled",
+            TicketQualityPolicy.Evidence(decision.Confirmed!, requireHistoricalQualification: false));
+    }
+
+    [Theory]
     [InlineData(1)]
     [InlineData(2)]
     public void OneOrTwoSourcesDoNotQualifyEvenWithPerfectHistory(int sources)

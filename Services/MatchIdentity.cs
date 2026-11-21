@@ -60,6 +60,9 @@ public static class MatchIdentity
 
         return text switch
         {
+            "borussia m gladbach" or "borussia mgladbach" or
+            "borussia monchengladbach" or "borussia moenchengladbach" =>
+                "borussia monchengladbach",
             "sl benfica" or "slb benfica" or "sport lisboa e benfica" or "sport lisbon benfica" or "benfica lisbon" => "benfica",
             _ => text
         };

@@ -617,7 +617,7 @@ public partial class Program
         }
         var selection = DailyTicketSelector.BuildFixed(matches, offers, date, DateTime.UtcNow, count,
             ai || auto ? (match, candidate) => ranker?.Predict(match)?.GetCandidateProbability(candidate) : null,
-            calibration);
+            calibration, requireHistoricalQualification: false);
         IReadOnlyList<DailyTicketPick> finalPicks = selection.Picks;
         Console.WriteLine($"[FIXED] Requested={count} | Eligible={selection.Eligible} | Selected={finalPicks.Count}");
         foreach (var pick in finalPicks)
@@ -625,7 +625,7 @@ public partial class Program
                 $"Source Prob={pick.SourceProbability:F1}% | Evidence={pick.Evidence}");
         if (finalPicks.Count < count)
         {
-            Console.Error.WriteLine($"[FIXED] Only {finalPicks.Count}/{count} selections pass exact-market history, coverage, return and odds >=1.60 gates; no synthetic selections.");
+            Console.Error.WriteLine($"[FIXED] Only {finalPicks.Count}/{count} selections pass coverage and odds >=1.60 gates; historical qualification is temporarily disabled; no synthetic selections.");
             foreach (var rejection in selection.Rejections.Take(10))
                 Console.WriteLine("[FIXED-REJECTED] " + rejection);
             if (finalPicks.Count == 0)

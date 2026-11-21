@@ -95,8 +95,8 @@ public sealed class DailyTicketSelectorTests
     }
 
     [Theory]
-    [InlineData(1.69, false)]
-    [InlineData(1.7, true)]
+    [InlineData(1.59, false)]
+    [InlineData(1.6, true)]
     public void ExactQualifiedAlternativesRequireValidMinimumOdds(double odds, bool expected)
     {
         var match = Fixture(1);

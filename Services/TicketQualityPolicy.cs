@@ -14,12 +14,14 @@ public static class TicketQualityPolicy
             "1 & T1 2+" or "2 & T2 2+" or "1 & 2-5 golovi" or "2 & 2-5 golovi" or
             "1 & 2-6 golovi" or "2 & 2-6 golovi";
 
-    public static bool PassesFtBaseline(ScoredTicketCandidate candidate) =>
-        IsWinnerGoals(candidate.Candidate) && candidate.Sample >= TicketSelector.MinComboHistory &&
-        double.IsFinite(candidate.Accuracy) && candidate.Accuracy is >= 0 and <= 1 &&
+    public static bool PassesFtBaseline(ScoredTicketCandidate candidate, bool requireHistoricalQualification = true) =>
+        IsWinnerGoals(candidate.Candidate) &&
         candidate.Odds is double odds && double.IsFinite(odds) && odds >= TicketSelector.MinFinalOdds &&
-        (candidate.Accuracy >= TicketSelector.MinAccuracy ||
-            candidate.Accuracy * odds >= TicketSelector.MinComboExpectedReturn);
+        (!requireHistoricalQualification ||
+            candidate.Sample >= TicketSelector.MinComboHistory &&
+            double.IsFinite(candidate.Accuracy) && candidate.Accuracy is >= 0 and <= 1 &&
+            (candidate.Accuracy >= TicketSelector.MinAccuracy ||
+                candidate.Accuracy * odds >= TicketSelector.MinComboExpectedReturn));
 
     public static ScoredTicketCandidate ScoreForGeneration(TicketCandidate candidate, Tally history, double? odds) =>
         Score(IsWinnerGoals(candidate) ? candidate with { Key = FtBaselinePrefix + candidate.Key } : candidate,
@@ -54,14 +56,20 @@ public static class TicketQualityPolicy
             TicketMarkets.BinarySignal(match, "Goals") is TicketCandidate goals && Covered(goals);
     }
 
-    public static bool Passes(ScoredTicketCandidate candidate, double minimumOdds)
+    public static bool Passes(ScoredTicketCandidate candidate, double minimumOdds,
+        bool requireHistoricalQualification = true)
     {
+        if (!IsAllowed(candidate.Candidate) ||
+            candidate.Odds is not double odds || !double.IsFinite(odds) || odds < minimumOdds)
+            return false;
+        if (!requireHistoricalQualification)
+            return true;
+
         int minimumSample = candidate.Candidate.Market == "Combo"
             ? TicketSelector.MinComboHistory : TicketSelector.MinHistory;
-        return IsAllowed(candidate.Candidate) && candidate.Sample >= minimumSample &&
+        return candidate.Sample >= minimumSample &&
             double.IsFinite(candidate.Accuracy) && candidate.Accuracy is >= TicketSelector.MinAccuracy and <= 1 &&
             double.IsFinite(candidate.Safe) && candidate.Safe >= 0 && candidate.Safe <= candidate.Accuracy &&
-            candidate.Odds is double odds && double.IsFinite(odds) && odds >= minimumOdds &&
             candidate.Accuracy * odds >= TicketSelector.MinComboExpectedReturn &&
             candidate.Safe * odds >= 1.0;
     }
@@ -73,8 +81,9 @@ public static class TicketQualityPolicy
             CalibrationAnalyzer.WilsonLower(stat.Correct, stat.Total), stat.Total, odds);
     }
 
-    public static string Evidence(ScoredTicketCandidate score) => string.Create(CultureInfo.InvariantCulture,
-        $"Policy={Version}; FT policy={(score.Candidate.Key.StartsWith(FtBaselinePrefix, StringComparison.Ordinal) ? "previous eligibility baseline; strict challenger not promoted" : "strict exact-market")}; Exact history={score.Accuracy:P1} (n={score.Sample}); Wilson95 lower={score.Safe:P1}; Historical return={score.Accuracy * score.Odds:F3}; historical estimates, not guaranteed probabilities");
+    public static string Evidence(ScoredTicketCandidate score, bool requireHistoricalQualification = true) =>
+        string.Create(CultureInfo.InvariantCulture,
+        $"Policy={Version}; FT policy={(score.Candidate.Key.StartsWith(FtBaselinePrefix, StringComparison.Ordinal) ? "previous eligibility baseline; strict challenger not promoted" : "strict exact-market")}; Historical qualification={(requireHistoricalQualification ? "enabled" : "temporarily disabled")}; Exact history={score.Accuracy:P1} (n={score.Sample}); Wilson95 lower={score.Safe:P1}; Historical return={score.Accuracy * score.Odds:F3}; historical estimates, not guaranteed probabilities");
 
     public static List<Match> PrepareHistory(IEnumerable<Match> matches, DateOnly target, Action<string> log)
     {

@@ -29,17 +29,20 @@ public partial class ProductionConsensusAggregator
             var matches = leagueAnchors.Where(anchor =>
                 TeamNameMatcher.SameFixture(match.HomeTeam, match.AwayTeam,
                     anchor.HomeTeam, anchor.AwayTeam)).ToList();
-            var identities = matches.Select(anchor =>
-                    LeagueTicketSelector.GetCompetitionIdentity(anchor.League))
-                .Where(identity => identity != null).Distinct(StringComparer.Ordinal).ToList();
-            if (identities.Count != 1 ||
-                !LeagueTicketSelector.IsAllowedLeague(matches[0].League))
+            var allowedIdentities = matches.Select(anchor =>
+                    LeagueTicketSelector.GetAllowedLeagueIdentity(anchor.League))
+                .Where(identity => identity != null)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (allowedIdentities.Count != 1 ||
+                matches.Any(anchor => LeagueTicketSelector.GetAllowedLeagueIdentity(anchor.League) == null &&
+                    !LeagueTicketSelector.IsUnqualifiedAliasOf(anchor.League, allowedIdentities[0]!)))
             {
                 league = "";
                 return false;
             }
 
-            league = LeagueTicketSelector.GetAllowedLeagueIdentity(matches[0].League)!;
+            league = allowedIdentities[0]!;
             return true;
         }
 

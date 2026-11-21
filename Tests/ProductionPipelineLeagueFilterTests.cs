@@ -66,6 +66,76 @@ public sealed class ProductionPipelineLeagueFilterTests
         }
     }
 
+    [Theory]
+    [InlineData("Barcelona", "Real Madrid", "Spain La Liga 1", "La Liga", "SPAIN LA LIGA")]
+    [InlineData("Paris SG", "Marseille", "France 1", "Ligue 1", "FRANCE LIGUE 1")]
+    [InlineData("Arsenal", "Chelsea", "England 1", "Premier League", "ENGLAND PREMIER LEAGUE")]
+    [InlineData("Inter", "Milan", "Italy 1", "Serie A", "ITALY SERIE A")]
+    [InlineData("Barcelona", "Real Madrid", "Spain La Ligue 1", "La Ligue 1", "SPAIN LA LIGA")]
+    public void PipelineUsesOneCanonicalLeagueAcrossSourcesWhenAnAliasIsUnqualified(
+        string home, string away, string qualifiedLeague, string unqualifiedLeague, string expectedLeague)
+    {
+        var aggregator = new ProductionConsensusAggregator("2030-01-01");
+        var forebet = new List<SiteMatch> { Prediction(home, away) };
+        var qualified = new List<SiteMatch>
+        {
+            LeaguePrediction(home, away, qualifiedLeague)
+        };
+        var unqualified = new List<SiteMatch>
+        {
+            LeaguePrediction(home, away, unqualifiedLeague)
+        };
+
+        aggregator.ExecutePipeline(
+            forebet, [], [], [], [], [], qualified, unqualified, [], [], []);
+
+        var match = Assert.Single(aggregator.UnifiedMatches);
+        Assert.Equal(expectedLeague, match.League);
+        Assert.All(forebet.Concat(qualified).Concat(unqualified),
+            source => Assert.Equal(expectedLeague, source.League));
+    }
+
+    [Fact]
+    public void PipelineRejectsFixtureWithConflictingAllowedLeagueIdentities()
+    {
+        var aggregator = new ProductionConsensusAggregator("2030-01-01");
+        var forebet = new List<SiteMatch> { Prediction("Shared Home", "Shared Away") };
+        var france = new List<SiteMatch>
+        {
+            LeaguePrediction("Shared Home", "Shared Away", "France Ligue 1")
+        };
+        var spain = new List<SiteMatch>
+        {
+            LeaguePrediction("Shared Home", "Shared Away", "Spain La Liga")
+        };
+
+        aggregator.ExecutePipeline(
+            forebet, [], [], [], [], [], france, spain, [], [], []);
+
+        Assert.Empty(aggregator.UnifiedMatches);
+    }
+
+    [Fact]
+    public void PipelineUnifiesBorussiaGladbachSpellingAcrossSources()
+    {
+        var aggregator = new ProductionConsensusAggregator("2030-01-01");
+        var abbreviated = new List<SiteMatch>
+        {
+            Prediction("Borussia M'gladbach", "Borussia Dortmund")
+        };
+        var full = new List<SiteMatch>
+        {
+            LeaguePrediction("Borussia Monchengladbach", "Borussia Dortmund", "Germany Bundesliga")
+        };
+
+        aggregator.ExecutePipeline(
+            abbreviated, [], [], [], [], [], full, [], [], [], []);
+
+        var match = Assert.Single(aggregator.UnifiedMatches);
+        Assert.Equal("borussia monchengladbach", MatchIdentity.NormalizeTeam(match.HomeOrig));
+        Assert.Equal(2, match.Sources.Count(source => source.Value != null));
+    }
+
     private static SiteMatch Prediction(string home, string away) => new()
     {
         SiteName = "Forebet",

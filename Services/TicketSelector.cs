@@ -31,15 +31,16 @@ public static class TicketSelector
     public const double MinSignalAccuracy = 0.60;
     public const double MinBttsSignalAccuracy = 0.55;
     public const double MinComboExpectedReturn = 1.05;
-    public const double MinBaseOdds = 1.40;
-    public const double KeepFixOdds = 1.70;
+    public const double MinBaseOdds = 1.30;
+    public const double KeepFixOdds = 1.60;
     public const double MaxFixOdds = 2.00;
-    public const double MinFinalOdds = 1.70;
-    public const double MinBttsOdds = 1.65;
+    public const double MinFinalOdds = 1.60;
+    public const double MinBttsOdds = 1.60;
 
     public static TicketDecision Select(
         Match match, Tally calibration, Func<TicketCandidate, double?> getOdds, bool safe,
-        bool includeTeamGoals = false, bool winnerGoalsOnly = false, bool strictFt = false)
+        bool includeTeamGoals = false, bool winnerGoalsOnly = false, bool strictFt = false,
+        bool requireHistoricalQualification = true)
     {
         if (strictFt && !winnerGoalsOnly)
             throw new ArgumentException("The strict FT challenger is only available for FT-only shadow evaluation.");
@@ -55,6 +56,8 @@ public static class TicketSelector
             return new(null, null, baseOdds, "Nema validna potvrdena osnovna kvota.");
         bool Reliable(TicketCandidate c, double minimum, int minSamples = MinHistory, bool ftBaseline = false)
         {
+            if (!requireHistoricalQualification)
+                return true;
             var stat = calibration.Get(ftBaseline ? TicketQualityPolicy.FtBaselinePrefix + c.Key : c.Key);
             return stat.Total >= minSamples && (double)stat.Correct / stat.Total >= minimum;
         }
@@ -74,7 +77,7 @@ public static class TicketSelector
             return new(null, null, baseOdds, "Pobedata nema >=55% tocnost i 100+ primeri.");
         if (!winnerGoalsOnly && baseOdds >= KeepFixOdds && baseOdds <= MaxFixOdds)
             return TicketQualityPolicy.HasCoverage(match, fix) &&
-                TicketQualityPolicy.Passes(Score(fix), KeepFixOdds)
+                TicketQualityPolicy.Passes(Score(fix), KeepFixOdds, requireHistoricalQualification)
                 ? new(Score(fix), null, baseOdds, "Exact-market history and conservative return passed.")
                 : new(null, null, baseOdds, "Fix rejected: insufficient coverage, history or expected return.");
 
@@ -99,9 +102,11 @@ public static class TicketSelector
         }
         bool CandidatePassesThreshold(ScoredTicketCandidate x)
         {
-            return TicketQualityPolicy.IsWinnerGoals(x.Candidate) && !strictFt ? TicketQualityPolicy.PassesFtBaseline(x) :
+            return TicketQualityPolicy.IsWinnerGoals(x.Candidate) && !strictFt ?
+                TicketQualityPolicy.PassesFtBaseline(x, requireHistoricalQualification) :
                 TicketQualityPolicy.HasCoverage(match, x.Candidate) &&
-                TicketQualityPolicy.Passes(x, x.Candidate.Market == "BTTS" ? MinBttsOdds : MinFinalOdds);
+                TicketQualityPolicy.Passes(x, x.Candidate.Market == "BTTS" ? MinBttsOdds : MinFinalOdds,
+                    requireHistoricalQualification);
         }
         var eligible = candidates.Where(x => x.Market != "1X2" &&
                 SignalsAllow(x))

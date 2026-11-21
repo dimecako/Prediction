@@ -29,6 +29,8 @@ $datum = (Get-Date).AddDays(1).ToString('yyyy-MM-dd'); dotnet run -- daily-run $
 dotnet run -- daily-run
 # Za konkreten datum:
 dotnet run -- daily-run 2026-11-13 15
+dotnet run --no-build -- ticket-report 2026-11-13 2026-11-13
+Get-ChildItem -Filter "*2026-11-13*.xlsx"
 
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\tickets.ps1  // SITE 9 ticket varijanti + ocenuvanje; 18:00-23:59 za utre, 00:00-17:59 za denes
 .\tickets.ps1 -Date 2026-10-27                                // racen datum; site Excel fajlovi sekogas se zadrzuvaat
