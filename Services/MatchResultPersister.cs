@@ -32,6 +32,12 @@ public static class MatchResultPersister
             .Where(x => x.MatchDate == date).ToListAsync();
         var sourceSnapshots = await db.PredictionSnapshots.AsNoTracking()
             .Where(x => x.Match.MatchDate == date && x.SourceMatchId != null).ToListAsync();
+        var ticketedMatchIds = (await db.SimulatedTickets.AsNoTracking()
+            .Where(x => x.MatchDate == date)
+            .SelectMany(x => x.Selections)
+            .Select(x => x.MatchId)
+            .Distinct()
+            .ToListAsync()).ToHashSet();
 
         foreach (var external in sourceResults)
         {
@@ -84,7 +90,13 @@ public static class MatchResultPersister
                 }
                 else if (resolution.Candidates.Count > 0 && aiSuggestions >= maximumAiSuggestions)
                     log($"[RESULTS-AI] Suggestion limit ({maximumAiSuggestions}) reached; remaining conflicts require manual review.");
-                CommandExecution.Fail();
+                bool affectsSavedTicket = ShouldFailConflict(
+                    CommandExecution.IsAutomation, resolution.Candidates, ticketedMatchIds);
+                if (affectsSavedTicket)
+                    CommandExecution.Fail();
+                else
+                    log("[RESULTS] Identity conflict does not affect a saved ticket; " +
+                        "automation continues with the unresolved duplicate review notice.");
             }
             else if (resolution.Matches.Count > 0 && resolution.Method.Contains("source ID"))
                 log($"[RESULTS] Linked by {resolution.Method}: {external.Source} {external.ExternalId} -> " +
@@ -178,6 +190,10 @@ public static class MatchResultPersister
         string clean = string.Concat(value.Where(c => !char.IsControl(c))).Trim();
         return clean.Length <= 300 ? clean : clean[..300];
     }
+
+    public static bool ShouldFailConflict(
+        bool automation, IReadOnlyCollection<Match> candidates, IReadOnlySet<long> ticketedMatchIds) =>
+        !automation || candidates.Any(candidate => ticketedMatchIds.Contains(candidate.Id));
 
     public static void WriteConflictDiagnostics(DateOnly date, ExternalMatchResult incoming,
         IReadOnlyCollection<Match> candidates, IReadOnlyCollection<PredictionSnapshot> snapshots,

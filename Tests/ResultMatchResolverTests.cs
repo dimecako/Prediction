@@ -230,6 +230,20 @@ public sealed class ResultMatchResolverTests
     }
 
     [Fact]
+    public void AutomatedCollectionOnlyFailsIdentityConflictsAffectingSavedTickets()
+    {
+        var first = Fixture(1, "Borussia Monchengladbach", "Borussia Dortmund");
+        var second = Fixture(2, "Borussia M'gladbach", "Borussia Dortmund");
+
+        Assert.False(MatchResultPersister.ShouldFailConflict(true, [first, second],
+            new HashSet<long>()));
+        Assert.True(MatchResultPersister.ShouldFailConflict(true, [first, second],
+            new HashSet<long> { second.Id }));
+        Assert.True(MatchResultPersister.ShouldFailConflict(false, [first, second],
+            new HashSet<long>()));
+    }
+
+    [Fact]
     public void FreshDatedProviderFixtureCorroboratesExactNamesAndUniqueProviderLink()
     {
         var exact = Fixture(1, "Birmingham", "Millwall");
