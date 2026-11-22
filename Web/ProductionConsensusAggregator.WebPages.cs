@@ -48,7 +48,7 @@ public partial class Program
                 <p>{{Prediction.Web.DatabaseReportPages.Text(language, "Compare historical consensus accuracy by league and market.")}}</p>
               </a>
             </section>
-            <p class="footer-note">{{Prediction.Web.DatabaseReportPages.Text(language, "Daily automation targets 07:00 Europe/Skopje, with retries at 08:00 and 09:00; GitHub scheduling may be delayed.")}}
+            <p class="footer-note">{{Prediction.Web.DatabaseReportPages.Text(language, "Daily automation targets 02:00 UTC; GitHub scheduling may be delayed.")}}
             {{Prediction.Web.DatabaseReportPages.Text(language, "Stored predictions and tickets are available without Excel files.")}}
             <a href="https://github.com/dimecako/Prediction/actions">{{Prediction.Web.DatabaseReportPages.Text(language, "View run history and errors →")}}</a></p>
             <script>
@@ -59,8 +59,8 @@ public partial class Program
                 let submitting = false;
                 const mk = {{(Prediction.Web.DatabaseReportPages.LanguageCode(language) == "mk").ToString().ToLowerInvariant()}};
                 const labels = mk
-                  ? {checking:"Се проверува денешното стартување…",unconfigured:"Интеграцијата со GitHub не е наместена на Render.",waiting:"Дневното автоматско стартување сѐ уште се очекува.",queued:"Дневниот run е во редица.",running:"Дневниот run е во тек.",succeeded:"Дневниот run заврши успешно.",failed:"Дневниот run не успеа.",missed:"Автоматскиот run не е забележан по последниот термин.",limit:"Неуспешен run; потрошени се сите 3 обиди.",unknown:"Не може да се утврди статусот на дневниот run.",retry:"Обиди се повторно со daily-run",sent:"Барањето за рачно стартување е испратено.",error:"Не успеа рачното стартување. Провери ја GitHub Actions историјата."}
-                  : {checking:"Checking today's scheduled run…",unconfigured:"GitHub integration is not configured on Render.",waiting:"Today's automatic run is still expected.",queued:"Daily run is queued.",running:"Daily run is in progress.",succeeded:"Daily run completed successfully.",failed:"Daily run failed.",missed:"No automatic run was recorded after the final schedule window.",limit:"Run failed; all 3 attempts have been used.",unknown:"The daily-run status could not be determined.",retry:"Retry daily-run",sent:"Manual run request submitted.",error:"Manual start failed. Check GitHub Actions run history."};
+                  ? {checking:"Се проверува денешното стартување…",unconfigured:"Интеграцијата со GitHub не е наместена на Render.",waiting:"Дневното автоматско стартување сѐ уште се очекува.",queued:"Дневниот run е во редица.",running:"Дневниот run е во тек.",succeeded:"Дневниот run заврши успешно.",failed:"Дневниот run не успеа.",missed:"Автоматскиот run не е забележан по планираниот термин.",limit:"Рачното стартување е недостапно.",unknown:"Не може да се утврди статусот на дневниот run.",retry:"Обиди се повторно со daily-run",sent:"Барањето за рачно стартување е испратено.",error:"Не успеа рачното стартување. Провери ја GitHub Actions историјата."}
+                  : {checking:"Checking today's scheduled run…",unconfigured:"GitHub integration is not configured on Render.",waiting:"Today's automatic run is still expected.",queued:"Daily run is queued.",running:"Daily run is in progress.",succeeded:"Daily run completed successfully.",failed:"Daily run failed.",missed:"No automatic run was recorded after the scheduled time.",limit:"Manual start is unavailable.",unknown:"The daily-run status could not be determined.",retry:"Retry daily-run",sent:"Manual run request submitted.",error:"Manual start failed. Check GitHub Actions run history."};
                 const refresh = async () => {
                   try {
                     const response = await fetch("/automation/daily-run/status", {cache:"no-store"});
