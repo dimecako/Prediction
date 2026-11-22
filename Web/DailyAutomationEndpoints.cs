@@ -36,8 +36,22 @@ public static class DailyAutomationEndpoints
                 return TypedResults.Problem(statusCode: 409, title: "Daily run cannot be started",
                     detail: "A run is already active, has succeeded, is not due, or today's retry limit is exhausted.");
 
-            await client.DispatchAsync(date, ct);
-            return TypedResults.Accepted("/automation/daily-run/status");
+            try
+            {
+                await client.DispatchAsync(date, ct);
+                return TypedResults.Accepted("/automation/daily-run/status");
+            }
+            catch (HttpRequestException ex)
+            {
+                app.Logger.LogWarning(ex,
+                    "GitHub rejected the manual daily-run dispatch with HTTP {StatusCode}.",
+                    ex.StatusCode);
+                return TypedResults.Problem(statusCode: 502, title: "GitHub dispatch failed",
+                    detail: ex.StatusCode == null
+                        ? "GitHub could not be reached. Wait briefly and try again."
+                        : $"GitHub rejected workflow dispatch with HTTP {(int)ex.StatusCode.Value}. " +
+                          "Check the GitHub token Actions permission and GitHub Actions history.");
+            }
         }).WithSummary("Manually dispatch today's daily-run workflow when it failed or was missed");
     }
 }

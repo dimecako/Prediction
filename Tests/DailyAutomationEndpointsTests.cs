@@ -57,12 +57,48 @@ public sealed class DailyAutomationEndpointsTests
         }
     }
 
+    [Fact]
+    public async Task ManualDispatchReportsGitHubHttpFailure()
+    {
+        var client = new FakeWorkflowClient
+        {
+            Status = new("failed", true, true, 1, "https://github.com/run/1", DateTimeOffset.UtcNow),
+            DispatchError = new HttpRequestException("Rejected", null, HttpStatusCode.Forbidden)
+        };
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddAntiforgery();
+        builder.Services.AddSingleton<IGitHubDailyWorkflowClient>(client);
+        await using var app = builder.Build();
+        app.MapGet("/test-token", (HttpContext context, IAntiforgery antiforgery) =>
+            antiforgery.GetAndStoreTokens(context).RequestToken);
+        app.MapDailyAutomation();
+        app.Urls.Add("http://127.0.0.1:0");
+        await app.StartAsync();
+        using var http = new HttpClient(new HttpClientHandler { UseCookies = true })
+        {
+            BaseAddress = new Uri(app.Urls.Single())
+        };
+        try
+        {
+            string token = await http.GetStringAsync("/test-token");
+            var response = await http.PostAsync("/automation/daily-run", Form(token));
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+            Assert.Contains("HTTP 403", body);
+        }
+        finally
+        {
+            await app.StopAsync();
+        }
+    }
+
     private static FormUrlEncodedContent Form(string token) => new(
         new Dictionary<string, string> { ["__RequestVerificationToken"] = token });
 
     private sealed class FakeWorkflowClient : IGitHubDailyWorkflowClient
     {
         public DailyWorkflowStatus Status { get; set; } = new("waiting", true, false, 0, null, null);
+        public HttpRequestException? DispatchError { get; set; }
         public int Dispatches { get; private set; }
 
         public Task<DailyWorkflowStatus> GetStatusAsync(DateOnly date, CancellationToken cancellationToken) =>
@@ -71,6 +107,8 @@ public sealed class DailyAutomationEndpointsTests
         public Task DispatchAsync(DateOnly date, CancellationToken cancellationToken)
         {
             Dispatches++;
+            if (DispatchError != null)
+                return Task.FromException(DispatchError);
             return Task.CompletedTask;
         }
     }
