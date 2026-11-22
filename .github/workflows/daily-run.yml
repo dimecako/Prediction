@@ -13,11 +13,8 @@ on:
         required: true
         type: string
   schedule:
-    # GitHub cron is UTC; these cover Skopje 07:00, 08:00 and 09:00 year-round.
-    - cron: "0 5 * * *"
-    - cron: "0 6 * * *"
-    - cron: "0 7 * * *"
-    - cron: "0 8 * * *"
+    # Run the automatic daily workflow at 02:00 UTC.
+    - cron: "0 2 * * *"
 
 permissions:
   contents: read
@@ -46,7 +43,7 @@ jobs:
         id: source
         run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Select 07:00-09:00 Europe/Skopje attempt unless this date already succeeded
+      - name: Select 02:00 UTC attempt unless this date already succeeded
         id: schedule
         env:
           EVENT_NAME: ${{ github.event_name }}
