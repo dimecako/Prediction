@@ -10,8 +10,8 @@ from zoneinfo import ZoneInfo
 
 
 LOCAL_ZONE = ZoneInfo("Europe/Skopje")
-SCHEDULE_UTC_HOURS = range(5, 9)
-LOCAL_ATTEMPT_HOURS = range(7, 10)
+SCHEDULE_UTC_HOURS = range(2, 3)
+LOCAL_ATTEMPT_HOURS = range(3, 5)
 
 
 def scheduled_local_hour(schedule, now):

@@ -26,8 +26,8 @@ class DailyScheduleTests(unittest.TestCase):
         for hour in range(24):
             with self.subTest(hour=hour):
                 scheduled = datetime.combine(now.date(), time(hour, 0), timezone.utc)
-                expected = (hour in range(5, 9) and
-                            7 <= scheduled.astimezone(module.LOCAL_ZONE).hour <= 9)
+                expected = (hour == 2 and
+                            3 <= scheduled.astimezone(module.LOCAL_ZONE).hour <= 4)
                 self.assertEqual(
                     expected,
                     module.should_run("schedule", f"0 {hour} * * *", now),
@@ -58,15 +58,15 @@ class DailyScheduleTests(unittest.TestCase):
         workflow = (Path(__file__).parents[1] / ".github" / "workflows" /
                     "daily-run.yml").read_text(encoding="utf-8")
         crons = re.findall(r'cron: "([^"]+)"', workflow)
-        self.assertEqual([f"0 {hour} * * *" for hour in range(5, 9)], crons)
+        self.assertEqual(["0 2 * * *"], crons)
         winter = datetime.fromisoformat("2026-11-06T16:37:00+00:00")
         summer = datetime.fromisoformat("2026-07-15T16:37:00+00:00")
         self.assertEqual(
-            [False, True, True, True],
+            [True],
             [module.should_run("schedule", cron, winter) for cron in crons],
         )
         self.assertEqual(
-            [True, True, True, False],
+            [True],
             [module.should_run("schedule", cron, summer) for cron in crons],
         )
 
@@ -78,7 +78,7 @@ class DailyScheduleTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 module.target_date(invalid, now)
 
-    def plan(self, event="schedule", schedule="0 7 * * *", requested="", artifacts=None,
+    def plan(self, event="schedule", schedule="0 2 * * *", requested="", artifacts=None,
              status="completed", conclusion="success", path=".github/workflows/daily-run.yml"):
         calls = []
 
@@ -102,15 +102,13 @@ class DailyScheduleTests(unittest.TestCase):
     def artifact(self, name="daily-success-2026-11-02", expired=False):
         return {"name": name, "expired": expired, "workflow_run": {"id": 123}}
 
-    def test_each_of_three_attempts_is_eligible_without_a_success_record(self):
-        for hour in range(6, 9):
-            with self.subTest(hour=hour):
-                (run, target, _), _ = self.plan(schedule=f"0 {hour} * * *")
-                self.assertTrue(run)
-                self.assertEqual("2026-11-02", target)
+    def test_two_utc_attempt_is_eligible_without_a_success_record(self):
+        (run, target, _), _ = self.plan(schedule="0 2 * * *")
+        self.assertTrue(run)
+        self.assertEqual("2026-11-02", target)
 
     def test_successful_manual_or_scheduled_execution_blocks_all_later_attempts(self):
-        for event, schedule in [("schedule", f"0 {hour} * * *") for hour in range(6, 9)] + [
+        for event, schedule in [("schedule", "0 2 * * *"),
                 ("workflow_dispatch", "")]:
             with self.subTest(event=event, schedule=schedule):
                 (run, _, message), _ = self.plan(
@@ -307,7 +305,7 @@ class DailyScheduleTests(unittest.TestCase):
 
         with self.assertRaises(HTTPError):
             module.plan_run(
-                "schedule", "0 7 * * *", "", datetime.fromisoformat("2026-11-02T07:00:00+00:00"),
+                "schedule", "0 2 * * *", "", datetime.fromisoformat("2026-11-02T02:00:00+00:00"),
                 "owner/repo", "test-token", "https://api.github.com", request,
             )
 
