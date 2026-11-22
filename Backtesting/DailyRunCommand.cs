@@ -39,10 +39,15 @@ public partial class Program
                 Path.Combine(".automation", "daily-checkpoints", $"{date:yyyy-MM-dd}.json"), date, count,
             Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_REVISION") ?? "local", Console.WriteLine);
         bool reserved = Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_ATTEMPT_RESERVED") == "true";
-        if (reserved ? checkpoint.Attempts is < 1 or > DailyRunCheckpoint.MaximumAttempts
+        bool unlimitedAttempts =
+            Environment.GetEnvironmentVariable("DAILY_CHECKPOINT_ATTEMPTS_UNLIMITED") == "true";
+        if (reserved ? checkpoint.Attempts < 1 ||
+                       (!unlimitedAttempts && checkpoint.Attempts > DailyRunCheckpoint.MaximumAttempts)
                      : !await checkpoint.TryBeginAttemptAsync(enforceLimit: false))
         {
-            Console.Error.WriteLine("[DAILY-RUN] No attempt available; maximum three attempts per date.");
+            Console.Error.WriteLine(unlimitedAttempts
+                ? "[DAILY-RUN] Reserved manual attempt is invalid."
+                : "[DAILY-RUN] No attempt available; maximum three automatic attempts per date.");
             CommandExecution.Fail();
             return;
         }

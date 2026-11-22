@@ -229,6 +229,14 @@ class DailyScheduleTests(unittest.TestCase):
             self.assertEqual(1, json.loads(path.read_text())["Attempts"])
             self.assertEqual([], json.loads(path.read_text())["CompletedSteps"])
 
+    def test_manual_reservation_can_exceed_three_attempts(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "daily-checkpoints.json"
+            for attempt in range(1, 5):
+                self.assertTrue(module.reserve_attempt(
+                    path, "2026-11-02", 15, "manual", enforce_limit=False))
+                self.assertEqual(attempt, json.loads(path.read_text())["Attempts"])
+
     def test_legacy_checkpoint_keeps_completed_steps_and_starts_attempt_count(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
             path = Path(directory) / "daily-checkpoints.json"

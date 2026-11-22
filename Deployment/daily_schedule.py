@@ -109,7 +109,8 @@ def plan_run(event_name, schedule, requested_date, now, repository, token, api_u
     return True, target, f"Run {target}: no successful daily run recorded"
 
 
-def reserve_attempt(path, target, count, revision, previous_run_attempts=0):
+def reserve_attempt(path, target, count, revision, previous_run_attempts=0,
+                    enforce_limit=True):
     path = Path(path)
     if path.exists():
         checkpoint = json.loads(path.read_text(encoding="utf-8"))
@@ -127,7 +128,7 @@ def reserve_attempt(path, target, count, revision, previous_run_attempts=0):
                       "Revision": revision, "IncludeDayBefore": False, "CompletedSteps": []}
     # GitHub keeps this counter even if a rerun's checkpoint artifact was lost.
     attempts = max(checkpoint.get("Attempts", 0), previous_run_attempts)
-    available = attempts < 3
+    available = attempts < 3 or not enforce_limit
     checkpoint["Attempts"] = attempts + (1 if available else 0)
     path.parent.mkdir(parents=True, exist_ok=True)
     staging = path.with_suffix(".pending")
@@ -144,10 +145,13 @@ if __name__ == "__main__":
         if not reserve_attempt(os.environ["DAILY_CHECKPOINT_FILE"], os.environ["TARGET_DATE"],
                                int(os.environ.get("TICKET_COUNT", "15")),
                                os.environ["DAILY_CHECKPOINT_REVISION"],
-                               max(0, int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")) - 1)):
+                               max(0, int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")) - 1),
+                               os.environ.get("EVENT_NAME") != "workflow_dispatch"):
             print("[SCHEDULE] Maximum three attempts for this date already reserved.")
             sys.exit(1)
-        print("[SCHEDULE] Reserved one of three daily attempts.")
+        event_name = os.environ.get("EVENT_NAME")
+        print("[SCHEDULE] Reserved a manual daily attempt." if event_name == "workflow_dispatch"
+              else "[SCHEDULE] Reserved one of three automatic daily attempts.")
         sys.exit(0)
     run, target, message = plan_run(
         os.environ.get("EVENT_NAME", ""),

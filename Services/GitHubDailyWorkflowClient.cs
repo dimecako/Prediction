@@ -68,8 +68,6 @@ public sealed class GitHubDailyWorkflowClient(
         var latest = failed.Run ?? checkpoint?.Run;
         string? runUrl = latest?.HtmlUrl;
         DateTimeOffset? updatedAt = latest == null ? null : DateTimeOffset.Parse(latest.CreatedAt);
-        if (attempts >= 3)
-            return new("retry-limit", true, false, attempts, runUrl, updatedAt);
         if (latest != null)
             return new("failed", true, true, attempts, runUrl, updatedAt);
 

@@ -51,7 +51,7 @@ public sealed class GitHubDailyWorkflowClientTests
     }
 
     [Fact]
-    public async Task ThreeFailedAttemptsDisableManualRetry()
+    public async Task ThreeFailedAttemptsStillAllowManualRetry()
     {
         var client = StatusClient("""
             {"workflow_runs":[
@@ -63,8 +63,8 @@ public sealed class GitHubDailyWorkflowClientTests
 
         var status = await client.GetStatusAsync(Date, CancellationToken.None);
 
-        Assert.Equal("retry-limit", status.State);
-        Assert.False(status.CanRetry);
+        Assert.Equal("failed", status.State);
+        Assert.True(status.CanRetry);
         Assert.Equal(3, status.Attempts);
     }
 
@@ -104,15 +104,15 @@ public sealed class GitHubDailyWorkflowClientTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task PersistedLimitBlocksRetryEvenWithoutVisibleMorningRuns(bool reservationOnly)
+    public async Task PersistedAttemptsAllowManualRetryEvenWithoutVisibleMorningRuns(bool reservationOnly)
     {
         var client = StatusClient("""{"workflow_runs":[]}""", attempts: 3,
             reservationOnly: reservationOnly);
 
         var status = await client.GetStatusAsync(Date, CancellationToken.None);
 
-        Assert.Equal("retry-limit", status.State);
-        Assert.False(status.CanRetry);
+        Assert.Equal("failed", status.State);
+        Assert.True(status.CanRetry);
         Assert.Equal(3, status.Attempts);
     }
 
