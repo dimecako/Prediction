@@ -84,6 +84,9 @@ public static class DatabaseReportPages
             "stored fixtures for" => "зачувани натпревари за",
             "Latest snapshot per source; capture times are UTC." =>
                 "Најнова снимка од секој извор; времињата на зачувување се UTC.",
+            "BetMines is an experiment snapshot and does not participate in consensus or ticket selection." =>
+                "BetMines е експериментална снимка и не учествува во консензусот или изборот на тикети.",
+            "experiment" => "експеримент",
             "No stored predictions for this date." => "Нема зачувани прогнози за овој датум.",
             "Fixture / league" => "Натпревар / лига",
             "Source" => "Извор",
@@ -267,6 +270,7 @@ public static class DatabaseReportPages
             <button type="submit" formaction="/results/collect">{Text(language, "Collect results only")}</button></form>
             <p>{total} {Text(language, "stored fixtures for")} {date:yyyy-MM-dd}. {Text(language, "Latest snapshot per source; capture times are UTC.")}</p>
             <p class="muted">{Text(language, "Agreement is the share of voting sources, not a probability of winning. Source averages use only agreeing sources with valid market-specific percentages; missing percentages are excluded, never replaced with 0% or 50%. BTTS/goals source percentages are not currently stored, so their averages are n/a.")}</p>
+            <p class="muted">{Text(language, "BetMines is an experiment snapshot and does not participate in consensus or ticket selection.")}</p>
             """);
         if (matches.Count == 0)
             body.Append($"<p>{Text(language, "No stored predictions for this date.")}</p>");
@@ -292,7 +296,10 @@ public static class DatabaseReportPages
                     foreach (var snapshot in snapshots.OrderBy(x => x.Source))
                     {
                         body.Append("<tr>");
-                        Cell(body, snapshot.Source);
+                        string sourceLabel = snapshot.Source == "BetMines"
+                            ? $"BetMines ({Text(language, "experiment")})"
+                            : snapshot.Source;
+                        Cell(body, sourceLabel);
                         Cell(body, snapshot.PredictedResult);
                         Cell(body, snapshot.PredictedScore);
                         Cell(body, snapshot.Btts);

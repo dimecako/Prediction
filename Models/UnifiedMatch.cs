@@ -22,5 +22,6 @@ public class UnifiedMatch
         Sources.TryAdd("FootyStats", null);
         Sources.TryAdd("Oddslot", null);
         Sources.TryAdd("TheDatabetics", null);
+        Sources.TryAdd("BetMines", null);
     }
 }

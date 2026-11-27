@@ -3,6 +3,39 @@ using Prediction.Services;
 
 public partial class ProductionConsensusAggregator
 {
+    public int AttachBetMinesExperiment(List<SiteMatch> betMinesMatches)
+    {
+        int attached = 0;
+        foreach (var betMines in betMinesMatches)
+        {
+            var unified = unifiedDb.Values.FirstOrDefault(match =>
+                TeamNameMatcher.SameFixture(
+                    betMines.HomeTeam,
+                    betMines.AwayTeam,
+                    match.HomeOrig,
+                    match.AwayOrig));
+            if (unified == null)
+                continue;
+
+            unified.Sources["BetMines"] = new MatchSourceData
+            {
+                SourceMatchId = betMines.SourceMatchId,
+                Tip = betMines.Tip,
+                Prob = betMines.Prob,
+                Score = betMines.Score,
+                Btts = betMines.Btts,
+                BttsMarket = betMines.BttsMarket,
+                GoalsMarket = betMines.GoalsMarket
+            };
+            attached++;
+        }
+
+        Console.WriteLine(
+            $"[BETMINES EXPERIMENT] Attached {attached}/{betMinesMatches.Count} matches " +
+            "as display-only snapshots.");
+        return attached;
+    }
+
     public void ExecutePipeline(
     List<SiteMatch> forebet,
     List<SiteMatch> statarea,

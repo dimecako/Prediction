@@ -8,6 +8,23 @@ namespace Prediction.Tests;
 public sealed class PredictionReportFixturesTests
 {
     [Fact]
+    public void PredictionsPageLabelsBetMinesAsDisplayOnlyExperiment()
+    {
+        var match = Fixture(1, "Home", "Away");
+        match.PredictionSnapshots =
+        [
+            Snapshot(1, 1, "BetMines", "12", "betmines:123")
+        ];
+        var display = Assert.Single(PredictionReportFixtures.Consolidate([match]));
+
+        string html = DatabaseReportPages.Predictions(
+            match.MatchDate, [display], 1, 1);
+
+        Assert.Contains("BetMines (experiment)", html);
+        Assert.Contains("does not participate in consensus or ticket selection", html);
+    }
+
+    [Fact]
     public void ConsolidatesBenficaNameAliasesWithVerifiedProviderId()
     {
         var first = Fixture(1, "SL Benfica", "Lech Poznan");

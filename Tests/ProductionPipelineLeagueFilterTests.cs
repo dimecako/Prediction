@@ -7,6 +7,47 @@ namespace Prediction.Tests;
 public sealed class ProductionPipelineLeagueFilterTests
 {
     [Fact]
+    public void BetMinesExperimentAttachesWithoutBecomingConsensusSource()
+    {
+        var aggregator = new ProductionConsensusAggregator("2030-01-01");
+        var allowedLeagueSource = new List<SiteMatch>
+        {
+            LeaguePrediction("Allowed Home", "Allowed Away", "UEFA Champions League")
+        };
+
+        aggregator.ExecutePipeline(
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            allowedLeagueSource,
+            [],
+            [],
+            [],
+            []);
+
+        var attached = aggregator.AttachBetMinesExperiment(
+            [new SiteMatch
+            {
+                SiteName = "BetMines",
+                SourceMatchId = "betmines:123",
+                HomeTeam = "Allowed Home",
+                AwayTeam = "Allowed Away",
+                Tip = "12",
+                Prob = 80,
+                BttsMarket = "GG",
+                GoalsMarket = "O2.5"
+            }]);
+
+        Assert.Equal(1, attached);
+        var match = Assert.Single(aggregator.UnifiedMatches);
+        Assert.NotNull(match.Sources["BetMines"]);
+        Assert.Equal("12", match.Sources["BetMines"]!.Tip);
+    }
+
+    [Fact]
     public void PipelineMergesOnlyFixturesUniquelyMatchedToAnAllowedLeagueOffer()
     {
         var aggregator = new ProductionConsensusAggregator("2030-01-01");

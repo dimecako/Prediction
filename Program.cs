@@ -757,6 +757,9 @@ public partial class Program
                     var theDatabeticsTask =
                         RunScraperAsync(() => aggregator.ParseTheDatabeticsAsync(browser));
 
+                    var betMinesTask =
+                        RunScraperAsync(() => aggregator.ParseBetMinesAsync());
+
                     await Task.WhenAll(
                         forebetTask,
                         statareaTask,
@@ -768,7 +771,12 @@ public partial class Program
                         soccerVistaTask,
                         footyStatsTask,
                         oddslotTask,
-                        theDatabeticsTask);
+                        theDatabeticsTask,
+                        betMinesTask);
+
+                    Console.WriteLine(
+                        $"[BETMINES EXPERIMENT] {betMinesTask.Result.Count} mapped matches; " +
+                        "not merged into consensus or ticket selection.");
 
                     if (CommandExecution.IsAutomation && !DailyRunPlan.CheckSourceCoverage(
                         [
@@ -798,6 +806,7 @@ public partial class Program
                         await footyStatsTask,
                         await oddslotTask,
                         await theDatabeticsTask);
+                    aggregator.AttachBetMinesExperiment(await betMinesTask);
 
                     var cliConnectionString =
                         Environment.GetEnvironmentVariable("ConnectionStrings__FootballDb");
@@ -1008,6 +1017,9 @@ public partial class Program
                         var theDatabeticsTask =
                             RunScraperAsync(() => aggregator.ParseTheDatabeticsAsync(browser));
 
+                        var betMinesTask =
+                            RunScraperAsync(() => aggregator.ParseBetMinesAsync());
+
                         await Task.WhenAll(
                             forebetTask,
                             statareaTask,
@@ -1019,7 +1031,12 @@ public partial class Program
                             soccerVistaTask,
                             footyStatsTask,
                             oddslotTask,
-                            theDatabeticsTask);
+                            theDatabeticsTask,
+                            betMinesTask);
+
+                        Console.WriteLine(
+                            $"[BETMINES EXPERIMENT] {betMinesTask.Result.Count} mapped matches; " +
+                            "not merged into consensus or ticket selection.");
 
                         aggregator.ExecutePipeline(
                             await forebetTask,
